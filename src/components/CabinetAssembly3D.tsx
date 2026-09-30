@@ -99,7 +99,7 @@ export default function CabinetAssembly3D({
       {/* 🪚 Backwall Fiberboard Panel (3mm) */}
       <mesh position={[w / 2, h / 2, -d / 2 + 0.0015]} receiveShadow>
         <boxGeometry args={[w, h, 0.003]} />
-        <meshStandardMaterial color="#D1D5DB" roughness={0.6} transparent={isXRayMode} opacity={op} />
+        <meshStandardMaterial color="#D1D5DB" roughness={0.6} transparent={isXRayMode} opacity={isXRayMode ? 0.3 : 1.0} />
       </mesh>
 
       {/* 🪚 Internal Adjustable Shelving Cluster */}
