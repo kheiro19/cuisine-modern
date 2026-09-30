@@ -1,4 +1,3 @@
-/* src/index.css */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -14,8 +13,8 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
-
-  /* Prevent accidental textual selections while dragging kitchen nodes in 2D Viewport */
+  
+  /* منع اهتزاز المتصفح أثناء سحب الخزائن في الـ 2D والـ 3D */
   .touch-none {
     -webkit-user-select: none;
     -moz-user-select: none;
@@ -25,14 +24,22 @@
 }
 
 @layer utilities {
-  /* Ultra-smooth custom easing for hardware loaders and dialog expansion */
   .animate-fade-in {
     animation: fadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 }
 
-/* Customize active blueprint tracking sliders to mirror professional CAD workstations */
-input[type="range"]::-webkit-slider-thumb {
+/* تنسيق شريط التمرير الحركي الفاخر والمخفي للألوان */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* تنسيق الأزرار الدائرية ومؤشرات الحركة */
+input[type='range']::-webkit-slider-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -40,7 +47,6 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
   transition: transform 0.1s ease;
 }
-
-input[type="range"]::-webkit-slider-thumb:hover {
+input[type='range']::-webkit-slider-thumb:hover {
   transform: scale(1.15);
 }
