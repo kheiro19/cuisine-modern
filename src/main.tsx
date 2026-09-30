@@ -1,9 +1,8 @@
-// src/main.tsx
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import { FurnitureProvider } from './context/FurnitureContext';
-import './index.css'; // Direct Tailwind CSS imports handler
+import './index.css'; // 👈 هذا هو السطر السحري الذي قمنا بحقنه وتثبيته الآن
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -12,3 +11,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     </FurnitureProvider>
   </React.StrictMode>
 );
+
