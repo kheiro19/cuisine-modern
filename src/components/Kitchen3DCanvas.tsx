@@ -30,12 +30,10 @@ export default function Kitchen3DCanvas({
 }: Kitchen3DCanvasProps) {
   
   const [openProgress, setOpenProgress] = useState<number>(0);
-  
-  // 🎭 Luxury UI Architecture: High-End Floating State Controllers
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<'local' | 'cloud'>('local');
 
-  // Simulated mapping representing your 400 multi-format premium textures library (.webp/.jpg)
+  // Simulated dataset index representing your 400 premium multi-format textures
   const local400Library = useMemo(() => {
     return Array.from({ length: 24 }, (_, i) => ({
       id: `loc_tex_${i + 1}`,
@@ -45,17 +43,15 @@ export default function Kitchen3DCanvas({
     }));
   }, []);
 
-  // Elite cloud catalog powered by international open-source unblockable links (Egger & AGT specs)
+  // Elite cloud catalog powered by unblockable backup server links
   const cloudGlobalCatalog = useMemo(() => {
     return [
       { id: 'c_tex_1', name: 'Premium Royal Oak', path: 'https://githubusercontent.com', finish: 'Embossed Wood Grain' },
-      { id: 'c_tex_2', name: 'Polished Concrete Block', path: 'https://githubusercontent.com', finish: 'Material Imitation' },
-      { id: 'c_tex_3', name: 'Staturio Italian Marble', path: 'https://githubusercontent.com', finish: 'Material Imitation' }
+      { id: 'c_tex_2', name: 'Polished Concrete Block', path: 'https://githubusercontent.com', finish: 'Material Imitation' }
     ];
   }, []);
 
   const activeCollection = activeSource === 'local' ? local400Library : cloudGlobalCatalog;
-
   const baseCabinets = useMemo(() => cabinets.filter(c => c.category === 'BASE_UNIT'), [cabinets]);
   const maxBoundaryXMm = useMemo(() => cabinets.length > 0 ? Math.max(...cabinets.map(c => c.positionX + c.width)) : 1200, [cabinets]);
   const sceneWidthMeters = maxBoundaryXMm / 1000;
@@ -68,7 +64,7 @@ export default function Kitchen3DCanvas({
 
     if (countertopPath && countertopPath.length > 1) {
       const contour = new THREE.Shape();
-      contour.moveTo(countertopPath.x / 1000, countertopPath.zOffset / 1000);
+      contour.moveTo(countertopPath[0].x / 1000, countertopPath[0].zOffset / 1000);
       countertopPath.forEach((vertex) => contour.lineTo(vertex.x / 1000, vertex.zOffset / 1000));
       contour.lineTo(sceneWidthMeters, -depthMeters);
       contour.lineTo(0, -depthMeters);
@@ -82,10 +78,13 @@ export default function Kitchen3DCanvas({
   return (
     <div className="w-full h-full min-h-[580px] bg-[#FAF9F6] rounded-xl overflow-hidden relative flex flex-col shadow-inner select-none">
       
-      {/* 🎮 Discrete Kinematic Simulation Handle */}
-      <div className="absolute top-3 left-3 z-30 bg-white/80 backdrop-blur border border-[#E5E5E5] px-4 py-2 rounded-xl flex flex-col space-y-1">
-        <span className="text-[9px] font-mono font-bold text-slate-500 tracking-wider">KINEMATIC KINETICS</span>
-        <input type="range" min="0" max="1" step="0.01" value={openProgress} onChange={(e) => setOpenProgress(parseFloat(e.target.value))} className="w-32 h-1 cursor-pointer accent-indigo-600 appearance-none bg-slate-200 rounded" />
+      {/* 🎮 Kinematic Motion Simulation Overlay Control */}
+      <div className="absolute top-3 left-3 z-30 bg-white/80 backdrop-blur border border-[#E5E5E5] px-4 py-2.5 rounded-xl shadow-xs flex flex-col space-y-1.5 min-w-[220px]">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] font-mono font-bold text-slate-800 tracking-wider">🎛️ KINEMATIC SIMULATION</span>
+          <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">{Math.round(openProgress * 100)}%</span>
+        </div>
+        <input type="range" min="0" max="1" step="0.01" value={openProgress} onChange={(e) => setOpenProgress(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
       </div>
 
       {/* 🧊 Three.js Spatial Layer Viewport */}
@@ -118,8 +117,9 @@ export default function Kitchen3DCanvas({
                 );
               })}
 
+              {/* Countertop Mesh Block */}
               {baseCabinets.length > 0 && structuralCountertop && (
-                <mesh geometry={structuralCountertop} position={countertopPath && countertopPath.length > 1 ? [0, 720 / 1000, 0] : [sceneWidthMeters / 2, 720 / 1000 + 0.02, -Math.max(...baseCabinets.map(c => c.depth)) / 2000]} rotation={countertopPath && countertopPath.length > 1 ? [Math.PI / 2, 0, 0] :} castShadow receiveShadow>
+                <mesh geometry={structuralCountertop} position={[sceneWidthMeters / 2, 720 / 1000 + 0.02, -0.3]} castShadow receiveShadow>
                   <meshStandardMaterial color="#FFFFFF" roughness={0.2} metalness={0.0} transparent={isXRayMode} opacity={isXRayMode ? 0.35 : 1.0} />
                 </mesh>
               )}
@@ -135,23 +135,25 @@ export default function Kitchen3DCanvas({
       {selectedCabinetId && (
         <div className="absolute bottom-4 left-4 right-4 z-40 bg-white/70 backdrop-blur-xl border border-white/40 p-3.5 rounded-2xl shadow-xl flex flex-col space-y-2.5 animate-fade-in">
           
-                    {/* Header Segment: Silent Architecture Tabs Layout */}
+          {/* Header Segment: Silent Architecture Tabs Layout */}
           <div className="flex justify-between items-center border-b border-slate-200/40 pb-2">
             <div className="flex items-center space-x-4">
               <button 
+                type="button"
                 onClick={() => setActiveSource('local')}
                 className={`flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase cursor-pointer transition-all border-b-2 ${activeSource === 'local' ? 'border-indigo-600 text-indigo-600 scale-102' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
               >
                 <span>📂</span> <span>Workshop Matrix ({local400Library.length}+)</span>
               </button>
               <button 
+                type="button"
                 onClick={() => setActiveSource('cloud')}
                 className={`flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase cursor-pointer transition-all border-b-2 ${activeSource === 'cloud' ? 'border-indigo-600 text-indigo-600 scale-102' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
               >
                 <span>🌐</span> <span>Cloud Factories Link</span>
               </button>
             </div>
-            <button onClick={() => setSelectedCabinetId(null)} className="w-5 h-5 rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-[9px] transition-colors cursor-pointer">✕</button>
+            <button type="button" onClick={() => setSelectedCabinetId(null)} className="w-5 h-5 rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-[9px] transition-colors cursor-pointer">✕</button>
           </div>
 
           {/* Endless Fluid Micro-interaction Horizontal Strip Panel */}
@@ -161,7 +163,7 @@ export default function Kitchen3DCanvas({
                 key={tex.id}
                 onClick={() => {
                   onApplyTextureOverride(selectedCabinetId, tex.path, tex.finish);
-                  setSelectedCabinetId(null); // Smooth auto-minimize on execution
+                  setSelectedCabinetId(null);
                 }}
                 className="flex-shrink-0 w-14 h-14 rounded-xl border border-slate-200/60 overflow-hidden cursor-pointer hover:border-indigo-600 hover:scale-105 active:scale-95 transition-all bg-white/40 shadow-3xs relative group snap-center"
               >
@@ -169,7 +171,6 @@ export default function Kitchen3DCanvas({
                   src={tex.path} 
                   alt={tex.name}
                   onError={(e) => {
-                    // Safe-Fail Matrix System: instantly re-routes link to secure web repo if network blocks occur
                     (e.target as HTMLImageElement).src = 'https://githubusercontent.com';
                   }}
                   className="w-full h-full object-cover" 
