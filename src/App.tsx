@@ -318,23 +318,37 @@ export default function App() {
             </div>
           </div>
         </div>
-
         {/* Right Side: Configuration Insertion Form & Production Logs */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 block">Unit Category</label>
-              <select value={cabCategory} onChange={(e) => setCabCategory(e.target.value as CabinetCategory)} className="w-full border bg-white rounded-md p-1 focus:outline-none"><option value="BASE_UNIT">Base Unit (Caisson Bas)</option><option value="WALL_UNIT">Wall Unit (Caisson Haut المعلق)</option></select>
+              <select value={cabCategory} onChange={(e) => setCabCategory(e.target.value as CabinetCategory)} className="w-full border bg-white rounded-md p-1 focus:outline-none">
+                <option value="BASE_UNIT">Base Unit (Caisson Bas)</option>
+                <option value="WALL_UNIT">Wall Unit (Caisson Haut المعلق)</option>
+              </select>
             </div>
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 block">Facade Overlay Opening Type</label>
-              <select value={openingType} onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)} className="w-full border bg-white rounded-md p-1 focus:outline-none"><option value="DOORS">Swing Open Doors (أبواب)</option><option value="DRAWERS">Slide Extension Drawers (أدراج)</option><option value="NONE">Open Caisson Layout (بدون واجهة)</option></select>
+              <select value={openingType} onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)} className="w-full border bg-white rounded-md p-1 focus:outline-none">
+                <option value="DOORS">Swing Open Doors (أبواب)</option>
+                <option value="DRAWERS">Slide Extension Drawers (أدراج)</option>
+                <option value="NONE">Open Caisson Layout (بدون واجهة)</option>
+              </select>
             </div>
             {openingType !== 'NONE' && (
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[10px] font-bold text-gray-400 block mb-0.5">Count</label><input type="number" min="1" max="4" value={elementCount} onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))} className="w-full border rounded-md p-0.5 text-center font-bold" /></div>
-                {cabCategory === 'BASE_UNIT' && <div className="flex flex-col justify-center items-center pt-3"><label className="text-[9px] font-bold text-slate-400 block mb-0.5">Gola</label><input type="checkbox" checked={hasGola} onChange={(e) => setHasGola(e.target.checked)} className="rounded cursor-pointer w-4 h-4 text-indigo-600" /></div>}
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-0.5">Count</label>
+                  <input type="number" min="1" max="4" value={elementCount} onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))} className="w-full border rounded-md p-0.5 text-center font-bold" />
+                </div>
+                {cabCategory === 'BASE_UNIT' && (
+                  <div className="flex flex-col justify-center items-center pt-3">
+                    <label className="text-[9px] font-bold text-slate-400 block mb-0.5">Gola</label>
+                    <input type="checkbox" checked={hasGola} onChange={(e) => setHasGola(e.target.checked)} className="rounded cursor-pointer w-4 h-4 text-indigo-600" />
+                  </div>
+                )}
               </div>
             )}
             <button onClick={handleCreateCabinetNode} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg cursor-pointer text-center text-xs shadow-xs">➕ Construct & Insert Cabinet</button>
@@ -353,13 +367,21 @@ export default function App() {
           </div>
         </div>
 
-      {/* Terminal Output Console */}
+      </div> {/* 🔒 إغلاق شبكة الـ Grid الرئيسية الحاكمة للأعمدة الأربعة */}
+
+      {/* 📄 Terminal Output Console البث المباشر للتقارير والتقطيع */}
       {(bomReportText || invoiceText) && (
         <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
+          <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              {bomReportText ? 'Industrial cutting BOM Terminal Output' : 'Commercial customer invoice Terminal Output'}
+            </span>
+            <button onClick={() => { setBomReportText(''); setInvoiceText(''); }} className="text-slate-400 hover:text-white font-bold text-xs p-1">✕ Clear Output</button>
+          </div>
           <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{bomReportText || invoiceText}</pre>
         </div>
       )}
 
-    </div>
+    </div> {/* 🔒 إغلاق الحاوية الكلية للموقع الشامل الفاخر App */}
   );
 }
