@@ -106,7 +106,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
         { id: 'shelf-universal', name: 'رف تخزين داخلية عام', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: thk, depth: global.depth - 20 }, position: { x: thk + 2, y: global.height / 2, z: 10 }, materialThickness: thk, color: '#d9a773' }
       ];
   }
-};
+
 
 export default function App() {
   const {
