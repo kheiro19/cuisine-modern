@@ -4,10 +4,10 @@ import { useFurniture } from '../context/FurnitureContext';
 import { HardwareCategory } from '../types/flatma';
 
 export default function InventoryManager() {
-  const { inventory, addWoodMaterial, addHardwareItem } = useFurniture();
+  const { inventory, addWoodMaterial, addHardwareItem, addEdgeBandRoll } = useFurniture();
 
   // ========================================================
-  // 🪵 🔒 الـ 6 قوائم الأصلية والمقدسة للألواح بدون أي تغيير أو نقصان
+  // 🪵 🔒 LES 6 GRILLES DOCTRINALES ET COMPLÈTES SANS AUCUNE MODIFICATION
   // ========================================================
   
   // 1. Full Wood Panels Suppliers & Brands List (23 Complete Options)
@@ -47,7 +47,7 @@ export default function InventoryManager() {
     "Postformed HPL Countertop Block", "Glass Door with Aluminum Profile"
   ]);
 
-  // 4. Full Wood Thicknesses Grid (23 Complete Options: 3mm to 25mm)
+  // 4. Full Wood Thicknesses Grid (23 Complete Options: 3mm to 25mm Re-Hydrated)
   const [thicknessList, setThicknessList] = useState<number[]>(
     Array.from({ length: 23 }, (_, i) => i + 3)
   );
@@ -63,7 +63,7 @@ export default function InventoryManager() {
   );
 
   // ========================================================
-  // ⚙️ الأنظمة الـ 5 الميكانيكية الكاملة والمنسدلة للإكسسوارات
+  // ⚙️ LES 5 SOUS-SYSTÈMES INTERNES DE QUINCAILLERIE STANDARDISÉS
   // ========================================================
   const hardwareSystemsRegistry: Record<HardwareCategory, string[]> = useMemo(() => ({
     'Cabinet Hinges': [
@@ -99,15 +99,18 @@ export default function InventoryManager() {
   const [selectedFinish, setSelectedFinish] = useState<string>("MDF Melamine Matt");
   const [selectedDimensionLabel, setSelectedDimensionLabel] = useState<string>("2800 x 2070 mm");
   const [woodThickness, setWoodThickness] = useState<number>(18);
-  const [edgeThickness, setEdgeThickness] = useState<number>(2);
-  const [edgeWidth, setEdgeWidth] = useState<number>(22);
   const [woodQty, setWoodQty] = useState<string>('10');
   const [woodPrice, setWoodPrice] = useState<string>('15000');
 
+  // Chants PVC Autonomous States
+  const [selectedEdgeBrand, setSelectedEdgeBrand] = useState<string>("PANO ALGERIE (PDA)");
+  const [selectedEdgeThickness, setSelectedEdgeThickness] = useState<number>(2);
+  const [selectedEdgeWidth, setSelectedEdgeWidth] = useState<number>(22);
+  const [edgeRollLength, setEdgeRollLength] = useState<string>('100');
+  const [edgeRollPrice, setEdgeRollPrice] = useState<string>('4500');
+
   const [selectedHwCategory, setSelectedHwCategory] = useState<HardwareCategory>('Cabinet Hinges');
   const [selectedHwBrand, setSelectedHwBrand] = useState<string>("BLUM (Austria)");
-  
-  // Custom local mutations for runtime expanding tracking
   const [customHwModels, setCustomHwModels] = useState<Record<string, string[]>>({});
   
   const currentAvailableModels = useMemo(() => {
@@ -128,7 +131,7 @@ export default function InventoryManager() {
   const [hwPrice, setHwPrice] = useState<string>('500');
 
   // ========================================================
-  // ⚡ INLINE INPUT FIELDS CONTROLLERS (حقول الإدخال النحيفة أسفل القوائم)
+  // ⚡ INLINE INPUT FIELDS CONTROLLERS (Niveaux de saisie épurés)
   // ========================================================
   const [newBrandInput, setNewBrandInput] = useState<string>('');
   const [showBrandInput, setShowBrandInput] = useState<boolean>(false);
@@ -154,10 +157,10 @@ export default function InventoryManager() {
   const [showHwModelInput, setShowHwModelInput] = useState<boolean>(false);
 
   const [woodExpanded, setWoodExpanded] = useState<boolean>(true);
+  const [edgeExpanded, setEdgeExpanded] = useState<boolean>(true);
   const [hardwareExpanded, setHardwareExpanded] = useState<boolean>(true);
 
   // ========================================================
-   
   // 🧪 INLINE MUTATION INJECTION UTILITIES
   // ========================================================
   const handleAddNewBrand = () => {
@@ -166,6 +169,7 @@ export default function InventoryManager() {
     setSupplierList([...supplierList, val]);
     setSelectedBrand(val);
     setSelectedHwBrand(val);
+    setSelectedEdgeBrand(val);
     setNewBrandInput('');
     setShowBrandInput(false);
   };
@@ -203,8 +207,8 @@ export default function InventoryManager() {
     const val = parseFloat(newEdgeThInput);
     if (isNaN(val) || val <= 0) return;
     setEdgeThicknessList([...edgeThicknessList, val].sort((a, b) => a - b));
-    setEdgeThickness(val);
-    setNewEdgeThicknessInput('');
+    setSelectedEdgeThickness(val);
+    setNewEdgeThInput('');
     setShowEdgeThicknessInput(false);
   };
 
@@ -212,8 +216,8 @@ export default function InventoryManager() {
     const val = parseInt(newEdgeWInput, 10);
     if (isNaN(val) || val <= 0) return;
     setEdgeWidthList([...edgeWidthList, val].sort((a, b) => a - b));
-    setEdgeWidth(val);
-    setNewEdgeWidthInput('');
+    setSelectedEdgeWidth(val);
+    setNewEdgeWInput('');
     setShowEdgeWidthInput(false);
   };
 
@@ -228,7 +232,7 @@ export default function InventoryManager() {
   };
 
   // ========================================================
-  // 🏭 CORE SUBMISSION HANDLING PIPELINES
+  // 🏭 CORE SUBMISSIONS FORM EXECUTION
   // ========================================================
   const submitWoodToStock = (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,7 +241,7 @@ export default function InventoryManager() {
     const matchedSize = sizeList.find(s => s.label === selectedDimensionLabel);
 
     if (isNaN(parsedQty) || parsedQty <= 0 || isNaN(parsedPrice) || parsedPrice <= 0 || !matchedSize) {
-      alert("⚠️ Workshop Input Guard: Verify valid mathematical sizes, quantities and pricing values.");
+      alert("⚠️ Input Warning: Please state precise mathematical panel values.");
       return;
     }
 
@@ -248,13 +252,35 @@ export default function InventoryManager() {
       widthSheet: matchedSize.w,
       heightSheet: matchedSize.h,
       thickness: woodThickness,
-      edgeThickness,
-      edgeWidth,
+      edgeThickness: 0, 
+      edgeWidth: 0,
       quantityIncoming: parsedQty,
       averagePriceDA: parsedPrice
     });
 
-    alert("🪵 Custom sheet panel allocation successfully loaded into stockroom storage.");
+    alert("🪵 Sheet panel successfully stored.");
+  };
+
+  const submitEdgeToStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedLength = parseInt(edgeRollLength, 10);
+    const parsedPrice = parseFloat(edgeRollPrice);
+
+    if (isNaN(parsedLength) || parsedLength <= 0 || isNaN(parsedPrice) || parsedPrice <= 0) {
+      alert("⚠️ Input Warning: Correct the Edge Band PVC numerical measurements.");
+      return;
+    }
+
+    addEdgeBandRoll({
+      id: `edge_${Date.now()}`,
+      brand: selectedEdgeBrand,
+      thickness: selectedEdgeThickness,
+      width: selectedEdgeWidth,
+      totalLengthMeters: parsedLength,
+      rollPriceDA: parsedPrice
+    });
+
+    alert("📋 Autonomous Edge Band PVC Roll registered into storage lines.");
   };
 
   const submitHardwareToStock = (e: React.FormEvent) => {
@@ -263,7 +289,7 @@ export default function InventoryManager() {
     const parsedPrice = parseFloat(hwPrice);
 
     if (isNaN(parsedQty) || parsedQty <= 0 || isNaN(parsedPrice) || parsedPrice <= 0) {
-      alert("⚠️ Workshop Input Guard: Invalid numerical data fields inside hardware registry submission.");
+      alert("⚠️ Input Warning: Hardware fields reject zero quantities.");
       return;
     }
 
@@ -276,7 +302,7 @@ export default function InventoryManager() {
       pricePerUnitDA: parsedPrice
     });
 
-    alert("⚙️ Mechanical component batch safely integrated into production lanes.");
+    alert("⚙️ Mechanical quincallerie integrated successfully.");
   };
 
   return (
@@ -291,12 +317,10 @@ export default function InventoryManager() {
 
         {woodExpanded && (
           <form onSubmit={submitWoodToStock} className="p-3.5 space-y-3 text-left">
-            
-            {/* Brands Selection dropdown */}
             <div className="space-y-1">
               <div className="flex justify-between items-center">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Sheet Supplier / Manufacturer</label>
-                <button type="button" onClick={() => { setShowBrandInput(!showBrandInput); }} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Sheet Supplier</label>
+                <button type="button" onClick={() => setShowBrandInput(!showBrandInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
               </div>
               <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
                 {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
@@ -309,10 +333,9 @@ export default function InventoryManager() {
               )}
             </div>
 
-            {/* Core materials dropdown */}
             <div className="space-y-1">
               <div className="flex justify-between items-center">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Core Core Material & Finish Finish</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Core Material & Finish</label>
                 <button type="button" onClick={() => setShowFinishInput(!showFinishInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
               </div>
               <select value={selectedFinish} onChange={(e) => setSelectedFinish(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
@@ -326,7 +349,6 @@ export default function InventoryManager() {
               )}
             </div>
 
-                        {/* Industrial dimensions dropdown */}
             <div className="space-y-1">
               <div className="flex justify-between items-center">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Sheet Dimension Format Layout</label>
@@ -338,70 +360,35 @@ export default function InventoryManager() {
               {showDimensionInput && (
                 <div className="flex flex-col space-y-1 pt-1 p-2 border bg-slate-50/50 rounded-lg animate-fade-in">
                   <div className="flex items-center space-x-2">
-                    <input type="number" placeholder="Width (mm)" value={newDimW} onChange={(e) => setNewDimW(e.target.value)} className="w-24 border rounded p-1 text-center font-bold" />
+                    <input type="number" placeholder="W" value={newDimW} onChange={(e) => setNewDimW(e.target.value)} className="w-20 border rounded p-1 text-center font-bold" />
                     <span className="font-bold text-slate-400">x</span>
-                    <input type="number" placeholder="Height (mm)" value={newDimH} onChange={(e) => setNewDimH(e.target.value)} className="w-24 border rounded p-1 text-center font-bold" />
+                    <input type="number" placeholder="H" value={newDimH} onChange={(e) => setNewDimH(e.target.value)} className="w-20 border rounded p-1 text-center font-bold" />
                     <button type="button" onClick={handleAddNewDimension} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Sizing Grid Parameters Component */}
-            <div className="grid grid-cols-3 gap-2 relative">
-              <div>
-                <div className="flex justify-between items-center mb-0.5">
-                  <label className="text-[9px] font-bold text-slate-400 block">Thickness</label>
-                  <button type="button" onClick={() => setShowThicknessInput(!showThicknessInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
-                </div>
-                <select value={woodThickness} onChange={(e) => setWoodThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
-                  {thicknessList.map((t, i) => <option key={i} value={t}>{t} mm</option>)}
-                </select>
-                {showThicknessInput && (
-                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50">
-                    <input type="number" placeholder="mm" value={newThicknessInput} onChange={(e) => setNewThicknessInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
-                    <button type="button" onClick={handleAddNewThickness} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
-                  </div>
-                )}
+            <div>
+              <div className="flex justify-between items-center mb-0.5">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Panel Thickness</label>
+                <button type="button" onClick={() => setShowThicknessInput(!showThicknessInput)} className="text-indigo-600 font-bold text-xs">＋ Add New</button>
               </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-0.5">
-                  <label className="text-[9px] font-bold text-slate-400 block">Edge PVC (T)</label>
-                  <button type="button" onClick={() => setShowEdgeThicknessInput(!showEdgeThInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
+              <select value={woodThickness} onChange={(e) => setWoodThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-bold text-center">
+                {thicknessList.map((t, i) => <option key={i} value={t}>{t} mm</option>)}
+              </select>
+              {showThicknessInput && (
+                <div className="flex items-center space-x-2 pt-1 animate-fade-in">
+                  <input type="number" placeholder="mm" value={newThicknessInput} onChange={(e) => setNewThicknessInput(e.target.value)} className="w-24 border rounded p-1 text-center font-bold" />
+                  <button type="button" onClick={handleAddNewThickness} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
                 </div>
-                <select value={edgeThickness} onChange={(e) => setEdgeThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
-                  {edgeThicknessList.map((et, i) => <option key={i} value={et}>{et} mm</option>)}
-                </select>
-                {showEdgeThInput && (
-                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50">
-                    <input type="number" step="0.1" placeholder="mm" value={newEdgeThInput} onChange={(e) => setNewEdgeThInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
-                    <button type="button" onClick={handleAddNewEdgeThickness} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <div className="flex justify-between items-center mb-0.5">
-                  <label className="text-[9px] font-bold text-slate-400 block">Edge PVC (W)</label>
-                  <button type="button" onClick={() => setShowEdgeWidthInput(!showEdgeWInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
-                </div>
-                <select value={edgeWidth} onChange={(e) => setEdgeWidth(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
-                  {edgeWidthList.map((ew, i) => <option key={i} value={ew}>{ew} mm</option>)}
-                </select>
-                {showEdgeWInput && (
-                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50 right-0">
-                    <input type="number" placeholder="mm" value={newEdgeWInput} onChange={(e) => setNewEdgeWidthInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
-                    <button type="button" onClick={handleAddNewEdgeWidth} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
-            {/* Quantity Controls */}
+             {/* Quantity Controls */}
             <div className="grid grid-cols-2 gap-3 font-mono">
               <div>
-                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Sheets Incoming</label>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Sheets</label>
                 <input type="number" value={woodQty} onChange={(e) => setWoodQty(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
               </div>
               <div>
@@ -417,7 +404,75 @@ export default function InventoryManager() {
         )}
       </div>
 
-      {/* ⚙️ COMPONENT 2: Hardware Accessories Loader Section */}
+      {/* 📋 COMPONENT 2: Autonomous Edge Band PVC Roll Loader Section */}
+      <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs">
+        <button type="button" onClick={() => setEdgeExpanded(!edgeExpanded)} className="w-full bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/60 flex justify-between items-center font-bold text-slate-800">
+          <span>📋 Edge Band Roll Loader (مخزون شريط الحواف المستقل)</span>
+          <span>{edgeExpanded ? '▼' : '▶'}</span>
+        </button>
+
+        {edgeExpanded && (
+          <form onSubmit={submitEdgeToStock} className="p-3.5 space-y-3 text-left">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Edge Band Supplier</label>
+              <select value={selectedEdgeBrand} onChange={(e) => setSelectedEdgeBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Edge PVC (T)</label>
+                  <button type="button" onClick={() => setShowEdgeThicknessInput(!showEdgeThInput)} className="text-indigo-600 font-bold text-xs">＋</button>
+                </div>
+                <select value={selectedEdgeThickness} onChange={(e) => setSelectedEdgeThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-bold text-center">
+                  {edgeThicknessList.map((et, i) => <option key={i} value={et}>{et} mm</option>)}
+                </select>
+                {showEdgeThInput && (
+                  <div className="flex items-center space-x-1 pt-1 animate-fade-in">
+                    <input type="number" step="0.1" placeholder="mm" value={newEdgeThInput} onChange={(e) => setNewEdgeThInput(e.target.value)} className="w-16 border rounded p-0.5 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewEdgeThickness} className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">✓</button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Edge PVC (W)</label>
+                  <button type="button" onClick={() => setShowEdgeWidthInput(!showEdgeWInput)} className="text-indigo-600 font-bold text-xs">＋</button>
+                </div>
+                <select value={selectedEdgeWidth} onChange={(e) => setSelectedEdgeWidth(Number(e.target.value))} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-bold text-center">
+                  {edgeWidthList.map((ew, i) => <option key={i} value={ew}>{ew} mm</option>)}
+                </select>
+                {showEdgeWInput && (
+                  <div className="flex items-center space-x-1 pt-1 animate-fade-in">
+                    <input type="number" placeholder="mm" value={newEdgeWInput} onChange={(e) => setNewEdgeWidthInput(e.target.value)} className="w-16 border rounded p-0.5 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewEdgeWidth} className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">✓</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 font-mono">
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Roll Total Meters (m)</label>
+                <input type="number" value={edgeRollLength} onChange={(e) => setEdgeRollLength(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
+              </div>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Roll Price (DA)</label>
+                <input type="number" value={edgeRollPrice} onChange={(e) => setEdgeRollPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
+              </div>
+            </div>
+
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition-all shadow-xs cursor-pointer text-center">
+              Load Edge Band PVC Roll to Stock
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* ⚙️ COMPONENT 3: Hardware Accessories Loader Section */}
       <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs">
         <button type="button" onClick={() => setHardwareExpanded(!hardwareExpanded)} className="w-full bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/60 flex justify-between items-center font-bold text-slate-800">
           <span>⚙️ Hardware Accessories Loader (الأنظمة الـ 5 الميكانيكية)</span>
@@ -426,31 +481,26 @@ export default function InventoryManager() {
 
         {hardwareExpanded && (
           <form onSubmit={submitHardwareToStock} className="p-3.5 space-y-3 text-left">
-            
-            {/* Category selection */}
             <div>
               <label className="text-[10px] font-bold text-slate-400 block mb-1">System Kinematic Category</label>
               <select value={selectedHwCategory} onChange={(e) => setSelectedHwCategory(e.target.value as HardwareCategory)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
-                <option value="Cabinet Hinges">📁 1. Cabinet Hinges System (مفصلات أبواب)</option>
+                <option value="Cabinet Hinges">⚙️ 1. Cabinet Hinges System (مفصلات أبواب)</option>
                 <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
                 <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
                 <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
-                <option value="Assembly Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
+                               <option value="Assembly Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
               </select>
             </div>
 
-            {/* Brand/Supplier decoupled selector */}
+            {/* Hardware Manufacturer Brand */}
             <div className="space-y-1">
-              <div className="flex justify-between items-center">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Hardware Brand / Supplier</label>
-                <button type="button" onClick={() => setShowBrandInput(!showBrandInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
-              </div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Hardware Manufacturer Brand</label>
               <select value={selectedHwBrand} onChange={(e) => setSelectedHwBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
                 {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
               </select>
             </div>
 
-                        {/* Model Sub-dropdown selection */}
+            {/* Specification Model Name */}
             <div className="space-y-1">
               <div className="flex justify-between items-center">
                 <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Specification Model Name</label>
@@ -486,16 +536,16 @@ export default function InventoryManager() {
         )}
       </div>
 
-      {/* 🔮 COMPONENT 3: Terminal View */}
+      {/* 🔮 COMPONENT 4: Terminal Stockroom View */}
       <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs text-left">
         <div className="bg-slate-900 text-slate-100 px-4 py-2.5 flex justify-between items-center font-bold font-sans">
           <span>🔮 Real-Time Workshop Stockroom Terminal</span>
         </div>
         
         <div className="p-3 max-h-52 overflow-y-auto space-y-2">
-          {inventory.woodPanels.length === 0 && inventory.hardwareItems.length === 0 && (
+          {inventory.woodPanels.length === 0 && inventory.hardwareItems.length === 0 && inventory.edgeBandRolls?.length === 0 && (
             <div className="text-center py-6 text-slate-400 font-mono text-[11px] border border-dashed border-slate-200 rounded-lg">
-              Inventory stock is currently empty.<br />Please insert components above.
+              Inventory stock is currently empty.<br />Please insert raw components above.
             </div>
           )}
 
@@ -508,6 +558,19 @@ export default function InventoryManager() {
               <div className="text-right">
                 <span className="text-indigo-600 font-bold block">{w.quantityIncoming} Sheets</span>
                 <span className="text-emerald-600 font-bold">{w.averagePriceDA.toLocaleString()} DA</span>
+              </div>
+            </div>
+          ))}
+
+          {inventory.edgeBandRolls?.map((e) => (
+            <div key={e.id} className="border border-slate-100 p-2 rounded-lg flex justify-between items-center bg-blue-50/30 font-mono text-[11px]">
+              <div>
+                <span className="font-bold text-slate-900 font-sans block">Edge Band PVC ({e.brand})</span>
+                <span className="text-gray-400 text-[10px]">W: {e.width}mm | T: {e.thickness}mm</span>
+              </div>
+              <div className="text-right">
+                <span className="text-blue-600 font-bold block">{e.totalLengthMeters} meters</span>
+                <span className="text-emerald-600 font-bold">{e.rollPriceDA.toLocaleString()} DA</span>
               </div>
             </div>
           ))}
