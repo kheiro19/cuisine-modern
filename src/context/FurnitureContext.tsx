@@ -141,9 +141,14 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     setInventory(prev => ({ ...prev, hardwareItems: [...prev.hardwareItems, item] }));
   };
 
+    // 🔒 تصحيح المسار الهندسي لإدخال رولوهات شريط الحواف دون انهيار الشاشة
   const addEdgeBandRoll = (roll: EdgeBandRoll) => {
-    setInventory(prev => ({ ...prev, edgeBandRolls: [...prev.inventory.edgeBandRolls, roll] }));
+    setInventory(prev => ({ 
+      ...prev, 
+      edgeBandRolls: [...prev.edgeBandRolls, roll] // 👈 تم حذف .inventory الزائدة لتقرأ الذاكرة مباشرة
+    }));
   };
+
 
   // ⏱️ The Undo Execution Engine
   const triggerUndo = () => {
