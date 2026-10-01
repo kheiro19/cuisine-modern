@@ -20,52 +20,36 @@ export default function App() {
     canUndo
   } = useFurniture();
 
-  // Global fallbacks for structural configurations matching Flatma specs
+  // 📐 Luxury UI State: Controller for full viewport workspace toggle
+  const [activeTab, setActiveTab] = useState<'2D' | '3D'>('3D');
+
+  // Global settings for structural configurations matching Flatma core specs
   const [hardwareSettings] = useState({
     carcaseThickness: 18,
     frontThickness: 18,
-    wallSplashHeight: 600 // 600mm standard splash layout gap
+    wallSplashHeight: 600
   });
 
   const [countertopPath] = useState([
     { x: 0, zOffset: 0 },
-    { x: 2400, zOffset: 0 } // Straight 2.4-meter kitchen line example
+    { x: 2400, zOffset: 0 }
   ]);
 
-  const [wallGeometry] = useState({ id: 'w_main', length: 3000 }); // 3-meter boundary wall
+  const [wallGeometry] = useState({ id: 'w_main', length: 3000 });
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
 
-  // States for procedural addition forms
+  // States for procedural cabinet addition form
   const [cabCategory, setCabCategory] = useState<CabinetCategory>('BASE_UNIT');
   const [openingType, setOpeningType] = useState<FrontOpeningType>('DOORS');
   const [elementCount, setElementCount] = useState<number>(2);
   const [hasGola, setHasGola] = useState<boolean>(false);
 
-  // Commercial / Production report views triggers
+  // Commercial / Production report terminal strings
   const [bomReportText, setBomReportText] = useState<string>('');
   const [invoiceText, setInvoiceText] = useState<string>('');
 
   const handleCreateCabinetNode = () => {
-    // Spatial boundary configuration verification
-    if (inventory.woodPanels.length === 0) {
-      alert("Workshop Setup Blocked: Please inject at least one Wood Panel asset into the stockroom first.");
-      return;
-    }
-
-    const defaultCarcaseId = inventory.woodPanels.id;
-    const defaultFrontId = inventory.woodPanels.id;
-    
-    // Auto-select hinges or runners based on front layout option
-    let defaultHwId = '';
-    if (openingType === 'DOORS') {
-      const hinge = inventory.hardwareItems.find(h => h.category === 'Cabinet Hinges');
-      if (hinge) defaultHwId = hinge.id;
-    } else if (openingType === 'DRAWERS') {
-      const runner = inventory.hardwareItems.find(h => h.category === 'Drawer Slide Systems');
-      if (runner) defaultHwId = runner.id;
-    }
-
     const uniqueId = `cab_${Date.now()}`;
     const calculatedPositionX = cabinets.length > 0 
       ? Math.min(cabinets.reduce((sum, c) => sum + c.width, 0), wallGeometry.length - 600)
@@ -75,19 +59,19 @@ export default function App() {
       id: uniqueId,
       name: `${cabCategory === 'BASE_UNIT' ? 'Base' : 'Wall'} Module ${cabinets.length + 1}`,
       category: cabCategory,
-      width: 600,  // 600mm standard clean width block
-      height: cabCategory === 'BASE_UNIT' ? 720 : 900, // Standard heights
-      depth: cabCategory === 'BASE_UNIT' ? 560 : 320,  // Standard depths
+      width: 600,
+      height: cabCategory === 'BASE_UNIT' ? 720 : 900,
+      depth: cabCategory === 'BASE_UNIT' ? 560 : 320,
       positionX: calculatedPositionX,
       positionY: 0,
       positionZ: 0,
       shelvesCount: 1,
-      carcaseMaterialId: defaultCarcaseId,
-      frontMaterialId: defaultFrontId,
+      carcaseMaterialId: inventory.woodPanels[0]?.id || '',
+      frontMaterialId: inventory.woodPanels[0]?.id || '',
       frontConfig: {
         openingType,
         elementCount,
-        hardwareItemId: defaultHwId,
+        hardwareItemId: inventory.hardwareItems[0]?.id || '',
         hasGolaProfile: cabCategory === 'BASE_UNIT' && hasGola
       }
     });
@@ -110,7 +94,7 @@ export default function App() {
       return;
     }
     const report = generateFactoryBOMReport(cabinets, inventory.woodPanels, inventory.hardwareItems);
-    const invoice = generateCustomerInvoice(report, 20, 30); // 20% craftsmanship fee, 30% margin
+    const invoice = generateCustomerInvoice(report, 20, 30);
     const formattedInvoice = formatCustomerInvoiceText(invoice);
     setInvoiceText(formattedInvoice);
     setBomReportText('');
@@ -163,36 +147,60 @@ export default function App() {
           </div>
         </div>
 
-        {/* Center Canvas Viewports Terminal: The Dual Plan Viewport */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white border border-[#E4E4E7] rounded-xl overflow-hidden shadow-2xs">
-            <Kitchen2DCanvas wall={wallGeometry} />
+        {/* Center Canvas Viewports Terminal: The Dual Plan Viewport with Tab Switcher */}
+        <div className="lg:col-span-2 flex flex-col space-y-3">
+          
+          {/* 🎛️ FLUID SCREEN WORKSPACE TOGGLE (التبديل الفاخر بين المحطات الكاملة) */}
+          <div className="w-full bg-white border border-slate-200/80 p-1 rounded-xl flex items-center shadow-3xs max-w-xs mx-auto">
+            <button 
+              type="button"
+              onClick={() => setActiveTab('2D')}
+              className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 text-[11px] font-bold tracking-tight uppercase rounded-lg transition-all cursor-pointer ${activeTab === '2D' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 bg-transparent'}`}
+            >
+              <span>📐</span> <span>2D Blueprint Workshop</span>
+            </button>
+            <button 
+              type="button"
+              onClick={() => setActiveTab('3D')}
+              className={`flex-1 flex items-center justify-center space-x-1.5 py-1.5 text-[11px] font-bold tracking-tight uppercase rounded-lg transition-all cursor-pointer ${activeTab === '3D' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600 bg-transparent'}`}
+            >
+              <span>🧊</span> <span>3D Visualizer Model</span>
+            </button>
           </div>
-          <div className="bg-white border border-[#E4E4E7] rounded-xl overflow-hidden shadow-2xs">
-            <Kitchen3DCanvas 
-              cabinets={cabinets} 
-              hardware={hardwareSettings} 
-              showFronts={showFronts} 
-              isXRayMode={isXRayMode} 
-              countertopPath={countertopPath}
-              woodPanels={inventory.woodPanels}
-              hardwareItems={inventory.hardwareItems}
-              onApplyTextureOverride={(cabinetId, texturePath, finishType) => {
-                // 🚀 Instant Materials Swap Pipeline Link (Click-to-Apply Module)
-                // Re-writes the targeted node attributes dynamically in the memory stack
-                updateCabinet(cabinetId, {
-                  frontMaterialId: texturePath, // Smoothly injects chosen local/cloud file link
-                  calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0
-                });
-              }}
-            />
+
+          {/* Dynamic Window Injection Pipeline: Spreads components on Full-Width on Activation */}
+          <div className="w-full transition-all duration-300">
+            {activeTab === '2D' ? (
+              <div className="bg-white border border-[#E4E4E7] rounded-xl overflow-hidden shadow-2xs p-1 animate-fade-in w-full h-[580px]">
+                <Kitchen2DCanvas wall={wallGeometry} />
+              </div>
+            ) : (
+              <div className="bg-white border border-[#E4E4E7] rounded-xl overflow-hidden shadow-2xs p-1 animate-fade-in w-full h-[580px]">
+                <Kitchen3DCanvas 
+                  cabinets={cabinets} 
+                  hardware={hardwareSettings} 
+                  showFronts={showFronts} 
+                  isXRayMode={isXRayMode} 
+                  countertopPath={countertopPath}
+                  woodPanels={inventory.woodPanels}
+                  hardwareItems={inventory.hardwareItems}
+                  onApplyTextureOverride={(cabinetId, texturePath, finishType) => {
+                    updateCabinet(cabinetId, {
+                      frontMaterialId: texturePath,
+                      calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0
+                    });
+                  }}
+                />
+              </div>
+            )}
           </div>
+          
         </div>
 
-        {/* Right Hand Sidebar Terminal: Cabinet Node Creator & Pricing Output */}
+                {/* Right Hand Sidebar Terminal: Cabinet Node Creator & Pricing Output */}
         <div className="lg:col-span-1 space-y-3">
           
-                    {/* Parametric Assembly Insertion Form */}
+          {/* Parametric Assembly Insertion Form */}
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
             
@@ -257,7 +265,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* 📄 Terminal Console Block: Displays compiled reports layout below viewports */}
+      {/* 📄 Terminal Console Block */}
       {(bomReportText || invoiceText) && (
         <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
           <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
