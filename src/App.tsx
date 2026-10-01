@@ -117,7 +117,7 @@ export interface ComprehensiveCabinetFormState {
   boards: Board[];
 }
 
-export function App() {
+export default function App() {
   const {
     cabinets,
     inventory,
