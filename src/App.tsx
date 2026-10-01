@@ -106,7 +106,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
         { id: 'shelf-universal', name: 'رف تخزين داخلي عام', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: thk, depth: global.depth - 20 }, position: { x: thk + 2, y: global.height / 2, z: 10 }, materialThickness: thk, color: '#d9a773' }
       ];
   }
-}; // 🔒 إغلاق دالة توليد الألواح البرامترية بشكل سليم ومستقل تماماً
+};
 
 export interface ComprehensiveCabinetFormState {
   id: string;
@@ -117,6 +117,7 @@ export interface ComprehensiveCabinetFormState {
   boards: Board[];
 }
 
+// 🚀 تفعيل التصدير الافتراضي الصارم المتوافق مع ملف الإقلاع main.tsx
 export default function App() {
   const {
     cabinets,
@@ -217,6 +218,7 @@ export default function App() {
   };
 
   const handleCreateCabinetNode = () => {
+    // 🔒 جدار حماية المخزن الصارم: يمنع صناعة الخزائن كلياً إذا كان المخزون فارغاً
     if (!inventory.woodPanels || inventory.woodPanels.length === 0) {
       alert("⚠️ Workshop Production Blocked: You cannot construct cabinets while the stockroom is empty. Please inject at least one Wood Panel asset into your warehouse first.");
       return;
@@ -225,6 +227,10 @@ export default function App() {
       alert("⚠️ Mechanical Assembly Blocked: Record at least one Hardware Accessory in your stockroom first.");
       return;
     }
+
+    // 🔒 تأمين المعرفات الافتراضية بشكل جبري سليم لمنع انهيار متصفح المستخدم
+    const activeWoodId = inventory.woodPanels[0]?.id || 'default_wood_node';
+    const activeHardwareId = inventory.hardwareItems[0]?.id || '';
 
     addCabinet({
       id: `cab_${Date.now()}`,
@@ -237,9 +243,14 @@ export default function App() {
       positionY: 0,
       positionZ: 0,
       shelvesCount: parametricCabinet.boards.filter(b => b.type === 'shelf').length,
-      carcaseMaterialId: inventory.woodPanels?.id || '',
-      frontMaterialId: inventory.woodPanels?.id || '',
-      frontConfig: { openingType, elementCount, hardwareItemId: inventory.hardwareItems?.id || '', hasGolaProfile: cabCategory === 'BASE_UNIT' && hasGola }
+      carcaseMaterialId: activeWoodId,
+      frontMaterialId: activeWoodId,
+      frontConfig: { 
+        openingType, 
+        elementCount, 
+        hardwareItemId: activeHardwareId, 
+        hasGolaProfile: cabCategory === 'BASE_UNIT' && hasGola 
+      }
     });
   };
 
@@ -258,6 +269,7 @@ export default function App() {
         <div className="lg:col-span-1 space-y-3 h-full overflow-y-auto"><InventoryManager /></div>
 
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
+          {/* المحطة 1: ورشة البناء وتفكيك الألواح الـ 24 (Atomic Builder Component) */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 h-[590px] flex flex-col relative shadow-2xs font-sans text-right" style={{ direction: 'rtl' }}>
             <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded">📐 3D CONSTRUCTION WORKSPACE</span>
             
@@ -273,9 +285,11 @@ export default function App() {
 
             <button type="button" onClick={handleAddCustomBoard} className="w-full bg-teal-700 text-white font-bold py-1.5 rounded-lg text-[11px] hover:bg-teal-800 transition-colors mb-2">🔨 إضافة لوح خشب مخصص داخلي (قاطع / رف)</button>
 
+                       {/* Atomic Visualizer Box */}
             <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-60">
-              {parametricCabinet.boards.map(b => {
-                const scale = 360 / Math.max(parametricCabinet.globalDimensions.height, parametricCabinet.globalDimensions.width);
+              {parametricCabinet.boards?.map(b => {
+                const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
+                const scale = 360 / (maxDim || 1);
                 const isSelected = b.id === selectedBoardId;
                 return (
                   <div key={b.id} onClick={() => setSelectedBoardId(b.id)} className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" style={{ right: `${b.position.x * scale + 20}px`, bottom: `${b.position.y * scale + 20}px`, width: `${b.dimensions.width * scale}px`, height: `${b.dimensions.height * scale}px`, backgroundColor: b.color, borderColor: isSelected ? '#00e676' : '#1a1a1a', borderWidth: isSelected ? '3px' : '1px', opacity: isSelected ? 1 : 0.85, boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' }} title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}>
@@ -286,7 +300,7 @@ export default function App() {
             </div>
 
             <select size={3} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
-              {parametricCabinet.boards.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions.width}×{b.dimensions.height}mm)</option>)}
+              {parametricCabinet.boards?.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions.width}×{b.dimensions.height}mm)</option>)}
             </select>
 
             {selectedBoard && (
@@ -297,7 +311,7 @@ export default function App() {
                   H: <input type="number" value={selectedBoard.dimensions.height} onChange={(e) => handleUpdateBoardDimensions(selectedBoard.id, 'height', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5" />
                 </div>
                 <div>
-                                    <span className="font-bold text-slate-700 block mb-0.5">📍 محاور الإزاحة الفراغية:</span>
+                  <span className="font-bold text-slate-700 block mb-0.5">📍 محاور الإزاحة الفراغية:</span>
                   X: <input type="number" value={selectedBoard.position.x} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'x', Number(e.target.value))} className="w-12 border p-0.5 text-center" />
                   Y: <input type="number" value={selectedBoard.position.y} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'y', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5" />
                   <button type="button" onClick={() => { setParametricCabinet(p => ({ ...p, boards: p.boards.filter(b => b.id !== selectedBoard.id) })); setSelectedBoardId(null); }} className="text-red-600 font-bold block mt-1 hover:underline">🗑️ حذف اللوح</button>
