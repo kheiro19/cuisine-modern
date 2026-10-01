@@ -1,19 +1,17 @@
 // src/components/InventoryManager.tsx
-
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useFurniture } from '../context/FurnitureContext';
 import { HardwareCategory } from '../types/flatma';
 
 export default function InventoryManager() {
-  const { inventory, injectWoodPanel, injectHardwareItem } = useFurniture();
+  const { inventory, addWoodMaterial, addHardwareItem } = useFurniture();
 
-  // --- UI Accordion Toggle Controls (Flatma Style) ---
-  const [isWoodOpen, setIsWoodOpen] = useState<boolean>(true);
-  const [isHwOpen, setIsHwOpen] = useState<boolean>(false);
-  const [isStockOpen, setIsStockOpen] = useState<boolean>(false);
-
-  // --- 🔒 1. Full Wood Panels Suppliers & Brands List (23 Complete Options) ---
-  const [supplierList, setSupplierList] = useState([
+  // ========================================================
+  // 🪵 🔒 الـ 6 قوائم الأصلية والمقدسة للألواح بدون أي تغيير أو نقصان
+  // ========================================================
+  
+  // 1. Full Wood Panels Suppliers & Brands List (23 Complete Options)
+  const [supplierList, setSupplierList] = useState<string[]>([
     "PANO ALGERIE (PDA)", "AGT (Turkey)", "EGGER (Austria)", "ALVIC (Spain)", 
     "GHAMOUD PAN (Algeria)", "KRONOSPAN (Global)", "KRONOSWISS (Switzerland)", "CLEAF (Italy)", 
     "SAVIOLA (Italy)", "KASTAMONU (Turkey)", "SALICE (Italy)", "BLUM (Austria)",
@@ -22,7 +20,7 @@ export default function InventoryManager() {
     "ARPA INDUSTRIALE (Italy)", "COMPAC (Global)", "NEOLITH (Global)"
   ]);
 
-  // --- 🔒 2. Wood Panels Industry Sizes (14 Complete Dimensions Mapped) ---
+  // 2. Wood Panels Industry Sizes (14 Complete Dimensions Mapped)
   const [sizeList, setSizeList] = useState([
     { label: "4100 x 600 mm", w: 4100, h: 600 },
     { label: "4100 x 650 mm", w: 4100, h: 650 },
@@ -40,8 +38,8 @@ export default function InventoryManager() {
     { label: "2440 x 1525 mm", w: 2440, h: 1525 }
   ]);
 
-  // --- 🔒 3. Materials, Finishes & Textures Catalog (12 Complete Types for Boxes and Fronts) ---
-  const [materialTypeList, setMaterialTypeList] = useState([
+  // 3. Materials, Finishes & Textures Catalog (12 Complete Types for Boxes and Fronts)
+  const [materialTypeList, setMaterialTypeList] = useState<string[]>([
     "MDF Raw / Brute", "MDF Melamine Matt", "MDF Wood Grain / Textured", 
     "Acrylic High Gloss", "Acrylic Super Matt", "Polylac / PET Panels", 
     "UV Lacquer Finish", "Standard Particle Board / Chipboard", 
@@ -49,256 +47,484 @@ export default function InventoryManager() {
     "Postformed HPL Countertop Block", "Glass Door with Aluminum Profile"
   ]);
 
-  // --- 🔒 4. Full Wood Thicknesses Grid (23 Complete Options: 3mm to 25mm) ---
-  const [thicknessList] = useState(
+  // 4. Full Wood Thicknesses Grid (23 Complete Options: 3mm to 25mm)
+  const [thicknessList, setThicknessList] = useState<number[]>(
     Array.from({ length: 23 }, (_, i) => i + 3)
   );
 
-  // --- 🔒 5. Edge Band PVC Thicknesses (27 Complete Options: 0.4mm to 3.0mm) ---
-  const [edgeThicknessList] = useState(
+  // 5. Edge Band PVC Thicknesses (27 Complete Options: 0.4mm to 3.0mm)
+  const [edgeThicknessList, setEdgeThicknessList] = useState<number[]>(
     Array.from({ length: 27 }, (_, i) => Number((0.4 + i * 0.1).toFixed(1)))
   );
 
-  // --- 🔒 6. Edge Band PVC Widths (34 Complete Options: 12mm to 45mm) ---
-  const [edgeWidthList] = useState(
+  // 6. Edge Band PVC Widths (34 Complete Options: 12mm to 45mm)
+  const [edgeWidthList, setEdgeWidthList] = useState<number[]>(
     Array.from({ length: 34 }, (_, i) => i + 12)
   );
 
-  // --- Selected Parameter States for Panel Injection ---
-  const [selectedSupplier, setSelectedSupplier] = useState("PANO ALGERIE (PDA)");
-  const [selectedMaterial, setSelectedMaterial] = useState("MDF Melamine Matt");
-  const [selectedSizeIdx, setSelectedSizeIdx] = useState(9); // Default to 2800 x 2070 mm
-  const [selectedThickness, setSelectedThickness] = useState(18);
-  const [selectedEdgeThickness, setSelectedEdgeThickness] = useState(2.0);
-  const [selectedEdgeWidth, setSelectedEdgeWidth] = useState(22);
-  const [woodQty, setWoodQty] = useState<number>(0);
-  const [woodPrice, setWoodPrice] = useState<number>(0);
+  // ========================================================
+  // ⚙️ الأنظمة الـ 5 الميكانيكية الكاملة والمنسدلة للإكسسوارات
+  // ========================================================
+  const hardwareSystemsRegistry: Record<HardwareCategory, string[]> = useMemo(() => ({
+    'Cabinet Hinges': [
+      'Straight Hinge (Overlay)', 'Half-Crank Hinge (Half-Overlay)', 'Inset Hinge (Cranked)',
+      'Blind Corner Hinge', '45-Degree Corner Hinge', 'Pie-Corner Hinge (Corner Fold)', 'Thick Door Hinge'
+    ],
+    'Drawer Slide Systems': [
+      'Double-Wall Metal Box System', 'Hidden Under-mount Runner (Full Extension)',
+      'Hidden Under-mount Runner (Partial Extension)', 'Standard Ball Bearing Slide',
+      'Standard Roller Slide', 'Push-to-Open Heavy Duty Slides'
+    ],
+    'Overhead Lift Systems': [
+      'Bi-fold Lift System (Aventos HF)', 'Up & Over Lift System (Aventos HS)',
+      'Lift Up System (Aventos HL)', 'Stay Lift System (Aventos HK / HK-top)',
+      'Standard Gas Strut System', 'Mechanical Stay Friction Hinge'
+    ],
+    'Gola & Handle Profiles': [
+      'Horizontal Gola L-Profile (J-Profile)', 'Horizontal Gola C-Profile (Mid-Profile)',
+      'Vertical Gola Single Profile', 'Vertical Gola Double Profile',
+      'Aluminum Inset Handle Profile', 'Standard Drilling Handle'
+    ],
+    'Assembly Fixing': [
+      'Adjustable Kitchen Legs (100mm - 150mm)', 'Cabinet Hanger Plates (Heavy Duty)',
+      'Confirmated Assembly Screws (5x50mm)', 'PVC Plinth Base Board (With Rubber)',
+      'Corner Filler Profiles', 'Aluminum Sink Bottom Protector'
+    ]
+  }), []);
 
-  // --- Hardware Accessories Injection States (Linked to the 5 Industry Subsystems) ---
-  const [hwCategory, setHwCategory] = useState<HardwareCategory>('Cabinet Hinges');
-  const [hwBrand, setHwBrand] = useState('Blum (Austria)');
-  const [hwModel, setHwModel] = useState('Straight Hinge (Overlay)');
-  const [hwQty, setHwQty] = useState<number>(0);
-  const [hwPrice, setHwPrice] = useState<number>(0);
+  // ========================================================
+  // 🛠️ ACTIVE LOCAL STATE FORM SELECTORS
+  // ========================================================
+  const [selectedBrand, setSelectedBrand] = useState<string>("PANO ALGERIE (PDA)");
+  const [selectedFinish, setSelectedFinish] = useState<string>("MDF Melamine Matt");
+  const [selectedDimensionLabel, setSelectedDimensionLabel] = useState<string>("2800 x 2070 mm");
+  const [woodThickness, setWoodThickness] = useState<number>(18);
+  const [edgeThickness, setEdgeThickness] = useState<number>(2);
+  const [edgeWidth, setEdgeWidth] = useState<number>(22);
+  const [woodQty, setWoodQty] = useState<string>('10');
+  const [woodPrice, setWoodPrice] = useState<string>('15000');
 
-  const handleAddWoodToStock = () => {
-    if (woodQty <= 0 || woodPrice <= 0) {
-      alert("Validation Error: Quantity and price values must be greater than zero.");
-      return;
+  const [selectedHwCategory, setSelectedHwCategory] = useState<HardwareCategory>('Cabinet Hinges');
+  const [selectedHwBrand, setSelectedHwBrand] = useState<string>("BLUM (Austria)");
+  
+  // Custom local mutations for runtime expanding tracking
+  const [customHwModels, setCustomHwModels] = useState<Record<string, string[]>>({});
+  
+  const currentAvailableModels = useMemo(() => {
+    const defaultModels = hardwareSystemsRegistry[selectedHwCategory] || [];
+    const customModels = customHwModels[selectedHwCategory] || [];
+    return [...defaultModels, ...customModels];
+  }, [selectedHwCategory, hardwareSystemsRegistry, customHwModels]);
+
+  const [selectedHwModel, setSelectedHwModel] = useState<string>('Straight Hinge (Overlay)');
+
+  React.useEffect(() => {
+    if (currentAvailableModels.length > 0) {
+      setSelectedHwModel(currentAvailableModels[0]);
     }
-    const currentSize = sizeList[selectedSizeIdx];
-    
-    // Inject and hit Moving Average Engine in Context
-    injectWoodPanel({
-      id: `w_${Date.now()}`,
-      brand: selectedSupplier,
-      type: selectedMaterial,
-      thickness: selectedThickness,
-      widthSheet: currentSize.w,
-      heightSheet: currentSize.h,
-      edgeThickness: selectedEdgeThickness,
-      edgeWidth: selectedEdgeWidth,
-      currentQty: woodQty
-    }, woodPrice);
+  }, [selectedHwCategory, currentAvailableModels]);
 
-    setWoodQty(0);
-    setWoodPrice(0);
+  const [hwQty, setHwQty] = useState<string>('4');
+  const [hwPrice, setHwPrice] = useState<string>('500');
+
+  // ========================================================
+  // ⚡ INLINE INPUT FIELDS CONTROLLERS (حقول الإدخال النحيفة أسفل القوائم)
+  // ========================================================
+  const [newBrandInput, setNewBrandInput] = useState<string>('');
+  const [showBrandInput, setShowBrandInput] = useState<boolean>(false);
+
+  const [newFinishInput, setNewFinishInput] = useState<string>('');
+  const [showFinishInput, setShowFinishInput] = useState<boolean>(false);
+
+  const [newDimensionInput, setNewDimensionInput] = useState<string>('');
+  const [newDimW, setNewDimW] = useState<string>('2800');
+  const [newDimH, setNewDimH] = useState<string>('2070');
+  const [showDimensionInput, setShowDimensionInput] = useState<boolean>(false);
+
+  const [newThicknessInput, setNewThicknessInput] = useState<string>('');
+  const [showThicknessInput, setShowThicknessInput] = useState<boolean>(false);
+
+  const [newEdgeThInput, setNewEdgeThicknessInput] = useState<string>('');
+  const [showEdgeThInput, setShowEdgeThicknessInput] = useState<boolean>(false);
+
+  const [newEdgeWInput, setNewEdgeWidthInput] = useState<string>('');
+  const [showEdgeWInput, setShowEdgeWidthInput] = useState<boolean>(false);
+
+  const [newHwModelInput, setNewHwModelInput] = useState<string>('');
+  const [showHwModelInput, setShowHwModelInput] = useState<boolean>(false);
+
+  const [woodExpanded, setWoodExpanded] = useState<boolean>(true);
+  const [hardwareExpanded, setHardwareExpanded] = useState<boolean>(true);
+
+  // ========================================================
+   
+  // 🧪 INLINE MUTATION INJECTION UTILITIES
+  // ========================================================
+  const handleAddNewBrand = () => {
+    if (newBrandInput.trim() === '') return;
+    const val = newBrandInput.trim();
+    setSupplierList([...supplierList, val]);
+    setSelectedBrand(val);
+    setSelectedHwBrand(val);
+    setNewBrandInput('');
+    setShowBrandInput(false);
   };
 
-  const handleAddHardwareToStock = () => {
-    if (hwQty <= 0 || hwPrice <= 0) {
-      alert("Validation Error: Hardware quantity and price must be greater than zero.");
+  const handleAddNewFinish = () => {
+    if (newFinishInput.trim() === '') return;
+    const val = newFinishInput.trim();
+    setMaterialTypeList([...materialTypeList, val]);
+    setSelectedFinish(val);
+    setNewFinishInput('');
+    setShowFinishInput(false);
+  };
+
+  const handleAddNewDimension = () => {
+    const wVal = parseInt(newDimW, 10);
+    const hVal = parseInt(newDimH, 10);
+    if (isNaN(wVal) || isNaN(hVal) || wVal <= 0 || hVal <= 0) return;
+    
+    const labelStr = `${wVal} x ${hVal} mm`;
+    setSizeList([...sizeList, { label: labelStr, w: wVal, h: hVal }]);
+    setSelectedDimensionLabel(labelStr);
+    setShowDimensionInput(false);
+  };
+
+  const handleAddNewThickness = () => {
+    const val = parseInt(newThicknessInput, 10);
+    if (isNaN(val) || val <= 0) return;
+    setThicknessList([...thicknessList, val].sort((a, b) => a - b));
+    setWoodThickness(val);
+    setNewThicknessInput('');
+    setShowThicknessInput(false);
+  };
+
+  const handleAddNewEdgeThickness = () => {
+    const val = parseFloat(newEdgeThInput);
+    if (isNaN(val) || val <= 0) return;
+    setEdgeThicknessList([...edgeThicknessList, val].sort((a, b) => a - b));
+    setEdgeThickness(val);
+    setNewEdgeThicknessInput('');
+    setShowEdgeThicknessInput(false);
+  };
+
+  const handleAddNewEdgeWidth = () => {
+    const val = parseInt(newEdgeWInput, 10);
+    if (isNaN(val) || val <= 0) return;
+    setEdgeWidthList([...edgeWidthList, val].sort((a, b) => a - b));
+    setEdgeWidth(val);
+    setNewEdgeWidthInput('');
+    setShowEdgeWidthInput(false);
+  };
+
+  const handleAddNewHwModel = () => {
+    if (newHwModelInput.trim() === '') return;
+    const val = newHwModelInput.trim();
+    const activeList = customHwModels[selectedHwCategory] || [];
+    setCustomHwModels({ ...customHwModels, [selectedHwCategory]: [...activeList, val] });
+    setSelectedHwModel(val);
+    setNewHwModelInput('');
+    setShowHwModelInput(false);
+  };
+
+  // ========================================================
+  // 🏭 CORE SUBMISSION HANDLING PIPELINES
+  // ========================================================
+  const submitWoodToStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedQty = parseInt(woodQty, 10);
+    const parsedPrice = parseFloat(woodPrice);
+    const matchedSize = sizeList.find(s => s.label === selectedDimensionLabel);
+
+    if (isNaN(parsedQty) || parsedQty <= 0 || isNaN(parsedPrice) || parsedPrice <= 0 || !matchedSize) {
+      alert("⚠️ Workshop Input Guard: Verify valid mathematical sizes, quantities and pricing values.");
       return;
     }
-    injectHardwareItem({
-      id: `h_${Date.now()}`,
-      category: hwCategory,
-      brand: hwBrand,
-      modelType: hwModel,
-      availableQty: hwQty
-    }, hwPrice);
 
-    setHwQty(0);
-    setHwPrice(0);
+    addWoodMaterial({
+      id: `wood_${Date.now()}`,
+      brand: selectedBrand,
+      type: selectedFinish,
+      widthSheet: matchedSize.w,
+      heightSheet: matchedSize.h,
+      thickness: woodThickness,
+      edgeThickness,
+      edgeWidth,
+      quantityIncoming: parsedQty,
+      averagePriceDA: parsedPrice
+    });
+
+    alert("🪵 Custom sheet panel allocation successfully loaded into stockroom storage.");
+  };
+
+  const submitHardwareToStock = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsedQty = parseInt(hwQty, 10);
+    const parsedPrice = parseFloat(hwPrice);
+
+    if (isNaN(parsedQty) || parsedQty <= 0 || isNaN(parsedPrice) || parsedPrice <= 0) {
+      alert("⚠️ Workshop Input Guard: Invalid numerical data fields inside hardware registry submission.");
+      return;
+    }
+
+    addHardwareItem({
+      id: `hw_${Date.now()}`,
+      category: selectedHwCategory,
+      brand: selectedHwBrand,
+      modelType: selectedHwModel,
+      quantityIncoming: parsedQty,
+      pricePerUnitDA: parsedPrice
+    });
+
+    alert("⚙️ Mechanical component batch safely integrated into production lanes.");
   };
 
   return (
-    <div className="w-full bg-white border border-[#E5E5E5] rounded-xl p-3 space-y-3 font-sans text-left shadow-xs">
+    <div className="w-full flex flex-col space-y-4 select-none text-xs font-sans text-slate-700">
       
-      {/* 🌲 Section 1: Wood & Stone Panels Stock Loader (Fully Restored) */}
-      <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-2xs">
-        <button 
-          onClick={() => setIsWoodOpen(!isWoodOpen)} 
-          className="w-full bg-slate-50 p-2.5 flex items-center justify-between font-bold text-xs text-slate-800 cursor-pointer hover:bg-slate-100"
-        >
-          <span>片 Wood & Stone Panels Stock Loader</span>
-          <span className="text-gray-400">{isWoodOpen ? '▼' : '▶'}</span>
-        </button>
-        
-        {isWoodOpen && (
-          <div className="p-3 space-y-3 border-t border-slate-100 text-xs">
-            {/* Brands and Suppliers Dropdown */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 block">Supplier / Brand</label>
-              <select value={selectedSupplier} onChange={(e) => setSelectedSupplier(e.target.value)} className="w-full border bg-white rounded-lg p-2 text-xs font-medium focus:outline-none shadow-3xs">
-                {supplierList.map((s, i) => <option key={i} value={s}>{s}</option>)}
-              </select>
-            </div>
-
-            {/* Core Finishing/Textures Dropdown */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 block">Wood Core / Finish Texture Type</label>
-              <select value={selectedMaterial} onChange={(e) => setSelectedMaterial(e.target.value)} className="w-full border bg-white rounded-lg p-2 text-xs font-medium focus:outline-none shadow-3xs">
-                {materialTypeList.map((m, i) => <option key={i} value={m}>{m}</option>)}
-              </select>
-            </div>
-
-            {/* Complete 14 Sizes Panel Format Dropdown */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 block">Sheet Dimension Format (Width x Length)</label>
-              <select value={selectedSizeIdx} onChange={(e) => setSelectedSizeIdx(Number(e.target.value))} className="w-full border bg-white rounded-lg p-2 text-xs font-mono focus:outline-none shadow-3xs">
-                {sizeList.map((s, i) => <option key={i} value={i}>{s.label}</option>)}
-              </select>
-            </div>
-
-            {/* Complete Restored Thickness and Edge Band PVC Matrices Grid */}
-            <div className="grid grid-cols-3 gap-1.5">
-              <div>
-                <label className="text-[9px] font-bold text-gray-400 block mb-0.5">Thickness (T)</label>
-                <select value={selectedThickness} onChange={(e) => setSelectedThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 text-xs font-mono focus:outline-none shadow-3xs">
-                  {thicknessList.map((t) => <option key={t} value={t}>{t} mm</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-gray-400 block mb-0.5">Edge PVC (T)</label>
-                <select value={selectedEdgeThickness} onChange={(e) => setSelectedEdgeThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 text-xs font-mono focus:outline-none shadow-3xs">
-                  {edgeThicknessList.map((et) => <option key={et} value={et}>{et} mm</option>)}
-                </select>
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-gray-400 block mb-0.5">Edge PVC (W)</label>
-                <select value={selectedEdgeWidth} onChange={(e) => setSelectedEdgeWidth(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 text-xs font-mono focus:outline-none shadow-3xs">
-                  {edgeWidthList.map((ew) => <option key={ew} value={ew}>{ew} mm</option>)}
-                </select>
-              </div>
-            </div>
-
-                        {/* Price and Stock Quantum Numerical Fields */}
-            <div className="grid grid-cols-2 gap-2 font-mono text-xs pt-1">
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 block font-sans mb-0.5">Qty Sheets Incoming</label>
-                <input type="number" placeholder="0" value={woodQty === 0 ? '' : woodQty} onChange={(e) => setWoodQty(Math.max(0, Number(e.target.value)))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none text-center font-bold shadow-3xs" />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 block font-sans mb-0.5">Purchase Price (DA)</label>
-                <input type="number" placeholder="0" value={woodPrice === 0 ? '' : woodPrice} onChange={(e) => setWoodPrice(Math.max(0, Number(e.target.value)))} className="w-full border rounded-lg p-1.5 focus:outline-none text-center font-bold text-emerald-600 bg-white shadow-3xs" />
-              </div>
-            </div>
-
-            <button onClick={handleAddWoodToStock} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] py-2 rounded-lg transition-all shadow-md cursor-pointer text-center mt-1">Add Board to Stock</button>
-          </div>
-        )}
-      </div>
-
-      {/* ⚙️ Section 2: Hardware Accessories System Injector (The 5 Subsystems) */}
-      <div className="border border-indigo-100 rounded-lg overflow-hidden bg-white shadow-2xs">
-        <button 
-          onClick={() => setIsHwOpen(!isHwOpen)} 
-          className="w-full bg-indigo-50/60 p-2.5 flex items-center justify-between font-bold text-xs text-slate-800 cursor-pointer hover:bg-indigo-100/80"
-        >
-          <span>⚙️ Hardware Accessories Loader</span>
-          <span className="text-gray-400">{isHwOpen ? '▼' : '▶'}</span>
+      {/* 🪵 COMPONENT 1: Parametric Wood Panels Section */}
+      <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs">
+        <button type="button" onClick={() => setWoodExpanded(!woodExpanded)} className="w-full bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/60 flex justify-between items-center font-bold text-slate-800">
+          <span>🪵 Parametric Panels Stock Loader</span>
+          <span>{woodExpanded ? '▼' : '▶'}</span>
         </button>
 
-        {isHwOpen && (
-          <div className="p-3 space-y-3 border-t border-indigo-50 text-xs">
+        {woodExpanded && (
+          <form onSubmit={submitWoodToStock} className="p-3.5 space-y-3 text-left">
+            
+            {/* Brands Selection dropdown */}
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 block">System Category</label>
-              <select value={hwCategory} onChange={(e) => setHwCategory(e.target.value as HardwareCategory)} className="w-full border bg-white rounded-lg p-2 font-bold text-gray-700 shadow-3xs focus:outline-none">
-                <option value="Cabinet Hinges">1. Cabinet Hinges System</option>
-                <option value="Drawer Slide Systems">2. Drawer Runner Slides</option>
-                <option value="Overhead Lift Systems">3. Overhead Lift Systems</option>
-                <option value="Gola & Handle Profiles">4. Gola & Handle Profiles</option>
-                <option value="Assembly & Fixing">5. Assembly & Fixing Screws/Legs</option>
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Sheet Supplier / Manufacturer</label>
+                <button type="button" onClick={() => { setShowBrandInput(!showBrandInput); }} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedBrand} onChange={(e) => setSelectedBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
               </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">Brand</label>
-                <select value={hwBrand} onChange={(e) => setHwBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 font-bold text-indigo-600 shadow-3xs focus:outline-none">
-                  <option value="Blum (Austria)">Blum (Austria)</option>
-                  <option value="Hettich (Germany)">Hettich (Germany)</option>
-                  <option value="Häfele (Germany)">Häfele (Germany)</option>
-                  <option value="Samet (Turkey)">Samet (Turkey)</option>
-                  <option value="Titus">Titus</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-1">Specification Model Name</label>
-                <input type="text" placeholder="e.g. Straight Hinge (Overlay)" value={hwModel} onChange={(e) => setHwModel(e.target.value)} className="w-full border bg-white rounded-lg p-2 text-xs focus:outline-none shadow-3xs" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 block font-sans mb-0.5">Qty Pcs/Sets</label>
-                <input type="number" placeholder="0" value={hwQty === 0 ? '' : hwQty} onChange={(e) => setHwQty(Math.max(0, Number(e.target.value)))} className="w-full border bg-white rounded-lg p-1.5 text-center shadow-3xs focus:outline-none" />
-              </div>
-              <div>
-                <label className="text-[9px] font-bold text-slate-400 block font-sans mb-0.5">Unit Price (DA)</label>
-                <input type="number" placeholder="0" value={hwPrice === 0 ? '' : hwPrice} onChange={(e) => setHwPrice(Math.max(0, Number(e.target.value)))} className="w-full border bg-white rounded-lg p-1.5 font-bold text-emerald-600 text-center shadow-3xs focus:outline-none" />
-              </div>
-            </div>
-
-            <button onClick={handleAddHardwareToStock} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] py-2 rounded-lg transition-all shadow-md cursor-pointer text-center mt-1">Inject Hardware Accessory</button>
-          </div>
-        )}
-      </div>
-
-      {/* 🗄️ Section 3: Real-Time Workshop Stockroom Display */}
-      <div className="border border-slate-800 rounded-xl overflow-hidden bg-white shadow-2xs">
-        <button 
-          onClick={() => setIsStockOpen(!isStockOpen)} 
-          className="w-full bg-slate-800 p-2.5 flex items-center justify-between font-bold text-xs text-white cursor-pointer hover:bg-slate-900"
-        >
-          <span>🗄️ Real-Time Workshop Stockroom Terminal</span>
-          <span className="text-gray-300">{isStockOpen ? '▼' : '▶'}</span>
-        </button>
-
-        {isStockOpen && (
-          <div className="p-2 border-t border-slate-700 bg-white">
-            <div className="divide-y border border-slate-200 rounded-lg overflow-hidden bg-white max-h-56 overflow-y-auto shadow-inner">
-              {inventory.woodPanels.length === 0 && inventory.hardwareItems.length === 2 && (
-                <div className="p-4 text-center text-xs text-gray-400 font-mono bg-slate-50/50">Inventory stock is currently empty. Please insert components above.</div>
+              {showBrandInput && (
+                <div className="flex items-center space-x-2 pt-1 animate-fade-in">
+                  <input type="text" placeholder="New supplier..." value={newBrandInput} onChange={(e) => setNewBrandInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
+                  <button type="button" onClick={handleAddNewBrand} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
+                </div>
               )}
-              {inventory.woodPanels.map((panel: any) => (
-                <div key={panel.id} className="p-2 flex items-center justify-between text-[11px] font-mono hover:bg-slate-50/50">
-                  <div className="text-left font-sans">
-                    <span className="font-bold text-slate-800 block text-xs">{panel.brand} - {panel.type}</span>
-                    <span className="text-slate-400 text-[9px] block font-mono">{panel.widthSheet}x{panel.heightSheet}mm | T: {panel.thickness}mm | Edge: {panel.edgeThickness}mm x {panel.edgeWidth}mm</span>
-                  </div>
-                  <div className="text-right flex items-center space-x-2">
-                    <span className="bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-md text-[10px] font-bold">{panel.currentQty} Sheets</span>
-                    <span className="font-bold text-emerald-600 text-xs">{panel.averagePriceDA.toLocaleString()} DA <span className="text-[8px] text-gray-400 font-sans font-normal">(MA)</span></span>
-                  </div>
-                </div>
-              ))}
-              {inventory.hardwareItems.map((item: any) => (
-                <div key={item.id} className="p-2 flex items-center justify-between text-[11px] font-mono border-t border-dashed hover:bg-slate-50/50">
-                  <div className="text-left font-sans max-w-[180px] truncate">
-                    <span className="font-bold text-slate-800 block truncate text-xs">{item.modelType}</span>
-                    <span className="text-indigo-600 text-[9px] font-bold block">Brand: {item.brand} | {item.category}</span>
-                  </div>
-                  <div className="text-right flex items-center space-x-2">
-                    <span className="bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md text-[10px] font-bold">{item.availableQty} Pcs</span>
-                    <span className="font-bold text-emerald-600 text-xs">{item.pricePerUnitDA.toLocaleString()} DA</span>
-                  </div>
-                </div>
-              ))}
             </div>
-          </div>
+
+            {/* Core materials dropdown */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Core Core Material & Finish Finish</label>
+                <button type="button" onClick={() => setShowFinishInput(!showFinishInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedFinish} onChange={(e) => setSelectedFinish(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {materialTypeList.map((f, i) => <option key={i} value={f}>{f}</option>)}
+              </select>
+              {showFinishInput && (
+                <div className="flex items-center space-x-2 pt-1 animate-fade-in">
+                  <input type="text" placeholder="New material/finish..." value={newFinishInput} onChange={(e) => setNewFinishInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
+                  <button type="button" onClick={handleAddNewFinish} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
+                </div>
+              )}
+            </div>
+
+                        {/* Industrial dimensions dropdown */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Sheet Dimension Format Layout</label>
+                <button type="button" onClick={() => setShowDimensionInput(!showDimensionInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedDimensionLabel} onChange={(e) => setSelectedDimensionLabel(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {sizeList.map((s, i) => <option key={i} value={s.label}>{s.label}</option>)}
+              </select>
+              {showDimensionInput && (
+                <div className="flex flex-col space-y-1 pt-1 p-2 border bg-slate-50/50 rounded-lg animate-fade-in">
+                  <div className="flex items-center space-x-2">
+                    <input type="number" placeholder="Width (mm)" value={newDimW} onChange={(e) => setNewDimW(e.target.value)} className="w-24 border rounded p-1 text-center font-bold" />
+                    <span className="font-bold text-slate-400">x</span>
+                    <input type="number" placeholder="Height (mm)" value={newDimH} onChange={(e) => setNewDimH(e.target.value)} className="w-24 border rounded p-1 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewDimension} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Sizing Grid Parameters Component */}
+            <div className="grid grid-cols-3 gap-2 relative">
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 block">Thickness</label>
+                  <button type="button" onClick={() => setShowThicknessInput(!showThicknessInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
+                </div>
+                <select value={woodThickness} onChange={(e) => setWoodThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
+                  {thicknessList.map((t, i) => <option key={i} value={t}>{t} mm</option>)}
+                </select>
+                {showThicknessInput && (
+                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50">
+                    <input type="number" placeholder="mm" value={newThicknessInput} onChange={(e) => setNewThicknessInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewThickness} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 block">Edge PVC (T)</label>
+                  <button type="button" onClick={() => setShowEdgeThicknessInput(!showEdgeThInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
+                </div>
+                <select value={edgeThickness} onChange={(e) => setEdgeThickness(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
+                  {edgeThicknessList.map((et, i) => <option key={i} value={et}>{et} mm</option>)}
+                </select>
+                {showEdgeThInput && (
+                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50">
+                    <input type="number" step="0.1" placeholder="mm" value={newEdgeThInput} onChange={(e) => setNewEdgeThInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewEdgeThickness} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center mb-0.5">
+                  <label className="text-[9px] font-bold text-slate-400 block">Edge PVC (W)</label>
+                  <button type="button" onClick={() => setShowEdgeWidthInput(!showEdgeWInput)} className="text-indigo-600 font-bold text-[9px]">＋</button>
+                </div>
+                <select value={edgeWidth} onChange={(e) => setEdgeWidth(Number(e.target.value))} className="w-full border bg-white rounded-lg p-1.5 focus:outline-none font-bold text-center">
+                  {edgeWidthList.map((ew, i) => <option key={i} value={ew}>{ew} mm</option>)}
+                </select>
+                {showEdgeWInput && (
+                  <div className="flex items-center space-x-1 pt-1 animate-fade-in absolute bg-white p-1 border shadow-md rounded z-50 right-0">
+                    <input type="number" placeholder="mm" value={newEdgeWInput} onChange={(e) => setNewEdgeWidthInput(e.target.value)} className="w-12 border rounded p-0.5 text-center font-bold" />
+                    <button type="button" onClick={handleAddNewEdgeWidth} className="bg-indigo-600 text-white font-bold px-1.5 py-0.5 rounded text-[10px]">✓</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Quantity Controls */}
+            <div className="grid grid-cols-2 gap-3 font-mono">
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Sheets Incoming</label>
+                <input type="number" value={woodQty} onChange={(e) => setWoodQty(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
+              </div>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Purchase Price (DA)</label>
+                <input type="number" value={woodPrice} onChange={(e) => setWoodPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
+              </div>
+            </div>
+
+            <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-xl transition-all shadow-xs cursor-pointer text-center">
+              Add Board to Stock Account
+            </button>
+          </form>
         )}
+      </div>
+
+      {/* ⚙️ COMPONENT 2: Hardware Accessories Loader Section */}
+      <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs">
+        <button type="button" onClick={() => setHardwareExpanded(!hardwareExpanded)} className="w-full bg-slate-50/80 px-4 py-2.5 border-b border-slate-200/60 flex justify-between items-center font-bold text-slate-800">
+          <span>⚙️ Hardware Accessories Loader (الأنظمة الـ 5 الميكانيكية)</span>
+          <span>{hardwareExpanded ? '▼' : '▶'}</span>
+        </button>
+
+        {hardwareExpanded && (
+          <form onSubmit={submitHardwareToStock} className="p-3.5 space-y-3 text-left">
+            
+            {/* Category selection */}
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 block mb-1">System Kinematic Category</label>
+              <select value={selectedHwCategory} onChange={(e) => setSelectedHwCategory(e.target.value as HardwareCategory)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                <option value="Cabinet Hinges">📁 1. Cabinet Hinges System (مفصلات أبواب)</option>
+                <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
+                <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
+                <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
+                <option value="Assembly Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
+              </select>
+            </div>
+
+            {/* Brand/Supplier decoupled selector */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Hardware Brand / Supplier</label>
+                <button type="button" onClick={() => setShowBrandInput(!showBrandInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedHwBrand} onChange={(e) => setSelectedHwBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
+              </select>
+            </div>
+
+                        {/* Model Sub-dropdown selection */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Specification Model Name</label>
+                <button type="button" onClick={() => setShowHwModelInput(!showHwModelInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedHwModel} onChange={(e) => setSelectedHwModel(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium text-indigo-700">
+                {currentAvailableModels.map((m, i) => <option key={i} value={m}>{m}</option>)}
+              </select>
+              {showHwModelInput && (
+                <div className="flex items-center space-x-2 pt-1 animate-fade-in">
+                  <input type="text" placeholder="Insert custom system model name..." value={newHwModelInput} onChange={(e) => setNewHwModelInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
+                  <button type="button" onClick={handleAddNewHwModel} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
+                </div>
+              )}
+            </div>
+
+            {/* Pricing metrics grid */}
+            <div className="grid grid-cols-2 gap-3 font-mono">
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Pcs/Sets</label>
+                <input type="number" value={hwQty} onChange={(e) => setHwQty(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
+              </div>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Unit Price (DA)</label>
+                <input type="number" value={hwPrice} onChange={(e) => setHwPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
+              </div>
+            </div>
+
+            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl transition-all shadow-xs cursor-pointer text-center">
+              Inject Hardware Accessory
+            </button>
+          </form>
+        )}
+      </div>
+
+      {/* 🔮 COMPONENT 3: Terminal View */}
+      <div className="bg-white border border-[#E5E5E5] rounded-xl overflow-hidden shadow-3xs text-left">
+        <div className="bg-slate-900 text-slate-100 px-4 py-2.5 flex justify-between items-center font-bold font-sans">
+          <span>🔮 Real-Time Workshop Stockroom Terminal</span>
+        </div>
+        
+        <div className="p-3 max-h-52 overflow-y-auto space-y-2">
+          {inventory.woodPanels.length === 0 && inventory.hardwareItems.length === 0 && (
+            <div className="text-center py-6 text-slate-400 font-mono text-[11px] border border-dashed border-slate-200 rounded-lg">
+              Inventory stock is currently empty.<br />Please insert components above.
+            </div>
+          )}
+
+          {inventory.woodPanels.map((w) => (
+            <div key={w.id} className="border border-slate-100 p-2 rounded-lg flex justify-between items-center bg-slate-50/40 font-mono text-[11px]">
+              <div>
+                <span className="font-bold text-slate-900 font-sans block">{w.brand} - {w.type}</span>
+                <span className="text-gray-400 text-[10px]">{w.widthSheet}x{w.heightSheet}mm | T: {w.thickness}mm</span>
+              </div>
+              <div className="text-right">
+                <span className="text-indigo-600 font-bold block">{w.quantityIncoming} Sheets</span>
+                <span className="text-emerald-600 font-bold">{w.averagePriceDA.toLocaleString()} DA</span>
+              </div>
+            </div>
+          ))}
+
+          {inventory.hardwareItems.map((h) => (
+            <div key={h.id} className="border border-slate-100 p-2 rounded-lg flex justify-between items-center bg-slate-50/40 font-mono text-[11px]">
+              <div>
+                <span className="font-bold text-slate-900 font-sans block">{h.modelType} ({h.brand})</span>
+                <span className="text-gray-400 text-[10px] uppercase tracking-tight">{h.category}</span>
+              </div>
+              <div className="text-right">
+                <span className="text-indigo-600 font-bold block">{h.quantityIncoming} Pcs</span>
+                <span className="text-emerald-600 font-bold">{h.pricePerUnitDA.toLocaleString()} DA</span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
     </div>
