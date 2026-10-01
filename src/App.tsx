@@ -103,12 +103,21 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
       return [
         ...baseBoards,
         { id: 'top', name: 'اللوح العلوي القياسي', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#8c5e32' },
-        { id: 'shelf-universal', name: 'رف تخزين داخلية عام', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: thk, depth: global.depth - 20 }, position: { x: thk + 2, y: global.height / 2, z: 10 }, materialThickness: thk, color: '#d9a773' }
+        { id: 'shelf-universal', name: 'رف تخزين داخلي عام', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: thk, depth: global.depth - 20 }, position: { x: thk + 2, y: global.height / 2, z: 10 }, materialThickness: thk, color: '#d9a773' }
       ];
   }
+}; // 🔒 إغلاق دالة توليد الألواح البرامترية بشكل سليم ومستقل تماماً
 
+export interface ComprehensiveCabinetFormState {
+  id: string;
+  name: string;
+  subtype: CabinetSubtype;
+  globalDimensions: Dimensions;
+  materialThickness: number;
+  boards: Board[];
+}
 
-export default function App() {
+export function App() {
   const {
     cabinets,
     inventory,
@@ -135,7 +144,7 @@ export default function App() {
   const [bomReportText, setBomReportText] = useState<string>('');
   const [invoiceText, setInvoiceText] = useState<string>('');
 
-  const [parametricCabinet, setParametricCabinet] = useState<ComprehensiveCabinet>({
+  const [parametricCabinet, setParametricCabinet] = useState<ComprehensiveCabinetFormState>({
     id: 'universal-01',
     name: 'وحدة أدراج سفلية عميقة عصرية',
     subtype: 'Deep_Drawers',
@@ -144,9 +153,9 @@ export default function App() {
     boards: generateParametricBoards('Deep_Drawers', { width: 800, height: 870, depth: 600 }, 18)
   });
 
-    const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
+  const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
 
-  const handleSubtypeChange = (newSubtype: CabinetSubtype) => {
+    const handleSubtypeChange = (newSubtype: CabinetSubtype) => {
     let defaultDims: Dimensions = { width: 600, height: 720, depth: 350 };
     if (newSubtype === 'Ceiling_Height') {
       defaultDims = { width: 600, height: 950, depth: 350 };
@@ -208,7 +217,6 @@ export default function App() {
   };
 
   const handleCreateCabinetNode = () => {
-    // 🔒 جدار حماية المخزن الصارم: يمنع تدمير المنطق عند فراغ الستوك
     if (!inventory.woodPanels || inventory.woodPanels.length === 0) {
       alert("⚠️ Workshop Production Blocked: You cannot construct cabinets while the stockroom is empty. Please inject at least one Wood Panel asset into your warehouse first.");
       return;
@@ -229,9 +237,9 @@ export default function App() {
       positionY: 0,
       positionZ: 0,
       shelvesCount: parametricCabinet.boards.filter(b => b.type === 'shelf').length,
-      carcaseMaterialId: inventory.woodPanels[0]?.id || '',
-      frontMaterialId: inventory.woodPanels[0]?.id || '',
-      frontConfig: { openingType, elementCount, hardwareItemId: inventory.hardwareItems[0]?.id || '', hasGolaProfile: cabCategory === 'BASE_UNIT' && hasGola }
+      carcaseMaterialId: inventory.woodPanels?.id || '',
+      frontMaterialId: inventory.woodPanels?.id || '',
+      frontConfig: { openingType, elementCount, hardwareItemId: inventory.hardwareItems?.id || '', hasGolaProfile: cabCategory === 'BASE_UNIT' && hasGola }
     });
   };
 
@@ -284,12 +292,12 @@ export default function App() {
             {selectedBoard && (
               <div className="border border-teal-200 p-2 rounded-lg bg-teal-50/10 text-[10px] grid grid-cols-2 gap-2 mt-2">
                 <div>
-                                    <span className="font-bold text-teal-800 block mb-0.5">📐 تعديل المقاسات (ملم):</span>
+                  <span className="font-bold text-teal-800 block mb-0.5">📐 تعديل المقاسات (ملم):</span>
                   Width: <input type="number" value={selectedBoard.dimensions.width} onChange={(e) => handleUpdateBoardDimensions(selectedBoard.id, 'width', Number(e.target.value))} className="w-12 border p-0.5 text-center" />
                   H: <input type="number" value={selectedBoard.dimensions.height} onChange={(e) => handleUpdateBoardDimensions(selectedBoard.id, 'height', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5" />
                 </div>
                 <div>
-                  <span className="font-bold text-slate-700 block mb-0.5">📍 محاور الإزاحة الفراغية:</span>
+                                    <span className="font-bold text-slate-700 block mb-0.5">📍 محاور الإزاحة الفراغية:</span>
                   X: <input type="number" value={selectedBoard.position.x} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'x', Number(e.target.value))} className="w-12 border p-0.5 text-center" />
                   Y: <input type="number" value={selectedBoard.position.y} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'y', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5" />
                   <button type="button" onClick={() => { setParametricCabinet(p => ({ ...p, boards: p.boards.filter(b => b.id !== selectedBoard.id) })); setSelectedBoardId(null); }} className="text-red-600 font-bold block mt-1 hover:underline">🗑️ حذف اللوح</button>
