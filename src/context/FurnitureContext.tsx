@@ -1,20 +1,23 @@
 // src/context/FurnitureContext.tsx
 import React, { createContext, useContext, useState } from 'react';
-import { CabinetObject, WorkshopInventoryState, WallGeometry } from '../types/flatma';
+import { CabinetObject, WorkshopInventoryState, EdgeBandRoll, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { computeCabinetTotalCost } from '../math/costEngine';
 
 interface FurnitureContextType {
   cabinets: CabinetObject[];
-  inventory: WorkshopInventoryState;
+  inventory: WorkshopInventoryState & { edgeBandRolls: EdgeBandRoll[] };
   activeCabinetId: string;
   setActiveCabinetId: (id: string) => void;
   addCabinet: (cabinet: Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>) => void;
   updateCabinet: (id: string, fields: Partial<CabinetObject>) => void;
-  
-  // ⚡ The Restored High-Performance Destruction & History Engines
   deleteCabinet: (id: string) => void; 
   triggerUndo: () => void;
   canUndo: boolean;
+  
+  // ⚡ The Restored Lamed Dynamic Injections Pipelines
+  addWoodMaterial: (material: InjectedWoodMaterial) => void;
+  addHardwareItem: (item: InjectedHardwareItem) => void;
+  addEdgeBandRoll: (roll: EdgeBandRoll) => void; // 🔒 Autonomous loader registration
 }
 
 const FurnitureContext = createContext<FurnitureContextType | undefined>(undefined);
@@ -26,12 +29,11 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
   // ⏱️ Flatma Memento Stack for High-Speed Undo Tracking (Max 20 steps to optimize memory)
   const [historyStack, setHistoryStack] = useState<CabinetObject[][]>([]);
 
-  const [inventory, setInventory] = useState<WorkshopInventoryState>({
+  // 🗄️ Core Software State Initialization (Vierge Warehouse Concept)
+  const [inventory, setInventory] = useState<WorkshopInventoryState & { edgeBandRolls: EdgeBandRoll[] }>({
     woodPanels: [],
-    hardwareItems: [
-      { id: 'h_legs_default', category: 'Assembly & Fixing', brand: 'Generic', modelType: 'Adjustable Kitchen Legs (100mm - 150mm)', pricePerUnitDA: 150, availableQty: 500 },
-      { id: 'h_hangers_default', category: 'Assembly & Fixing', brand: 'Generic', modelType: 'Cabinet Hanger Plates (Heavy Duty)', pricePerUnitDA: 250, availableQty: 200 }
-    ]
+    hardwareItems: [], // 🔒 Totalement purgé : Aucune quincaillerie fictive par défaut
+    edgeBandRolls: []  // 🔒 Segment d'indépendance pour le stockage autonome des chants
   });
 
   // Helper to save current state into history matrix before any mutation
@@ -68,13 +70,13 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
           const deduction = finalCabinet.frontConfig.openingType === 'DOORS' 
             ? (finalCabinet.height > 900 ? 3 : 2) * finalCabinet.frontConfig.elementCount 
             : finalCabinet.frontConfig.elementCount;
-          return { ...h, availableQty: Math.max(0, h.availableQty - deduction) };
+          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - deduction) };
         }
         if (finalCabinet.category === 'BASE_UNIT' && h.modelType.includes('Adjustable Kitchen Legs')) {
-          return { ...h, availableQty: Math.max(0, h.availableQty - 4) };
+          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - 4) };
         }
         if (finalCabinet.category === 'WALL_UNIT' && h.modelType.includes('Cabinet Hanger Plates')) {
-          return { ...h, availableQty: Math.max(0, h.availableQty - 2) };
+          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - 2) };
         }
         return h;
       });
@@ -113,13 +115,13 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
           const restorationAmount = targetCabinet.frontConfig.openingType === 'DOORS'
             ? (targetCabinet.height > 900 ? 3 : 2) * targetCabinet.frontConfig.elementCount
             : targetCabinet.frontConfig.elementCount;
-          return { ...h, availableQty: h.availableQty + restorationAmount };
+          return { ...h, quantityIncoming: h.quantityIncoming + restorationAmount };
         }
         if (targetCabinet.category === 'BASE_UNIT' && h.modelType.includes('Adjustable Kitchen Legs')) {
-          return { ...h, availableQty: h.availableQty + 4 };
+          return { ...h, quantityIncoming: h.quantityIncoming + 4 };
         }
         if (targetCabinet.category === 'WALL_UNIT' && h.modelType.includes('Cabinet Hanger Plates')) {
-          return { ...h, availableQty: h.availableQty + 2 };
+          return { ...h, quantityIncoming: h.quantityIncoming + 2 };
         }
         return h;
       });
@@ -128,6 +130,19 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
 
     setCabinets(prev => prev.filter(cab => cab.id !== id));
     if (activeCabinetId === id) setActiveCabinetId('');
+  };
+
+  // 🧪 INLINE MUTATION INJECTION UTILITIES FOR ATELIER
+  const addWoodMaterial = (material: InjectedWoodMaterial) => {
+    setInventory(prev => ({ ...prev, woodPanels: [...prev.woodPanels, material] }));
+  };
+
+  const addHardwareItem = (item: InjectedHardwareItem) => {
+    setInventory(prev => ({ ...prev, hardwareItems: [...prev.hardwareItems, item] }));
+  };
+
+  const addEdgeBandRoll = (roll: EdgeBandRoll) => {
+    setInventory(prev => ({ ...prev, edgeBandRolls: [...prev.inventory.edgeBandRolls, roll] }));
   };
 
   // ⏱️ The Undo Execution Engine
@@ -139,7 +154,6 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       const previousState = newStack.pop();
       if (previousState) {
         setCabinets(previousState);
-        // Note: In an industrial deployment, inventory state would be re-evaluated or stacked symmetrically
       }
       return newStack;
     });
@@ -157,7 +171,10 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       updateCabinet,
       deleteCabinet,
       triggerUndo,
-      canUndo
+      canUndo,
+      addWoodMaterial,
+      addHardwareItem,
+      addEdgeBandRoll
     }}>
       {children}
     </FurnitureContext.Provider>
