@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
-import InventoryManager from './components/InventoryManager';
+import InventoryManager from './components/InventoryManager'; // 🔒 تأمين المسار الشرعي المستقر للمكون
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -108,7 +108,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
   }
 };
 
-// 🚀 تفعيل التصدير الافتراضي النظيف والمطابق 100% مع ملف الإقلاع main.tsx
+// 🚀 تفعيل التصدير الافتراضي الصارم والمطابق لملف التشغيل main.tsx
 export default function App() {
   const {
     cabinets,
@@ -259,7 +259,7 @@ export default function App() {
         <div className="lg:col-span-1 space-y-3 h-full overflow-y-auto"><InventoryManager /></div>
 
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-          {/* المحطة 1: ورشة البناء وتفكيك الألواح الـ 24 (Atomic Builder Component) */}
+          {/* المحطة 1: ورشة البناء وتفكيك الألواح الـ 24 */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 h-[590px] flex flex-col relative shadow-2xs font-sans text-right" style={{ direction: 'rtl' }}>
             <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded">📐 3D CONSTRUCTION WORKSPACE</span>
             
@@ -277,135 +277,60 @@ export default function App() {
 
                         {/* Atomic Visualizer Box */}
             <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-60">
-              {parametricCabinet.boards?.map((b) => {
-                const maxDim = Math.max(
-                  parametricCabinet.globalDimensions?.height || 1,
-                  parametricCabinet.globalDimensions?.width || 1
-                );
-                const scale = 360 / (maxDim || 1);
+              {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
+                const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
+                const scale = 320 / (maxDim || 1);
                 const isSelected = b.id === selectedBoardId;
                 return (
-                  <div
-                    key={b.id}
-                    onClick={() => setSelectedBoardId(b.id)}
-                    className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border"
-                    style={{
-                      right: `${b.position.x * scale + 20}px`,
-                      bottom: `${b.position.y * scale + 20}px`,
-                      width: `${b.dimensions.width * scale}px`,
-                      height: `${b.dimensions.height * scale}px`,
-                      backgroundColor: b.color,
-                      borderColor: isSelected ? '#00e676' : '#1a1a1a',
-                      borderWidth: isSelected ? '3px' : '1px',
-                      opacity: isSelected ? 1 : 0.85,
-                      boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)',
-                    }}
-                    title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}
+                  <div 
+                    key={b.id} 
+                    onClick={() => setSelectedBoardId(b.id)} 
+                    className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" 
+                    style={{ 
+                      right: `${(b.position?.x || 0) * scale + 20}px`, 
+                      bottom: `${(b.position?.y || 0) * scale + 20}px`, 
+                      width: `${(b.dimensions?.width || 1) * scale}px`, 
+                      height: `${(b.dimensions?.height || 1) * scale}px`, 
+                      backgroundColor: b.color, 
+                      borderColor: isSelected ? '#00e676' : '#1a1a1a', 
+                      borderWidth: isSelected ? '3px' : '1px', 
+                      opacity: isSelected ? 1 : 0.85, 
+                      boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' 
+                    }} 
+                    title={`${b.name}\n${b.dimensions?.width}x${b.dimensions?.height}mm`}
                   >
-                    {b.dimensions.width * scale > 40 && b.dimensions.height * scale > 25
-                      ? b.name.substring(0, 10)
-                      : ''}
+                    {(b.dimensions?.width || 0) * scale > 40 && (b.dimensions?.height || 0) * scale > 25 ? b.name.substring(0, 10) : ''}
                   </div>
                 );
               })}
             </div>
 
-            <select
-              size={3}
-              className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2"
-              value={selectedBoardId || ''}
-              onChange={(e) => setSelectedBoardId(e.target.value)}
-            >
-              {parametricCabinet.boards?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.dimensions.width}×{b.dimensions.height}mm)
-                </option>
-              ))}
+            <select size={3} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
+              {parametricCabinet.boards?.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions?.width}×{b.dimensions?.height}mm)</option>)}
             </select>
 
             {selectedBoard && (
               <div className="border border-teal-200 p-2 rounded-lg bg-teal-50/10 text-[10px] grid grid-cols-2 gap-2 mt-2">
                 <div>
                   <span className="font-bold text-teal-800 block mb-0.5">📐 تعديل المقاسات (ملم):</span>
-                  Width:{' '}
-                  <input
-                    type="number"
-                    value={selectedBoard.dimensions.width}
-                    onChange={(e) =>
-                      handleUpdateBoardDimensions(selectedBoard.id, 'width', Number(e.target.value))
-                    }
-                    className="w-12 border p-0.5 text-center bg-white"
-                  />
-                  H:{' '}
-                  <input
-                    type="number"
-                    value={selectedBoard.dimensions.height}
-                    onChange={(e) =>
-                      handleUpdateBoardDimensions(selectedBoard.id, 'height', Number(e.target.value))
-                    }
-                    className="w-12 border p-0.5 text-center m-0.5 bg-white"
-                  />
+                  Width: <input type="number" value={selectedBoard.dimensions?.width || 0} onChange={(e) => handleUpdateBoardDimensions(selectedBoard.id, 'width', Number(e.target.value))} className="w-12 border p-0.5 text-center bg-white" />
+                  H: <input type="number" value={selectedBoard.dimensions?.height || 0} onChange={(e) => handleUpdateBoardDimensions(selectedBoard.id, 'height', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5 bg-white" />
                 </div>
                 <div>
                   <span className="font-bold text-slate-700 block mb-0.5">📍 محاور الإزاحة الفراغية:</span>
-                  X:{' '}
-                  <input
-                    type="number"
-                    value={selectedBoard.position.x}
-                    onChange={(e) =>
-                      handleUpdateBoardPosition(selectedBoard.id, 'x', Number(e.target.value))
-                    }
-                    className="w-12 border p-0.5 text-center bg-white"
-                  />
-                  Y:{' '}
-                  <input
-                    type="number"
-                    value={selectedBoard.position.y}
-                    onChange={(e) =>
-                      handleUpdateBoardPosition(selectedBoard.id, 'y', Number(e.target.value))
-                    }
-                    className="w-12 border p-0.5 text-center m-0.5 bg-white"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setParametricCabinet((p) => ({
-                        ...p,
-                        boards: p.boards.filter((b) => b.id !== selectedBoard.id),
-                      }));
-                      setSelectedBoardId(null);
-                    }}
-                    className="text-red-600 font-bold block mt-1 hover:underline cursor-pointer"
-                  >
-                    🗑️ حذف اللوح
-                  </button>
+                  X: <input type="number" value={selectedBoard.position?.x || 0} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'x', Number(e.target.value))} className="w-12 border p-0.5 text-center bg-white" />
+                  Y: <input type="number" value={selectedBoard.position?.y || 0} onChange={(e) => handleUpdateBoardPosition(selectedBoard.id, 'y', Number(e.target.value))} className="w-12 border p-0.5 text-center m-0.5 bg-white" />
+                  <button type="button" onClick={() => { setParametricCabinet(p => ({ ...p, boards: p.boards.filter(b => b.id !== selectedBoard.id) })); setSelectedBoardId(null); }} className="text-red-600 font-bold block mt-1 hover:underline cursor-pointer">🗑️ حذف اللوح</button>
                 </div>
               </div>
             )}
           </div>
 
-          {/* المحطة 2: صالة العرض ثلاثية الأبعاد وإكساء الخامات الـ 400 حياً (Showroom Rendering) */}
+          {/* المحطة 2: صالة العرض ثلاثية الأبعاد وإكساء الخامات الـ 400 حياً */}
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-2 h-[590px] flex flex-col relative shadow-2xs">
-            <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">
-              🧊 3D EXECUTIVE SHOWCASE
-            </span>
+            <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">🧊 3D EXECUTIVE SHOWCASE</span>
             <div className="flex-1 w-full h-full">
-              <Kitchen3Canvas
-                cabinets={cabinets}
-                hardware={hardwareSettings}
-                showFronts={showFronts}
-                isXRayMode={isXRayMode}
-                countertopPath={countertopPath}
-                woodPanels={inventory.woodPanels}
-                hardwareItems={inventory.hardwareItems}
-                onApplyTextureOverride={(cabinetId, texturePath) => {
-                  updateCabinet(cabinetId, {
-                    frontMaterialId: texturePath,
-                    calculatedCostDA:
-                      cabinets.find((c) => c.id === cabinetId)?.calculatedCostDA || 0,
-                  });
-                }}
-              />
+              <Kitchen3DCanvas cabinets={cabinets} hardware={hardwareSettings} showFronts={showFronts} isXRayMode={isXRayMode} countertopPath={countertopPath} woodPanels={inventory.woodPanels} hardwareItems={inventory.hardwareItems} onApplyTextureOverride={(cabinetId, texturePath) => { updateCabinet(cabinetId, { frontMaterialId: texturePath, calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0 }); }} />
             </div>
           </div>
         </div>
@@ -413,29 +338,17 @@ export default function App() {
         {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
-            <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">
-              🛠️ Cabinet Procedural Injection
-            </span>
+            <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 block">Unit Category</label>
-              <select
-                value={cabCategory}
-                onChange={(e) => setCabCategory(e.target.value as CabinetCategory)}
-                className="w-full border bg-white rounded-md p-1 focus:outline-none"
-              >
+              <select value={cabCategory} onChange={(e) => setCabCategory(e.target.value as CabinetCategory)} className="w-full border bg-white rounded-md p-1 focus:outline-none">
                 <option value="BASE_UNIT">Base Unit (Caisson Bas)</option>
                 <option value="WALL_UNIT">Wall Unit (Caisson Haut المعلق)</option>
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-[10px] font-bold text-gray-400 block">
-                Facade Overlay Opening Type
-              </label>
-              <select
-                value={openingType}
-                onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)}
-                className="w-full border bg-white rounded-md p-1 focus:outline-none"
-              >
+              <label className="text-[10px] font-bold text-gray-400 block">Facade Overlay Opening Type</label>
+              <select value={openingType} onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)} className="w-full border bg-white rounded-md p-1 focus:outline-none">
                 <option value="DOORS">Swing Open Doors (أبواب)</option>
                 <option value="DRAWERS">Slide Extension Drawers (أدراج)</option>
                 <option value="NONE">Open Caisson Layout (بدون واجهة)</option>
@@ -445,88 +358,40 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 block mb-0.5">Count</label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="4"
-                    value={elementCount}
-                    onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))}
-                    className="w-full border rounded-md p-0.5 text-center font-bold bg-white"
-                  />
+                  <input type="number" min="1" max="4" value={elementCount} onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))} className="w-full border rounded-md p-0.5 text-center font-bold" />
                 </div>
                 {cabCategory === 'BASE_UNIT' && (
                   <div className="flex flex-col justify-center items-center pt-3">
                     <label className="text-[9px] font-bold text-slate-400 block mb-0.5">Gola</label>
-                    <input
-                      type="checkbox"
-                      checked={hasGola}
-                      onChange={(e) => setHasGola(e.target.checked)}
-                      className="rounded cursor-pointer w-4 h-4 text-indigo-600"
-                    />
+                    <input type="checkbox" checked={hasGola} onChange={(e) => setHasGola(e.target.checked)} className="rounded cursor-pointer w-4 h-4 text-indigo-600" />
                   </div>
                 )}
               </div>
             )}
-            <button
-              type="button"
-                          onClick={handleCreateCabinetNode}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg cursor-pointer text-center text-xs shadow-xs"
-          >
-            ➕ Construct & Insert Cabinet
-          </button>
-        </div>
-
-        {activeCabinetId && (
-          <div className="bg-red-50/50 border border-red-200 rounded-xl p-3 text-left space-y-2 text-xs shadow-3xs">
-            <span className="font-bold text-red-800 block">⚠️ Selected Node Destruction Console</span>
-            <button
-              type="button"
-              onClick={() => deleteCabinet(activeCabinetId)}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded-lg text-center cursor-pointer"
-            >
-              ✕ Delete Cabinet Node
-            </button>
+            <button type="button" onClick={handleCreateCabinetNode} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg cursor-pointer text-center text-xs shadow-xs">➕ Construct & Insert Cabinet</button>
           </div>
-        )}
 
-        <div className="bg-white border border-[#E4E4E7] rounded-xl p-2.5 space-y-2 shadow-3xs">
-          <button
-            type="button"
-            onClick={handleExportFactoryBOM}
-            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
-          >
-            🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)
-          </button>
-          <button
-            type="button"
-            onClick={handlePrintCustomerInvoice}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
-          >
-            🧾 CALCULATE & PRINT CUSTOMER INVOICE
-          </button>
+          {activeCabinetId && (
+            <div className="bg-red-50/50 border border-red-200 rounded-xl p-3 text-left space-y-2 text-xs shadow-3xs">
+              <span className="font-bold text-red-800 block">⚠️ Selected Node Destruction Console</span>
+              <button type="button" onClick={() => deleteCabinet(activeCabinetId)} className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded-lg text-center cursor-pointer">✕ Delete Cabinet Node</button>
+            </div>
+          )}
+
+          <div className="bg-white border border-[#E4E4E7] rounded-xl p-2.5 space-y-2 shadow-3xs">
+            <button type="button" onClick={handleExportFactoryBOM} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all">🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)</button>
+            <button type="button" onClick={handlePrintCustomerInvoice} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all">🧾 CALCULATE & PRINT CUSTOMER INVOICE</button>
+          </div>
         </div>
       </div>
+
+      {/* Terminal Output Console */}
+      {(bomReportText || invoiceText) && (
+        <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
+          <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{bomReportText || invoiceText}</pre>
+        </div>
+      )}
+
     </div>
-
-    {/* Terminal Output Console */}
-    {(bomReportText || invoiceText) && (
-      <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
-        <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-            {bomReportText ? 'Industrial cutting BOM Terminal Output' : 'Commercial customer invoice Terminal Output'}
-          </span>
-          <button 
-            type="button" 
-            onClick={() => { setBomReportText(''); setInvoiceText(''); }} 
-            className="text-slate-400 hover:text-white font-bold text-xs p-1 cursor-pointer"
-          >
-            ✕ Clear Output
-          </button>
-        </div>
-        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{bomReportText || invoiceText}</pre>
-      </div>
-    )}
-
-  </div>
   );
 }
