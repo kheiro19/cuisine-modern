@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
-import InventoryManager from './components/InventoryManager'; 
+import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -108,6 +108,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
   }
 };
 
+// 🚀 تفعيل التصدير الافتراضي النظيف والمطابق 100% مع ملف الإقلاع main.tsx
 export default function App() {
   const {
     cabinets,
@@ -251,7 +252,7 @@ export default function App() {
           <span className="text-lg">📐</span>
           <h1 className="text-sm font-bold tracking-tight uppercase text-slate-900">Cuisine Modern <span className="text-indigo-600">x Flatma Dual-3D</span></h1>
         </div>
-        <button disabled={!canUndo} onClick={triggerUndo} className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold shadow-3xs ${canUndo ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>↩️ UNDO MATRIX STEP</button>
+        <button type="button" disabled={!canUndo} onClick={triggerUndo} className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold shadow-3xs ${canUndo ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>↩️ UNDO MATRIX STEP</button>
       </header>
 
       <div className="w-full flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
@@ -274,25 +275,55 @@ export default function App() {
 
             <button type="button" onClick={handleAddCustomBoard} className="w-full bg-teal-700 text-white font-bold py-1.5 rounded-lg text-[11px] hover:bg-teal-800 transition-colors mb-2">🔨 إضافة لوح خشب مخصص داخلي (قاطع / رف)</button>
 
-            {/* Atomic Visualizer Box */}
+                        {/* Atomic Visualizer Box */}
             <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-60">
-              {parametricCabinet.boards?.map(b => {
-                const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
+              {parametricCabinet.boards?.map((b) => {
+                const maxDim = Math.max(
+                  parametricCabinet.globalDimensions?.height || 1,
+                  parametricCabinet.globalDimensions?.width || 1
+                );
                 const scale = 360 / (maxDim || 1);
                 const isSelected = b.id === selectedBoardId;
                 return (
-                  <div key={b.id} onClick={() => setSelectedBoardId(b.id)} className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" style={{ right: `${b.position.x * scale + 20}px`, bottom: `${b.position.y * scale + 20}px`, width: `${b.dimensions.width * scale}px`, height: `${b.dimensions.height * scale}px`, backgroundColor: b.color, borderColor: isSelected ? '#00e676' : '#1a1a1a', borderWidth: isSelected ? '3px' : '1px', opacity: isSelected ? 1 : 0.85, boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' }} title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}>
-                    {b.dimensions.width * scale > 40 && b.dimensions.height * scale > 25 ? b.name.substring(0, 10) : ''}
+                  <div
+                    key={b.id}
+                    onClick={() => setSelectedBoardId(b.id)}
+                    className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border"
+                    style={{
+                      right: `${b.position.x * scale + 20}px`,
+                      bottom: `${b.position.y * scale + 20}px`,
+                      width: `${b.dimensions.width * scale}px`,
+                      height: `${b.dimensions.height * scale}px`,
+                      backgroundColor: b.color,
+                      borderColor: isSelected ? '#00e676' : '#1a1a1a',
+                      borderWidth: isSelected ? '3px' : '1px',
+                      opacity: isSelected ? 1 : 0.85,
+                      boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)',
+                    }}
+                    title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}
+                  >
+                    {b.dimensions.width * scale > 40 && b.dimensions.height * scale > 25
+                      ? b.name.substring(0, 10)
+                      : ''}
                   </div>
                 );
               })}
             </div>
 
-            <select size={3} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
-              {parametricCabinet.boards?.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions.width}×{b.dimensions.height}mm)</option>)}
+            <select
+              size={3}
+              className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2"
+              value={selectedBoardId || ''}
+              onChange={(e) => setSelectedBoardId(e.target.value)}
+            >
+              {parametricCabinet.boards?.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name} ({b.dimensions.width}×{b.dimensions.height}mm)
+                </option>
+              ))}
             </select>
 
-                        {selectedBoard && (
+            {selectedBoard && (
               <div className="border border-teal-200 p-2 rounded-lg bg-teal-50/10 text-[10px] grid grid-cols-2 gap-2 mt-2">
                 <div>
                   <span className="font-bold text-teal-800 block mb-0.5">📐 تعديل المقاسات (ملم):</span>
@@ -359,7 +390,7 @@ export default function App() {
               🧊 3D EXECUTIVE SHOWCASE
             </span>
             <div className="flex-1 w-full h-full">
-              <Kitchen3DCanvas
+              <Kitchen3Canvas
                 cabinets={cabinets}
                 hardware={hardwareSettings}
                 showFronts={showFronts}
@@ -379,7 +410,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right Side: Configuration Insertion Form & Production Logs */}
+        {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">
@@ -438,65 +469,64 @@ export default function App() {
             )}
             <button
               type="button"
-              onClick={handleCreateCabinetNode}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg cursor-pointer text-center text-xs shadow-xs"
-            >
-              ➕ Construct & Insert Cabinet
-            </button>
-          </div>
+                          onClick={handleCreateCabinetNode}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg cursor-pointer text-center text-xs shadow-xs"
+          >
+            ➕ Construct & Insert Cabinet
+          </button>
+        </div>
 
-          {activeCabinetId && (
-            <div className="bg-red-50/50 border border-red-200 rounded-xl p-3 text-left space-y-2 text-xs shadow-3xs">
-              <span className="font-bold text-red-800 block">⚠️ Selected Node Destruction Console</span>
-              <button
-                type="button"
-                onClick={() => deleteCabinet(activeCabinetId)}
-                className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded-lg text-center cursor-pointer"
-              >
-                ✕ Delete Cabinet Node
-              </button>
-            </div>
-          )}
-
-          <div className="bg-white border border-[#E4E4E7] rounded-xl p-2.5 space-y-2 shadow-3xs">
+        {activeCabinetId && (
+          <div className="bg-red-50/50 border border-red-200 rounded-xl p-3 text-left space-y-2 text-xs shadow-3xs">
+            <span className="font-bold text-red-800 block">⚠️ Selected Node Destruction Console</span>
             <button
               type="button"
-              onClick={handleExportFactoryBOM}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
+              onClick={() => deleteCabinet(activeCabinetId)}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 rounded-lg text-center cursor-pointer"
             >
-              🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)
-            </button>
-            <button
-              type="button"
-              onClick={handlePrintCustomerInvoice}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
-            >
-              🧾 CALCULATE & PRINT CUSTOMER INVOICE
+              ✕ Delete Cabinet Node
             </button>
           </div>
+        )}
+
+        <div className="bg-white border border-[#E4E4E7] rounded-xl p-2.5 space-y-2 shadow-3xs">
+          <button
+            type="button"
+            onClick={handleExportFactoryBOM}
+            className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
+          >
+            🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)
+          </button>
+          <button
+            type="button"
+            onClick={handlePrintCustomerInvoice}
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
+          >
+            🧾 CALCULATE & PRINT CUSTOMER INVOICE
+          </button>
         </div>
       </div>
-
-      {(bomReportText || invoiceText) && (
-        <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
-          <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-              {bomReportText ? 'Industrial cutting BOM Terminal Output' : 'Commercial customer invoice Terminal Output'}
-            </span>
-            <button 
-              type="button" 
-              onClick={() => { setBomReportText(''); setInvoiceText(''); }} 
-              className="text-slate-400 hover:text-white font-bold text-xs p-1 cursor-pointer"
-            >
-              ✕ Clear Output
-            </button>
-          </div>
-          <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
-            {bomReportText || invoiceText}
-          </pre>
-        </div>
-      )}
-
     </div>
+
+    {/* Terminal Output Console */}
+    {(bomReportText || invoiceText) && (
+      <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
+        <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+            {bomReportText ? 'Industrial cutting BOM Terminal Output' : 'Commercial customer invoice Terminal Output'}
+          </span>
+          <button 
+            type="button" 
+            onClick={() => { setBomReportText(''); setInvoiceText(''); }} 
+            className="text-slate-400 hover:text-white font-bold text-xs p-1 cursor-pointer"
+          >
+            ✕ Clear Output
+          </button>
+        </div>
+        <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">{bomReportText || invoiceText}</pre>
+      </div>
+    )}
+
+  </div>
   );
 }
