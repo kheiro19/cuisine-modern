@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
-import InventoryManager from './components/InventoryManager'; // 🔒 تصحيح المسار الشرعي المستقر للمكون
+import InventoryManager from './components/InventoryManager'; 
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -137,7 +137,7 @@ export default function App() {
 
   const [parametricCabinet, setParametricCabinet] = useState<ComprehensiveCabinetFormState>({
     id: 'universal-01',
-    name: 'وحدة أدراج سفلية عميقة عصرية',
+        name: 'وحدة أدراج سفلية عميقة عصرية',
     subtype: 'Deep_Drawers',
     globalDimensions: { width: 800, height: 870, depth: 600 },
     materialThickness: 18,
@@ -146,7 +146,6 @@ export default function App() {
 
   const [selectedBoardId, setSelectedBoardId] = useState<string | null>(null);
 
-    // 🔒 حل الثغرة 2: تتبع متزامن للسماكة الفعلية المختارة بالمخزن أثناء تبديل الطرازات
   const handleSubtypeChange = (newSubtype: CabinetSubtype) => {
     let defaultDims: Dimensions = { width: 600, height: 720, depth: 350 };
     if (newSubtype === 'Ceiling_Height') {
@@ -194,7 +193,6 @@ export default function App() {
     }));
   };
 
-  // 🔒 حل الثغرة 3: توليد معرفات عشوائية مركبة لمنع الـ Keys Collision أثناء السحب السريع
   const handleAddCustomBoard = () => {
     const uniqueSalt = Math.random().toString(36).substring(2, 7);
     const newCustom: Board = {
@@ -276,55 +274,25 @@ export default function App() {
 
             <button type="button" onClick={handleAddCustomBoard} className="w-full bg-teal-700 text-white font-bold py-1.5 rounded-lg text-[11px] hover:bg-teal-800 transition-colors mb-2">🔨 إضافة لوح خشب مخصص داخلي (قاطع / رف)</button>
 
-                        {/* Atomic Visualizer Box */}
+            {/* Atomic Visualizer Box */}
             <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-60">
-              {parametricCabinet.boards?.map((b) => {
-                const maxDim = Math.max(
-                  parametricCabinet.globalDimensions?.height || 1,
-                  parametricCabinet.globalDimensions?.width || 1
-                );
+              {parametricCabinet.boards?.map(b => {
+                const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
                 const scale = 360 / (maxDim || 1);
                 const isSelected = b.id === selectedBoardId;
                 return (
-                  <div
-                    key={b.id}
-                    onClick={() => setSelectedBoardId(b.id)}
-                    className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border"
-                    style={{
-                      right: `${b.position.x * scale + 20}px`,
-                      bottom: `${b.position.y * scale + 20}px`,
-                      width: `${b.dimensions.width * scale}px`,
-                      height: `${b.dimensions.height * scale}px`,
-                      backgroundColor: b.color,
-                      borderColor: isSelected ? '#00e676' : '#1a1a1a',
-                      borderWidth: isSelected ? '3px' : '1px',
-                      opacity: isSelected ? 1 : 0.85,
-                      boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)',
-                    }}
-                    title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}
-                  >
-                    {b.dimensions.width * scale > 40 && b.dimensions.height * scale > 25
-                      ? b.name.substring(0, 10)
-                      : ''}
+                  <div key={b.id} onClick={() => setSelectedBoardId(b.id)} className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" style={{ right: `${b.position.x * scale + 20}px`, bottom: `${b.position.y * scale + 20}px`, width: `${b.dimensions.width * scale}px`, height: `${b.dimensions.height * scale}px`, backgroundColor: b.color, borderColor: isSelected ? '#00e676' : '#1a1a1a', borderWidth: isSelected ? '3px' : '1px', opacity: isSelected ? 1 : 0.85, boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' }} title={`${b.name}\n${b.dimensions.width}x${b.dimensions.height}mm`}>
+                    {b.dimensions.width * scale > 40 && b.dimensions.height * scale > 25 ? b.name.substring(0, 10) : ''}
                   </div>
                 );
               })}
             </div>
 
-            <select
-              size={3}
-              className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2"
-              value={selectedBoardId || ''}
-              onChange={(e) => setSelectedBoardId(e.target.value)}
-            >
-              {parametricCabinet.boards?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.dimensions.width}×{b.dimensions.height}mm)
-                </option>
-              ))}
+            <select size={3} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
+              {parametricCabinet.boards?.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions.width}×{b.dimensions.height}mm)</option>)}
             </select>
 
-            {selectedBoard && (
+                        {selectedBoard && (
               <div className="border border-teal-200 p-2 rounded-lg bg-teal-50/10 text-[10px] grid grid-cols-2 gap-2 mt-2">
                 <div>
                   <span className="font-bold text-teal-800 block mb-0.5">📐 تعديل المقاسات (ملم):</span>
@@ -335,7 +303,7 @@ export default function App() {
                     onChange={(e) =>
                       handleUpdateBoardDimensions(selectedBoard.id, 'width', Number(e.target.value))
                     }
-                    className="w-12 border p-0.5 text-center"
+                    className="w-12 border p-0.5 text-center bg-white"
                   />
                   H:{' '}
                   <input
@@ -344,7 +312,7 @@ export default function App() {
                     onChange={(e) =>
                       handleUpdateBoardDimensions(selectedBoard.id, 'height', Number(e.target.value))
                     }
-                    className="w-12 border p-0.5 text-center m-0.5"
+                    className="w-12 border p-0.5 text-center m-0.5 bg-white"
                   />
                 </div>
                 <div>
@@ -356,7 +324,7 @@ export default function App() {
                     onChange={(e) =>
                       handleUpdateBoardPosition(selectedBoard.id, 'x', Number(e.target.value))
                     }
-                    className="w-12 border p-0.5 text-center"
+                    className="w-12 border p-0.5 text-center bg-white"
                   />
                   Y:{' '}
                   <input
@@ -365,7 +333,7 @@ export default function App() {
                     onChange={(e) =>
                       handleUpdateBoardPosition(selectedBoard.id, 'y', Number(e.target.value))
                     }
-                    className="w-12 border p-0.5 text-center m-0.5"
+                    className="w-12 border p-0.5 text-center m-0.5 bg-white"
                   />
                   <button
                     type="button"
@@ -376,7 +344,7 @@ export default function App() {
                       }));
                       setSelectedBoardId(null);
                     }}
-                    className="text-red-600 font-bold block mt-1 hover:underline"
+                    className="text-red-600 font-bold block mt-1 hover:underline cursor-pointer"
                   >
                     🗑️ حذف اللوح
                   </button>
@@ -411,11 +379,12 @@ export default function App() {
           </div>
         </div>
 
+        {/* Right Side: Configuration Insertion Form & Production Logs */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">
-                          {/* 🛠️ Cabinet Procedural Injection */}
-            <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
+              🛠️ Cabinet Procedural Injection
+            </span>
             <div className="space-y-1">
               <label className="text-[10px] font-bold text-gray-400 block">Unit Category</label>
               <select
@@ -451,7 +420,7 @@ export default function App() {
                     max="4"
                     value={elementCount}
                     onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))}
-                    className="w-full border rounded-md p-0.5 text-center font-bold"
+                    className="w-full border rounded-md p-0.5 text-center font-bold bg-white"
                   />
                 </div>
                 {cabCategory === 'BASE_UNIT' && (
@@ -493,14 +462,14 @@ export default function App() {
             <button
               type="button"
               onClick={handleExportFactoryBOM}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
             >
               🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)
             </button>
             <button
               type="button"
               onClick={handlePrintCustomerInvoice}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm"
             >
               🧾 CALCULATE & PRINT CUSTOMER INVOICE
             </button>
@@ -510,6 +479,18 @@ export default function App() {
 
       {(bomReportText || invoiceText) && (
         <div className="w-full mt-4 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-4 font-mono text-xs text-left shadow-md max-h-72 overflow-y-auto animate-fade-in">
+          <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-2">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+              {bomReportText ? 'Industrial cutting BOM Terminal Output' : 'Commercial customer invoice Terminal Output'}
+            </span>
+            <button 
+              type="button" 
+              onClick={() => { setBomReportText(''); setInvoiceText(''); }} 
+              className="text-slate-400 hover:text-white font-bold text-xs p-1 cursor-pointer"
+            >
+              ✕ Clear Output
+            </button>
+          </div>
           <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
             {bomReportText || invoiceText}
           </pre>
@@ -519,4 +500,3 @@ export default function App() {
     </div>
   );
 }
-
