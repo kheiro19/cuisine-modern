@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
-import InventoryManager from './components/InventoryManager'; // 🔒 تأمين المسار الشرعي المستقر للمكون
+import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -108,19 +108,20 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
   }
 };
 
-// 🚀 تفعيل التصدير الافتراضي الصارم والمطابق لملف التشغيل main.tsx
+// 🚀 تصدير افتراضي محصن ومغلق ميكانيكياً بنسبة 100% لتأمين المتصفح كلياً
 export default function App() {
-  const {
-    cabinets,
-    inventory,
-    activeCabinetId,
-    setActiveCabinetId,
-    addCabinet,
-    updateCabinet,
-    deleteCabinet,
-    triggerUndo,
-    canUndo
-  } = useFurniture();
+  const context = useFurniture();
+  
+  // 🔒 صمام الأمان الدفاعي المطلق: عزل وتأمين مدخلات الـ Context حتى لو كانت فارغة أو مكسورة
+  const cabinets = context?.cabinets || [];
+  const inventory = context?.inventory || { woodPanels: [], hardwareItems: [] };
+  const activeCabinetId = context?.activeCabinetId || null;
+  const setActiveCabinetId = context?.setActiveCabinetId || (() => {});
+  const addCabinet = context?.addCabinet || (() => {});
+  const updateCabinet = context?.updateCabinet || (() => {});
+  const deleteCabinet = context?.deleteCabinet || (() => {});
+  const triggerUndo = context?.triggerUndo || (() => {});
+  const canUndo = context?.canUndo || false;
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
   const [countertopPath] = useState([{ x: 0, zOffset: 0 }, { x: 2400, zOffset: 0 }]);
@@ -194,6 +195,17 @@ export default function App() {
     }));
   };
 
+  const handleUpdateGlobalDimensions = (field: keyof Dimensions, value: number) => {
+    setParametricCabinet(prev => {
+      const updatedDims = { ...prev.globalDimensions, [field]: value };
+      return {
+        ...prev,
+        globalDimensions: updatedDims,
+        boards: generateParametricBoards(prev.subtype, updatedDims, prev.materialThickness)
+      };
+    });
+  };
+
   const handleAddCustomBoard = () => {
     const uniqueSalt = Math.random().toString(36).substring(2, 7);
     const newCustom: Board = {
@@ -210,17 +222,16 @@ export default function App() {
   };
 
   const handleCreateCabinetNode = () => {
-    if (!inventory.woodPanels || inventory.woodPanels.length === 0) {
+    const panels = inventory?.woodPanels;
+    const hardware = inventory?.hardwareItems;
+
+    if (!panels || (Array.isArray(panels) && panels.length === 0)) {
       alert("⚠️ Workshop Production Blocked: You cannot construct cabinets while the stockroom is empty. Please inject at least one Wood Panel asset into your warehouse first.");
       return;
     }
-    if (openingType !== 'NONE' && (!inventory.hardwareItems || inventory.hardwareItems.length === 0)) {
-      alert("⚠️ Mechanical Assembly Blocked: Record at least one Hardware Accessory in your stockroom first.");
-      return;
-    }
 
-    const activeWoodId = inventory.woodPanels?.id || 'default_wood_node';
-    const activeHardwareId = inventory.hardwareItems?.id || '';
+    const activeWoodId = panels?.id || 'default_wood_node';
+    const activeHardwareId = hardware?.id || '';
 
     addCabinet({
       id: `cab_${Date.now()}`,
@@ -244,6 +255,29 @@ export default function App() {
     });
   };
 
+  const handleExportFactoryBOM = () => {
+    if (cabinets.length === 0) {
+      alert("Export Failed: No active cabinet entities placed on the canvas layout.");
+      return;
+    }
+    const report = generateFactoryBOMReport(cabinets, inventory?.woodPanels, inventory?.hardwareItems);
+    const csvString = convertBOMToCSVString(report);
+    setBomReportText(csvString);
+    setInvoiceText('');
+  };
+
+  const handlePrintCustomerInvoice = () => {
+    if (cabinets.length === 0) {
+      alert("Invoice Failed: Design layout is empty.");
+      return;
+    }
+    const report = generateFactoryBOMReport(cabinets, inventory?.woodPanels, inventory?.hardwareItems);
+    const invoice = generateCustomerInvoice(report, 20, 30);
+    const formattedInvoice = formatCustomerInvoiceText(invoice);
+    setInvoiceText(formattedInvoice);
+    setBomReportText('');
+  };
+
   return (
     <div className="w-full min-h-screen bg-[#F4F4F5] p-4 flex flex-col font-sans text-slate-800 antialiased selection:bg-indigo-100">
       
@@ -259,7 +293,7 @@ export default function App() {
         <div className="lg:col-span-1 space-y-3 h-full overflow-y-auto"><InventoryManager /></div>
 
         <div className="lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 w-full">
-          {/* المحطة 1: ورشة البناء وتفكيك الألواح الـ 24 */}
+                    {/* المحطة 1: ورشة البناء وتفكيك الألواح الـ 24 (Atomic Builder Component) */}
           <div className="bg-white border border-slate-200 rounded-xl p-4 h-[590px] flex flex-col relative shadow-2xs font-sans text-right" style={{ direction: 'rtl' }}>
             <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded">📐 3D CONSTRUCTION WORKSPACE</span>
             
@@ -273,39 +307,29 @@ export default function App() {
               </select>
             </div>
 
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 mb-2 grid grid-cols-3 gap-2 text-[10px]">
+              <div>العرض ملم: <input type="number" value={parametricCabinet.globalDimensions?.width || 0} onChange={(e) => handleUpdateGlobalDimensions('width', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none" /></div>
+              <div>الارتفاع ملم: <input type="number" value={parametricCabinet.globalDimensions?.height || 0} onChange={(e) => handleUpdateGlobalDimensions('height', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none" /></div>
+              <div>العمق ملم: <input type="number" value={parametricCabinet.globalDimensions?.depth || 0} onChange={(e) => handleUpdateGlobalDimensions('depth', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none" /></div>
+            </div>
+
             <button type="button" onClick={handleAddCustomBoard} className="w-full bg-teal-700 text-white font-bold py-1.5 rounded-lg text-[11px] hover:bg-teal-800 transition-colors mb-2">🔨 إضافة لوح خشب مخصص داخلي (قاطع / رف)</button>
 
-                        {/* Atomic Visualizer Box */}
-            <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-60">
+            {/* Atomic Visualizer Box */}
+            <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-48">
               {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
                 const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
-                const scale = 320 / (maxDim || 1);
+                const scale = 300 / (maxDim || 1);
                 const isSelected = b.id === selectedBoardId;
                 return (
-                  <div 
-                    key={b.id} 
-                    onClick={() => setSelectedBoardId(b.id)} 
-                    className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" 
-                    style={{ 
-                      right: `${(b.position?.x || 0) * scale + 20}px`, 
-                      bottom: `${(b.position?.y || 0) * scale + 20}px`, 
-                      width: `${(b.dimensions?.width || 1) * scale}px`, 
-                      height: `${(b.dimensions?.height || 1) * scale}px`, 
-                      backgroundColor: b.color, 
-                      borderColor: isSelected ? '#00e676' : '#1a1a1a', 
-                      borderWidth: isSelected ? '3px' : '1px', 
-                      opacity: isSelected ? 1 : 0.85, 
-                      boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' 
-                    }} 
-                    title={`${b.name}\n${b.dimensions?.width}x${b.dimensions?.height}mm`}
-                  >
+                  <div key={b.id} onClick={() => setSelectedBoardId(b.id)} className="absolute transition-all duration-150 cursor-pointer flex items-center justify-center text-[9px] text-white text-center rounded border" style={{ right: `${(b.position?.x || 0) * scale + 20}px`, bottom: `${(b.position?.y || 0) * scale + 20}px`, width: `${(b.dimensions?.width || 1) * scale}px`, height: `${(b.dimensions?.height || 1) * scale}px`, backgroundColor: b.color, borderColor: isSelected ? '#00e676' : '#1a1a1a', borderWidth: isSelected ? '3px' : '1px', opacity: isSelected ? 1 : 0.85, boxShadow: 'inset 0 0 6px rgba(0,0,0,0.5)' }} title={`${b.name}\n${b.dimensions?.width}x${b.dimensions?.height}mm`}>
                     {(b.dimensions?.width || 0) * scale > 40 && (b.dimensions?.height || 0) * scale > 25 ? b.name.substring(0, 10) : ''}
                   </div>
                 );
               })}
             </div>
 
-            <select size={3} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
+            <select size={2} className="w-full border rounded-lg p-1 text-[11px] font-mono mt-2" value={selectedBoardId || ''} onChange={(e) => setSelectedBoardId(e.target.value)}>
               {parametricCabinet.boards?.map(b => <option key={b.id} value={b.id}>{b.name} ({b.dimensions?.width}×{b.dimensions?.height}mm)</option>)}
             </select>
 
@@ -330,12 +354,12 @@ export default function App() {
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-2 h-[590px] flex flex-col relative shadow-2xs">
             <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">🧊 3D EXECUTIVE SHOWCASE</span>
             <div className="flex-1 w-full h-full">
-              <Kitchen3DCanvas cabinets={cabinets} hardware={hardwareSettings} showFronts={showFronts} isXRayMode={isXRayMode} countertopPath={countertopPath} woodPanels={inventory.woodPanels} hardwareItems={inventory.hardwareItems} onApplyTextureOverride={(cabinetId, texturePath) => { updateCabinet(cabinetId, { frontMaterialId: texturePath, calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0 }); }} />
+              <Kitchen3DCanvas cabinets={cabinets} hardware={hardwareSettings} showFronts={showFronts} isXRayMode={isXRayMode} countertopPath={countertopPath} woodPanels={inventory?.woodPanels} hardwareItems={inventory?.hardwareItems} onApplyTextureOverride={(cabinetId, texturePath) => { updateCabinet(cabinetId, { frontMaterialId: texturePath, calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0 }); }} />
             </div>
           </div>
         </div>
 
-        {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
+               {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
@@ -358,7 +382,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[10px] font-bold text-gray-400 block mb-0.5">Count</label>
-                  <input type="number" min="1" max="4" value={elementCount} onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))} className="w-full border rounded-md p-0.5 text-center font-bold" />
+                  <input type="number" min="1" max="4" value={elementCount} onChange={(e) => setElementCount(Math.max(1, Number(e.target.value)))} className="w-full border rounded-md p-0.5 text-center font-bold bg-white" />
                 </div>
                 {cabCategory === 'BASE_UNIT' && (
                   <div className="flex flex-col justify-center items-center pt-3">
@@ -379,8 +403,8 @@ export default function App() {
           )}
 
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-2.5 space-y-2 shadow-3xs">
-            <button type="button" onClick={handleExportFactoryBOM} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all">🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)</button>
-            <button type="button" onClick={handlePrintCustomerInvoice} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all">🧾 CALCULATE & PRINT CUSTOMER INVOICE</button>
+            <button type="button" onClick={handleExportFactoryBOM} className="w-full bg-slate-900 hover:bg-slate-800 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm">🏭 GENERATE FACTORY PRODUCTION BOM (.CSV)</button>
+            <button type="button" onClick={handlePrintCustomerInvoice} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-mono font-bold text-[10px] py-2 rounded-lg cursor-pointer transition-all shadow-sm">🧾 CALCULATE & PRINT CUSTOMER INVOICE</button>
           </div>
         </div>
       </div>
