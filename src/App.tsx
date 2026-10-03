@@ -119,7 +119,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
       return [
         ...baseBoards,
         { id: 'top', name: 'سقف خزانة الزاوية العمياء', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'blind-deep-shelf', name: 'رف داخلي عميق للأغراض الموسمية', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 10, height: thk, depth: global.depth - 10 }, position: { x: thk + 5, y: global.height / 2, z: 5 }, materialThickness: thk, color: '#f1f5f9' }
+        { id: 'blind-deep-shelf', name: 'رف داخلي عميق للأغراض الموسمية', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 10, height: thk, depth: global.depth - 10 }, position: { x: thk + 5, or: global.height / 2, z: 5 }, materialThickness: thk, color: '#f1f5f9' }
       ];
     case 'Diagonal_Corner':
       return [
@@ -149,7 +149,7 @@ export default function App() {
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
   const [countertopPath] = useState([{ x: 0, zOffset: 0 }, { x: 2400, zOffset: 0 }]);
-  const [showFronts, setShowFronts] = useState<boolean>(true);
+  const [showFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
 
   const [cabCategory, setCabCategory] = useState<CabinetCategory>('BASE_UNIT');
@@ -248,7 +248,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen bg-[#F4F4F5] p-3 flex flex-col font-sans text-slate-800 antialiased overflow-x-hidden select-none">
       
-      {/* 🔝 MAIN NAVIGATION & MODE SWITCH */}
+      {/* 🔝 الترويسة ونظام التبويب المشترك */}
       <header className="w-full border border-[#E4E4E7] bg-white rounded-xl px-4 py-2 mb-3 flex justify-between items-center shadow-3xs">
         <div className="flex items-center space-x-4">
           <span className="text-md">📐</span>
@@ -269,134 +269,140 @@ export default function App() {
         </button>
       </header>
 
-      {/* 🔳 VIEWPORTS SCREEN STACK */}
+      {/* 🔳 الشاشات الحاكمة بتمدد قسري شامل لملء الصفحة */}
       <div className="w-full flex-1 flex flex-col">
         
-        {/* MODE 1: THE PARAMETRIC CNC CABINET WORKSPACE */}
+        {/* 🚪 وضع الورشة الحركية لتفكيك الألواح */}
         {activeTab === 'WORKSPACE' && (
           <div className="w-full grid grid-cols-1 xl:grid-cols-4 gap-3 items-stretch flex-1 animate-fade-in">
             
-            <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[700px] overflow-y-auto">
+            <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[720px] overflow-y-auto">
               <InventoryManager />
             </div>
 
-            <div className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden shadow-inner flex flex-col justify-end min-h-[480px]">
+            <div className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden shadow-inner flex flex-col justify-end min-h-[550px]">
               <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">
                              📐 3D ATOMIC CONSTRUCTION WORKSPACE
+              </span>
+              <div className="w-full h-full flex items-center justify-center relative">
+                {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
+                  const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
+                  const scale = 340 / (maxDim || 1);
+                  return (
+                    <div key={b.id} className="absolute flex items-center justify-center text-[9px] text-white text-center rounded border border-white/20 transition-all font-mono shadow-md" style={{ right: `${(b.position?.x || 0) * scale + 60}px`, bottom: `${(b.position?.y || 0) * scale + 40}px`, width: `${(b.dimensions?.width || 1) * scale}px`, height: `${(b.dimensions?.height || 1) * scale}px`, backgroundColor: b.color || '#444' }}>
+                      {b.name ? b.name.substring(0, 14) : ''}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 🛠️ الجناح الأيمن: لوحة التحكم للـ 24 طرازاً المكتملة هندسياً */}
+            <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs" style={{ direction: 'rtl' }}>
+              <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
+              
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 block">اختر طراز الخزانة للتقطيع والتعديل:</label>
+                <select value={parametricCabinet.subtype} onChange={(e) => handleSubtypeChange(e.target.value as CabinetSubtype)} className="w-full border bg-white rounded-md p-1.5 font-medium text-xs focus:outline-none">
+                  <optgroup label="1. الخزائن العلوية (Wall Cabinets)">
+                    <option value="Standard_Wall">خزانة علوية بأبواب جانبية</option>
+                    <option value="Ceiling_Height">الخزائن الممتدة للسقف</option>
+                    <option value="Lift_Up">الخزائن الهيدروليكية (Lift-up)</option>
+                    <option value="Glass_Front">الخزائن الزجاجية الفاخرة</option>
+                    <option value="Over_Fridge">الخزانة العميقة فوق الثلاجة</option>
+                  </optgroup>
+                  <optgroup label="2. الخزائن السفلية (Base Cabinets)">
+                    <option value="Deep_Drawers">وحدات الأدراج العميق (Deep Drawers)</option>
+                    <option value="Pull_Out_Sink">خزانة الحوض بسحب أمامي</option>
+                    <option value="Cargo_Pull_Out">صيدلية التوابل العمودية</option>
+                    <option value="Hinged_Pull_Out_Trays">خزائن الأرفف الداخلية المتحركة</option>
+                  </optgroup>
+                  <optgroup label="3. الخزائن الطولية / العمودية">
+                    <option value="Tall_Pantry_Cargo">خزانة المؤونة بسحب كلي</option>
+                    <option value="Pocket_Door_Pantry">خزانة المؤونة بالأبواب المكنوزة</option>
+                    <option value="Built_In_Appliance">دولاب الأجهزة المدمجة بالفرن</option>
+                    <option value="Tandem_Pantry">خزانة المؤونة الترادفتية</option>
+                    <option value="Push_To_Open_Tall">الدولاب الطولي بالفتح بالضغط</option>
+                  </optgroup>
+                  <optgroup label="4. خزائن الزوايا والأركان 90 و45">
+                    <option value="Magic_Corner">خزانة الزاوية السحرية (Magic Corner)</option>
+                    <option value="Lazy_Susan">خزانة ليزي سوزان الدائرية</option>
+                    <option value="Corner_Drawers">أدراج الزاوية المتداخلة 90</option>
+                    <option value="LeMans_Curve">خزانة السحب المنحني LeMans</option>
+                    <option value="Blind_Corner">خزانة الزاوية العادية الممتدة</option>
+                    <option value="Diagonal_Corner">خزانة الزاوية المائلة 45 درجة</option>
+                  </optgroup>
+                </select>
+              </div>
+
+              {/* حقول تغيير المقاسات الخارجية الجبرية (W, H, D) بالملي */}
+              <div className="grid grid-cols-3 gap-1.5 text-[10px] bg-slate-50 p-2 rounded-lg border">
+                <div>العرض (W):<input type="number" value={parametricCabinet.globalDimensions?.width || 0} onChange={(e) => handleUpdateGlobalDimensions('width', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
+                <div>الارتفاع (H):<input type="number" value={parametricCabinet.globalDimensions?.height || 0} onChange={(e) => handleUpdateGlobalDimensions('height', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
+                <div>العمق (D):<input type="number" value={parametricCabinet.globalDimensions?.depth || 0} onChange={(e) => handleUpdateGlobalDimensions('depth', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
+              </div>
+
+              <div className="space-y-2 border-t pt-2 mt-1">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 block mb-0.5">فئة التركيب الإجمالية:</label>
+                  <select value={cabCategory} onChange={(e) => setCabCategory(e.target.value as CabinetCategory)} className="w-full border bg-white rounded-md p-1 focus:outline-none text-[11px]">
+                    <option value="BASE_UNIT">Caisson Bas (سفلية)</option>
+                    <option value="WALL_UNIT">Caisson Haut (علوية معلقة)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-gray-400 block mb-0.5">بروتوكول فتح واجهة الفساد:</label>
+                  <select value={openingType} onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)} className="w-full border bg-white rounded-md p-1 focus:outline-none text-[11px]">
+                    <option value="DOORS">Swing Doors (أبواب جانبية)</option>
+                    <option value="DRAWERS">Extension Drawers (أدراج سحابة)</option>
+                    <option value="NONE">Open Layout (بدون واجهة)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="pt-2 space-y-1.5 mt-auto">
+                <button type="button" onClick={handleCreateCabinetNode} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-xs shadow-xs transition-colors cursor-pointer">➕ حقن وتثبيت الوحدة في المطبخ الإجمالي</button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={handleExportFactoryBOM} className="bg-slate-900 text-white font-mono font-bold text-[10px] py-1.5 rounded-md hover:bg-slate-800 transition-colors cursor-pointer">🏭 استخراج تقرير BOM</button>
+                  <button type="button" onClick={handlePrintCustomerInvoice} className="bg-emerald-600 text-white font-mono font-bold text-[10px] py-1.5 rounded-md hover:bg-emerald-700 transition-colors cursor-pointer">🧾 طباعة الفاتورة</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 📺 وضع صالة العرض الكبرى المستقلة - تم التكبير لملء الشاشة وإبهار الزبون */}
+        {activeTab === 'SHOWROOM' && (
+          <div className="w-full bg-white border border-[#E4E4E7] rounded-2xl p-1 h-[85vh] flex flex-col relative shadow-lg animate-fade-in flex-1">
+            <span className="absolute top-4 left-4 z-30 text-[10px] font-mono font-bold bg-indigo-600 text-white px-3 py-1 rounded-full shadow-md tracking-wider">
+              🧊 3D LUXURY EXECUTIVE SHOWCASE (PRESENTATION MODE)
             </span>
-            <div className="absolute inset-0 flex items-center justify-center opacity-20 pointer-events-none text-white text-xs font-mono">
-              [ مسرح تصيير وتفكيك الألواح الفردية بالمليمتر ]
-            </div>
-            
-            {/* عرض الألواح البرامترية التفاعلية بداخل الورشة */}
-            <div className="w-full h-full flex items-center justify-center relative">
-              {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
-                const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
-                const scale = 340 / (maxDim || 1);
-                return (
-                  <div key={b.id} className="absolute flex items-center justify-center text-[9px] text-white text-center rounded border border-white/20 transition-all font-mono shadow-md" style={{ right: `${(b.position?.x || 0) * scale + 60}px`, bottom: `${(b.position?.y || 0) * scale + 40}px`, width: `${(b.dimensions?.width || 1) * scale}px`, height: `${(b.dimensions?.height || 1) * scale}px`, backgroundColor: b.color || '#444' }}>
-                    {b.name ? b.name.substring(0, 14) : ''}
-                  </div>
-                );
-              })}
+            <div className="w-full h-full rounded-xl overflow-hidden relative flex flex-col flex-1">
+              <Kitchen3DCanvas 
+                cabinets={cabinets} 
+                hardware={hardwareSettings} 
+                showFronts={showFronts} 
+                isXRayMode={isXRayMode} 
+                countertopPath={countertopPath} 
+                woodPanels={inventory?.woodPanels} 
+                hardwareItems={inventory?.hardwareItems} 
+                onApplyTextureOverride={(cabinetId, texturePath) => { 
+                  updateCabinet(cabinetId, { frontMaterialId: texturePath, calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0 }); 
+                }} 
+              />
             </div>
           </div>
+        )}
 
-          {/* 🛠️ الجناح الأيمن: لوحة التحكم للـ 24 طرازاً المكتملة هندسياً */}
-          <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs" style={{ direction: 'rtl' }}>
-            <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
-            
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 block">اختر طراز الخزانة للتقطيع والتعديل:</label>
-              <select value={parametricCabinet.subtype} onChange={(e) => handleSubtypeChange(e.target.value as CabinetSubtype)} className="w-full border bg-white rounded-md p-1.5 font-medium text-xs focus:outline-none">
-                <optgroup label="1. الخزائن العلوية (Wall Cabinets)">
-                  <option value="Standard_Wall">خزانة علوية بأبواب جانبية</option>
-                  <option value="Ceiling_Height">الخزائن الممتدة للسقف</option>
-                  <option value="Lift_Up">الخزائن الهيدروليكية (Lift-up)</option>
-                  <option value="Glass_Front">الخزائن الزجاجية الفاخرة</option>
-                  <option value="Over_Fridge">الخزانة العميقة فوق الثلاجة</option>
-                </optgroup>
-                <optgroup label="2. الخزائن السفلية (Base Cabinets)">
-                  <option value="Deep_Drawers">وحدات الأدراج العميق (Deep Drawers)</option>
-                  <option value="Pull_Out_Sink">خزانة الحوض بسحب أمامي</option>
-                  <option value="Cargo_Pull_Out">صيدلية التوابل العمودية</option>
-                  <option value="Hinged_Pull_Out_Trays">خزائن الأرفف الداخلية المتحركة</option>
-                </optgroup>
-                <optgroup label="3. الخزائن الطولية / العمودية">
-                  <option value="Tall_Pantry_Cargo">خزانة المؤونة بسحب كلي</option>
-                  <option value="Pocket_Door_Pantry">خزانة المؤونة بالأبواب المكنوزة</option>
-                  <option value="Built_In_Appliance">دولاب الأجهزة المدمجة بالفرن</option>
-                  <option value="Tandem_Pantry">خزانة المؤونة الترادفتية</option>
-                  <option value="Push_To_Open_Tall">الدولاب الطولي بالفتح بالضغط</option>
-                </optgroup>
-                <optgroup label="4. خزائن الزوايا والأركان 90 و45">
-                  <option value="Magic_Corner">خزانة الزاوية السحرية (Magic Corner)</option>
-                  <option value="Lazy_Susan">خزانة ليزي سوزان الدائرية</option>
-                  <option value="Corner_Drawers">أدراج الزاوية المتداخلة 90</option>
-                  <option value="LeMans_Curve">خزانة السحب المنحني LeMans</option>
-                  <option value="Blind_Corner">خزانة الزاوية العادية الممتدة</option>
-                  <option value="Diagonal_Corner">خزانة الزاوية المائلة 45 درجة</option>
-                </optgroup>
-              </select>
-            </div>
+      </div>
 
-            {/* حقول تغيير المقاسات الخارجية الجبرية (W, H, D) بالملي */}
-            <div className="grid grid-cols-3 gap-1.5 text-[10px] bg-slate-50 p-2 rounded-lg border">
-              <div>العرض (W):<input type="number" value={parametricCabinet.globalDimensions?.width || 0} onChange={(e) => handleUpdateGlobalDimensions('width', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
-              <div>الارتفاع (H):<input type="number" value={parametricCabinet.globalDimensions?.height || 0} onChange={(e) => handleUpdateGlobalDimensions('height', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
-              <div>العمق (D):<input type="number" value={parametricCabinet.globalDimensions?.depth || 0} onChange={(e) => handleUpdateGlobalDimensions('depth', Number(e.target.value))} className="w-full border p-1 text-center bg-white rounded focus:outline-none font-bold" /></div>
-            </div>
-
-            <div className="space-y-2 border-t pt-2 mt-1">
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 block mb-0.5">فئة التركيب الإجمالية:</label>
-                <select value={cabCategory} onChange={(e) => setCabCategory(e.target.value as CabinetCategory)} className="w-full border bg-white rounded-md p-1 focus:outline-none text-[11px]">
-                  <option value="BASE_UNIT">Caisson Bas (سفلية)</option>
-                  <option value="WALL_UNIT">Caisson Haut (علوية معلقة)</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-[10px] font-bold text-gray-400 block mb-0.5">بروتوكول فتح واجهة الفساد:</label>
-                <select value={openingType} onChange={(e) => setOpeningType(e.target.value as FrontOpeningType)} className="w-full border bg-white rounded-md p-1 focus:outline-none text-[11px]">
-                  <option value="DOORS">Swing Doors (أبواب جانبية)</option>
-                  <option value="DRAWERS">Extension Drawers (أدراج سحابة)</option>
-                  <option value="NONE">Open Layout (بدون واجهة)</option>
-                </select>
-              </div>
-            </div>
-
-            <div className="pt-2 space-y-1.5 mt-auto">
-              <button type="button" onClick={handleCreateCabinetNode} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg text-xs shadow-xs transition-colors cursor-pointer">➕ حقن وتثبيت الوحدة في المطبخ الإجمالي</button>
-              <div className="grid grid-cols-2 gap-2">
-                <button type="button" onClick={handleExportFactoryBOM} className="bg-slate-900 text-white font-mono font-bold text-[10px] py-1.5 rounded-md hover:bg-slate-800 transition-colors cursor-pointer">🏭 استخراج تقرير BOM</button>
-                <button type="button" onClick={handlePrintCustomerInvoice} className="bg-emerald-600 text-white font-mono font-bold text-[10px] py-1.5 rounded-md hover:bg-emerald-700 transition-colors cursor-pointer">🧾 طباعة الفاتورة</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODE 2: THE IMMERSIVE 3D LUXURY KITCHEN SHOWROOM */}
-      {activeTab === 'SHOWROOM' && (
-        <div className="w-full bg-white border border-[#E4E4E7] rounded-2xl p-2 h-[720px] flex flex-col relative shadow-sm animate-fade-in flex-1">
-          <span className="absolute top-4 left-4 z-30 text-[10px] font-mono font-bold bg-indigo-600 text-white px-3 py-1 rounded-full shadow-md tracking-wider">
-            🧊 3D LUXURY EXECUTIVE SHOWCASE (PRESENTATION MODE)
-          </span>
-          <div className="w-full h-full rounded-xl overflow-hidden">
-            <Kitchen3DCanvas cabinets={cabinets} hardware={hardwareSettings} showFronts={showFronts} isXRayMode={isXRayMode} countertopPath={countertopPath} woodPanels={inventory?.woodPanels} hardwareItems={inventory?.hardwareItems} onApplyTextureOverride={(cabinetId, texturePath) => { updateCabinet(cabinetId, { frontMaterialId: texturePath, calculatedCostDA: cabinets.find(c => c.id === cabinetId)?.calculatedCostDA || 0 }); }} />
-          </div>
+      {/* الكونسول السفلي التفاعلي لعرض المستندات */}
+      {(bomReportText || invoiceText) && (
+        <div className="w-full mt-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-3 font-mono text-xs text-left shadow-md max-h-36 overflow-y-auto animate-fade-in">
+          <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{bomReportText || invoiceText}</pre>
         </div>
       )}
 
     </div>
-
-    {/* FOOTER TERMINAL OUTPUT */}
-    {(bomReportText || invoiceText) && (
-      <div className="w-full mt-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-3 font-mono text-xs text-left shadow-md max-h-36 overflow-y-auto animate-fade-in">
-        <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{bomReportText || invoiceText}</pre>
-      </div>
-    )}
-
-  </div>
   );
 }
