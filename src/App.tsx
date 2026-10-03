@@ -7,9 +7,6 @@ import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngin
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
 import { CabinetCategory, FrontOpeningType } from './types/flatma';
 
-// ========================================================
-// 📐 1. الأرشيف الهيكلي والأنواع البرامترية المتقدمة للـ 24 طراز كاملاً
-// ========================================================
 export interface Dimensions {
   width: number;
   height: number;
@@ -33,17 +30,10 @@ export interface Board {
 }
 
 export type CabinetSubtype = 
-  // 1. الخزائن العلوية المعلقة (Wall Cabinets)
 
   | 'Ceiling_Height' | 'Standard_Wall' | 'Lift_Up' | 'Glass_Front' | 'Over_Fridge' | 'Open_Shelving' | 'Double_Depth'
-  // 2. الخزائن السفلية (Base Cabinets)
-
   | 'Deep_Drawers' | 'Pull_Out_Sink' | 'Cargo_Pull_Out' | 'Panel_Ready' | 'Push_To_Open_Base' | 'Hinged_Pull_Out_Trays'
-  // 3. الخزائن الطولية / العمودية (Tall & Pantry Cabinets)
-
   | 'Tall_Pantry_Cargo' | 'Pocket_Door_Pantry' | 'Built_In_Appliance' | 'Tandem_Pantry' | 'Push_To_Open_Tall'
-  // 4. خزائن الزوايا والأركان (Corner Cabinets)
-
   | 'Magic_Corner' | 'Lazy_Susan' | 'Corner_Drawers' | 'LeMans_Curve' | 'Blind_Corner' | 'Diagonal_Corner';
 
 export interface ComprehensiveCabinetFormState {
@@ -55,76 +45,21 @@ export interface ComprehensiveCabinetFormState {
   boards: Board[];
 }
 
-// ========================================================
-// 🧠 2. المحرك الإجرائي للـ 24 طراز: تفكيك الهيكل هندسياً وميكانيكياً بالملي
-// ========================================================
 const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, thk: number): Board[] => {
-  // الألواح الأساسية الموحدة للصندوق (Caisson Structure)
   const baseBoards: Board[] = [
-    { id: 'side-l', name: 'اللوح الجانبي الأيسر', type: 'side', dimensions: { width: thk, height: global.height, depth: global.depth }, position: { x: 0, y: 0, z: 0 }, materialThickness: thk, color: '#b7a38f' },
-    { id: 'side-r', name: 'اللوح الجانبي الأيمن', type: 'side', dimensions: { width: thk, height: global.height, depth: global.depth }, position: { x: global.width - thk, y: 0, z: 0 }, materialThickness: thk, color: '#b7a38f' },
-    { id: 'bottom', name: 'اللوح السفلي الصندوق', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: 0, z: 0 }, materialThickness: thk, color: '#c7b198' },
+    { id: 'side-l', name: 'اللوح الجانبي الأيسر', type: 'side', dimensions: { width: thk, height: global.height, depth: global.depth }, position: { x: 0, y: 0, z: 0 }, materialThickness: thk, color: '#e3d5ca' },
+    { id: 'side-r', name: 'اللوح الجانبي الأيمن', type: 'side', dimensions: { width: thk, height: global.height, depth: global.depth }, position: { x: global.width - thk, y: 0, z: 0 }, materialThickness: thk, color: '#e3d5ca' },
+    { id: 'bottom', name: 'اللوح السفلي الصندوق', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: 0, z: 0 }, materialThickness: thk, color: '#d5bdaf' },
   ];
 
   switch (subtype) {
-    // ----------------- 1. الخزائن العلوية والمعلقة -----------------
-    case 'Ceiling_Height':
-      return [
-        ...baseBoards,
-        { id: 'top', name: 'سقف الخزانة الممتد', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'back', name: 'ظهر الصندوق الحامي', type: 'back', dimensions: { width: global.width - (thk * 2), height: global.height - (thk * 2), depth: 8 }, position: { x: thk, y: thk, z: global.depth - 8 }, materialThickness: 8, color: '#dfd3c3' },
-        { id: 'shelf-1', name: 'رف علوي إضافي للارتفاع', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: thk, depth: global.depth - 15 }, position: { x: thk + 2, y: global.height * 0.65, z: 5 }, materialThickness: thk, color: '#f0ece3' }
-      ];
-    case 'Lift_Up':
-      return [
-        ...baseBoards,
-        { id: 'top', name: 'اللوح العلوي الهيدروليكي', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'front-lift', name: 'واجهة هيدروليكية تفتح لأعلى', type: 'drawer_front', dimensions: { width: global.width - 4, height: global.height - 4, depth: 18 }, position: { x: 2, y: 2, z: 0 }, materialThickness: 18, color: '#4a5568' }
-      ];
-    case 'Glass_Front':
-      return [
-        ...baseBoards,
-        { id: 'top', name: 'اللوح العلوي للإضاءة', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'glass-shelf', name: 'رف زجاجي مضيء LED', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 4, height: 6, depth: global.depth - 20 }, position: { x: thk + 2, y: global.height / 2, z: 10 }, materialThickness: 6, color: '#9ae6b4' }
-      ];
-    case 'Over_Fridge':
-      return [
-        ...baseBoards,
-        { id: 'top', name: 'اللوح العلوي العميق 60سم', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: 600 }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' }
-      ];
-    case 'Double_Depth':
-      return [
-        ...baseBoards,
-        { id: 'divider-depth', name: 'قاطع تدرج العمق المزدوج', type: 'custom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth * 0.6 }, position: { x: thk, y: global.height / 2, z: 0 }, materialThickness: thk, color: '#68d391' }
-      ];
-
-    // ----------------- 2. الخزائن السفلية والحركية -----------------
     case 'Deep_Drawers':
       return [
         ...baseBoards,
-        { id: 'stretcher', name: 'عارضة التثبيت العلوية', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: 100 }, position: { x: thk, y: global.height - thk, z: global.depth - 100 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'drw-front-1', name: 'واجهة درج سفلي عميق', type: 'drawer_front', dimensions: { width: global.width - 4, height: (global.height / 2) - 6, depth: 18 }, position: { x: 2, y: 4, z: 0 }, materialThickness: 18, color: '#2b6cb0' },
-        { id: 'drw-front-2', name: 'واجهة درج علوي مكمل', type: 'drawer_front', dimensions: { width: global.width - 4, height: (global.height / 2) - 6, depth: 18 }, position: { x: 2, y: (global.height / 2) + 2, z: 0 }, materialThickness: 18, color: '#2b6cb0' }
+        { id: 'top-stretcher', name: 'عارضة التثبيت', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: 100 }, position: { x: thk, y: global.height - thk, z: 100 }, materialThickness: thk, color: '#d5bdaf' },
+        { id: 'drw-front-1', name: 'واجهة الدرج السفلي', type: 'drawer_front', dimensions: { width: global.width - 4, height: (global.height / 2) - 6, depth: 18 }, position: { x: 2, y: 4, z: 0 }, materialThickness: 18, color: '#b7b7a4' },
+        { id: 'drw-front-2', name: 'واجهة الدرج العلوي', type: 'drawer_front', dimensions: { width: global.width - 4, height: (global.height / 2) - 6, depth: 18 }, position: { x: 2, y: (global.height / 2) + 2, z: 0 }, materialThickness: 18, color: '#b7b7a4' }
       ];
-    case 'Pull_Out_Sink':
-      return [
-        ...baseBoards,
-        { id: 'sink-stretcher', name: 'عارضة الحوض النحيفة المقلوبة', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: 100, depth: thk }, position: { x: thk, y: global.height - 100, z: 20 }, materialThickness: thk, color: '#e53e3e' },
-        { id: 'trash-pull', name: 'إطار سحب منظم المنظفات', type: 'drawer_box', dimensions: { width: global.width - (thk * 2) - 30, height: 200, depth: global.depth - 50 }, position: { x: thk + 15, y: 20, z: 30 }, materialThickness: 16, color: '#4a5568' }
-      ];
-    case 'Cargo_Pull_Out':
-      return [
-        ...baseBoards,
-        { id: 'cargo-front', name: 'واجهة سحب التوابل النحيفة', type: 'drawer_front', dimensions: { width: global.width - 2, height: global.height - 4, depth: 18 }, position: { x: 1, y: 2, z: 0 }, materialThickness: 18, color: '#dd6b20' }
-      ];
-    case 'Hinged_Pull_Out_Trays':
-      return [
-        ...baseBoards,
-        { id: 'top', name: 'اللوح العلوي القياسي', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
-        { id: 'tray-1', name: 'رف داخلي سحاب كالأدراج', type: 'shelf', dimensions: { width: global.width - (thk * 2) - 24, height: 40, depth: global.depth - 30 }, position: { x: thk + 12, y: global.height * 0.3, z: 15 }, materialThickness: 16, color: '#319795' }
-      ];
-
-        // ----------------- 3. وحدات المؤونة الطولية والعمودية -----------------
     case 'Tall_Pantry_Cargo':
       return [
         ...baseBoards,
@@ -156,8 +91,6 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
         { id: 'top', name: 'سقف الدولاب الطولي المودرن', type: 'top_bottom', dimensions: { width: global.width - (thk * 2), height: thk, depth: global.depth }, position: { x: thk, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#c7b198' },
         { id: 'p2o-facade', name: 'واجهة ملساء بالكامل تفتح بالضغط', type: 'drawer_front', dimensions: { width: global.width - 4, height: global.height - 4, depth: 18 }, position: { x: 2, y: 2, z: 0 }, materialThickness: 18, color: '#1e293b' }
       ];
-
-    // ----------------- 4. حلول الأركان والزوايا 90 و45 درجة -----------------
     case 'Magic_Corner':
       return [
         ...baseBoards,
@@ -190,7 +123,7 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
       ];
     case 'Diagonal_Corner':
       return [
-        { id: 'diag-top', name: 'اللوح العلوي المائل بزاوية 45', type: 'top_bottom', dimensions: { width: global.width, height: thk, depth: global.depth }, position: { x: 0, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#a0aec0' },
+                { id: 'diag-top', name: 'اللوح العلوي المائل بزاوية 45', type: 'top_bottom', dimensions: { width: global.width, height: thk, depth: global.depth }, position: { x: 0, y: global.height - thk, z: 0 }, materialThickness: thk, color: '#a0aec0' },
         { id: 'diag-bottom', name: 'اللوح السفلي المائل 45 درجة', type: 'top_bottom', dimensions: { width: global.width, height: thk, depth: global.depth }, position: { x: 0, y: 0, z: 0 }, materialThickness: thk, color: '#a0aec0' }
       ];
     default:
@@ -216,8 +149,8 @@ export default function App() {
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
   const [countertopPath] = useState([{ x: 0, zOffset: 0 }, { x: 2400, zOffset: 0 }]);
-  const [showFronts, setShowFronts] = useState<boolean>(true);
-  const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
+  const [showFronts] = useState<boolean>(true);
+  const [isXRayMode] = useState<boolean>(false);
 
   const [cabCategory, setCabCategory] = useState<CabinetCategory>('BASE_UNIT');
   const [openingType, setOpeningType] = useState<FrontOpeningType>('DOORS');
@@ -226,12 +159,11 @@ export default function App() {
 
   const [bomReportText, setBomReportText] = useState<string>('');
   const [invoiceText, setInvoiceText] = useState<string>('');
-
   const [activeTab, setActiveTab] = useState<'WORKSPACE' | 'SHOWROOM'>('WORKSPACE');
 
   const [parametricCabinet, setParametricCabinet] = useState<ComprehensiveCabinetFormState>({
     id: 'universal-01',
-        name: 'وحدة أدراج سفلية عميقة عصرية',
+    name: 'وحدة أدراج سفلية عميقة عصرية',
     subtype: 'Deep_Drawers',
     globalDimensions: { width: 1050, height: 870, depth: 600 },
     materialThickness: 18,
@@ -316,7 +248,7 @@ export default function App() {
   return (
     <div className="w-full min-h-screen bg-[#F4F4F5] p-3 flex flex-col font-sans text-slate-800 antialiased overflow-x-hidden select-none">
       
-      {/* 🔝 الترويسة ونظام الفصل البانورامي للمنصة */}
+      {/* 🔝 MAIN NAVIGATION & MODE SWITCH */}
       <header className="w-full border border-[#E4E4E7] bg-white rounded-xl px-4 py-2 mb-3 flex justify-between items-center shadow-3xs">
         <div className="flex items-center space-x-4">
           <span className="text-md">📐</span>
@@ -337,22 +269,20 @@ export default function App() {
         </button>
       </header>
 
-      {/* 🔳 الشاشة النشطة ديناميكياً بناءً على وضع التصفح المختار */}
+      {/* 🔳 VIEWPORTS SCREEN STACK */}
       <div className="w-full flex-1 flex flex-col">
         
-        {/* 🚪 الشاشة الأولى: ورشة الحرفي البرامترية لتفكيك الألواح */}
+        {/* MODE 1: THE PARAMETRIC CNC CABINET WORKSPACE */}
         {activeTab === 'WORKSPACE' && (
           <div className="w-full grid grid-cols-1 xl:grid-cols-4 gap-3 items-stretch flex-1 animate-fade-in">
             
-            {/* 📋 الجناح الأيسر: إدارة المخزن والتسعير الصافي */}
             <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[700px] overflow-y-auto">
               <InventoryManager />
             </div>
 
-            {/* 💻 الجناح الأوسط: صندوق المعاينة الفردية لتفكيك الألواح الـ 24 بالملي */}
             <div className="xl:col-span-2 bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden shadow-inner flex flex-col justify-end min-h-[480px]">
               <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">
-                📐 3D ATOMIC CONSTRUCTION WORKSPACE
+                              📐 3D ATOMIC CONSTRUCTION WORKSPACE
               </span>
               <div className="w-full h-full flex items-center justify-center relative">
                 {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
@@ -367,7 +297,7 @@ export default function App() {
               </div>
             </div>
 
-                        {/* 🛠️ الجناح الأيمن: لوحة التحكم للـ 24 طرازاً المكتملة هندسياً */}
+            {/* الجناح الأيمن: لوحة التحكم للـ 24 طرازاً المكتملة هندسياً */}
             <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs" style={{ direction: 'rtl' }}>
               <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
               
