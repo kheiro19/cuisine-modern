@@ -108,18 +108,18 @@ const generateParametricBoards = (subtype: CabinetSubtype, global: Dimensions, t
   }
 };
 
-// 🚀 تصدير افتراضي محصن ومغلق ميكانيكياً بنسبة 100% لتأمين المتصفح كلياً
 export default function App() {
   const context = useFurniture();
   
-  // 🔒 صمام الأمان الدفاعي المطلق: عزل وتأمين مدخلات الـ Context حتى لو كانت فارغة أو مكسورة
   const cabinets = context?.cabinets || [];
-  const inventory = context?.inventory || { woodPanels: [], hardwareItems: [] };
+  const inventory = context?.inventory || { woodPanels: null, hardwareItems: null };
   const activeCabinetId = context?.activeCabinetId || null;
   const setActiveCabinetId = context?.setActiveCabinetId || (() => {});
   const addCabinet = context?.addCabinet || (() => {});
   const updateCabinet = context?.updateCabinet || (() => {});
   const deleteCabinet = context?.deleteCabinet || (() => {});
+  
+  // ↩️ استدعاء دالة التراجع للخلف (Undo Engine) من الـ Context وتأمين قيمتها الشرطية
   const triggerUndo = context?.triggerUndo || (() => {});
   const canUndo = context?.canUndo || false;
 
@@ -225,7 +225,7 @@ export default function App() {
     const panels = inventory?.woodPanels;
     const hardware = inventory?.hardwareItems;
 
-    if (!panels || (Array.isArray(panels) && panels.length === 0)) {
+    if (!panels) {
       alert("⚠️ Workshop Production Blocked: You cannot construct cabinets while the stockroom is empty. Please inject at least one Wood Panel asset into your warehouse first.");
       return;
     }
@@ -286,7 +286,18 @@ export default function App() {
           <span className="text-lg">📐</span>
           <h1 className="text-sm font-bold tracking-tight uppercase text-slate-900">Cuisine Modern <span className="text-indigo-600">x Flatma Dual-3D</span></h1>
         </div>
-        <button type="button" disabled={!canUndo} onClick={triggerUndo} className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold shadow-3xs ${canUndo ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}>↩️ UNDO MATRIX STEP</button>
+        <button 
+          type="button" 
+          disabled={!canUndo} 
+          onClick={triggerUndo} 
+          className={`px-3 py-1.5 rounded-lg border font-mono text-xs font-bold shadow-3xs transition-all ${
+            canUndo 
+              ? 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50 cursor-pointer' 
+              : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+          }`}
+        >
+          ↩️ UNDO MATRIX STEP
+        </button>
       </header>
 
       <div className="w-full flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
@@ -315,7 +326,6 @@ export default function App() {
 
             <button type="button" onClick={handleAddCustomBoard} className="w-full bg-teal-700 text-white font-bold py-1.5 rounded-lg text-[11px] hover:bg-teal-800 transition-colors mb-2">🔨 إضافة لوح خشب مخصص داخلي (قاطع / رف)</button>
 
-            {/* Atomic Visualizer Box */}
             <div className="flex-1 w-full bg-slate-900 border border-slate-800 rounded-lg relative overflow-hidden h-48">
               {parametricCabinet.boards && parametricCabinet.boards.length > 0 && parametricCabinet.boards.map(b => {
                 const maxDim = Math.max(parametricCabinet.globalDimensions?.height || 1, parametricCabinet.globalDimensions?.width || 1);
@@ -359,7 +369,7 @@ export default function App() {
           </div>
         </div>
 
-               {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
+                {/* الضلع الأيمن: حقن وتركيب الوحدات بالمستودع الإجمالي */}
         <div className="lg:col-span-1 space-y-3">
           <div className="bg-white border border-[#E4E4E7] rounded-xl p-3 text-left space-y-2.5 shadow-3xs text-xs">
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1">🛠️ Cabinet Procedural Injection</span>
