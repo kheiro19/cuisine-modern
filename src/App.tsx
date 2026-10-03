@@ -492,7 +492,7 @@ export default function App() {
           </div>
         )}
 
-      {/* الكونسول السفلي التفاعلي للمستندات والتقارير */}
+            {/* الكونسول السفلي التفاعلي للمستندات والتقارير */}
       {(bomReportText || invoiceText) && (
         <div className="w-full mt-3 bg-slate-900 text-slate-100 rounded-xl border border-slate-800 p-3 font-mono text-xs text-left shadow-md max-h-36 overflow-y-auto animate-fade-in">
           <pre className="whitespace-pre-wrap font-mono text-[10px] leading-relaxed">{bomReportText || invoiceText}</pre>
@@ -502,3 +502,4 @@ export default function App() {
     </div>
   );
 }
+
