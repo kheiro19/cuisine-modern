@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import CabinetAssembly3D from './CabinetAssembly3D';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { textureCatalog } from '../data/textureCatalog';
 
 interface Kitchen3DCanvasProps {
   cabinets: CabinetObject[];
@@ -31,27 +32,9 @@ export default function Kitchen3DCanvas({
   
   const [openProgress, setOpenProgress] = useState<number>(0);
   const [selectedCabinetId, setSelectedCabinetId] = useState<string | null>(null);
-  const [activeSource, setActiveSource] = useState<'local' | 'cloud'>('local');
-
-  // Simulated dataset index representing your 400 premium multi-format textures
-  const local400Library = useMemo(() => {
-    return Array.from({ length: 24 }, (_, i) => ({
-      id: `loc_tex_${i + 1}`,
-      name: `Workshop Asset ${i + 1}`,
-      path: `/textures/variation_${i + 1}.webp`,
-      finish: i % 2 === 0 ? 'Acrylic High Gloss' : 'MDF Melamine Matt'
-    }));
-  }, []);
-
-  // Elite cloud catalog powered by unblockable backup server links
-  const cloudGlobalCatalog = useMemo(() => {
-    return [
-      { id: 'c_tex_1', name: 'Premium Royal Oak', path: 'https://githubusercontent.com', finish: 'Embossed Wood Grain' },
-      { id: 'c_tex_2', name: 'Polished Concrete Block', path: 'https://githubusercontent.com', finish: 'Material Imitation' }
-    ];
-  }, []);
-
-  const activeCollection = activeSource === 'local' ? local400Library : cloudGlobalCatalog;
+  // Real workshop texture library, generated from the files that actually exist in /public/textures
+  // (scripts/build-texture-manifest.mjs): no fake "variation_N" thumbnails and no dead remote links.
+  const activeCollection = textureCatalog;
   const baseCabinets = useMemo(() => cabinets.filter(c => c.category === 'BASE_UNIT'), [cabinets]);
   const maxBoundaryXMm = useMemo(() => cabinets.length > 0 ? Math.max(...cabinets.map(c => c.positionX + c.width)) : 1200, [cabinets]);
   const sceneWidthMeters = maxBoundaryXMm / 1000;
@@ -138,20 +121,9 @@ export default function Kitchen3DCanvas({
           {/* Header Segment: Silent Architecture Tabs Layout */}
           <div className="flex justify-between items-center border-b border-slate-200/40 pb-2">
             <div className="flex items-center space-x-4">
-              <button 
-                type="button"
-                onClick={() => setActiveSource('local')}
-                className={`flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase cursor-pointer transition-all border-b-2 ${activeSource === 'local' ? 'border-indigo-600 text-indigo-600 scale-102' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-              >
-                <span>📂</span> <span>Workshop Matrix ({local400Library.length}+)</span>
-              </button>
-              <button 
-                type="button"
-                onClick={() => setActiveSource('cloud')}
-                className={`flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase cursor-pointer transition-all border-b-2 ${activeSource === 'cloud' ? 'border-indigo-600 text-indigo-600 scale-102' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
-              >
-                <span>🌐</span> <span>Cloud Factories Link</span>
-              </button>
+              <span className="flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase border-b-2 border-indigo-600 text-indigo-600">
+                <span>📂</span> <span>Workshop Matrix ({activeCollection.length})</span>
+              </span>
             </div>
             <button type="button" onClick={() => setSelectedCabinetId(null)} className="w-5 h-5 rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-[9px] transition-colors cursor-pointer">✕</button>
           </div>
@@ -170,9 +142,10 @@ export default function Kitchen3DCanvas({
                 <img 
                   src={tex.path} 
                   alt={tex.name}
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://githubusercontent.com';
-                  }}
+                  title={tex.name}
+                  loading="lazy"
+                  decoding="async"
+                  onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
                   className="w-full h-full object-cover" 
                 />
                 <div className="absolute inset-0 bg-indigo-900/10 opacity-0 group-hover:opacity-100 transition-opacity" />

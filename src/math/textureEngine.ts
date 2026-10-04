@@ -2,6 +2,7 @@
 
 import * as THREE from 'three';
 import { InjectedWoodMaterial } from '../types/flatma';
+import { resolveConventionTexture } from '../data/textureCatalog';
 
 export interface PBRMaterialConfig {
   color: string;
@@ -13,11 +14,12 @@ export interface PBRMaterialConfig {
 /**
  * 🌲 High-Performance Parametric PBR Texture & Finish Loader Engine
  * Implements the 7 core schema finishes from the MDF Surface Finishes Architecture.
- * Features a hybrid asset pipeline supporting local workshop folders and fallback open-source URLs.
+ * Loads textures only from the local workshop folder (/public/textures); a missing file keeps the flat colour.
  */
 export class TextureEngine {
   private static loader = new THREE.TextureLoader();
-  private static cachedTextures: { [key: string]: THREE.Texture } = {};
+  // One network request per file; resolves to null when the file is missing / cannot be decoded.
+  private static baseTextures = new Map<string, Promise<THREE.Texture | null>>();
 
   /**
    * 📐 Translates the MDF Surface Schema text directly into strict real-time PBR physical physics constants
@@ -60,30 +62,48 @@ export class TextureEngine {
   }
 
   /**
-   * 🏎️ Memory-optimized continuous texture caching system preventing browser lagging at 60FPS
+   * 🏎️ One load per file (cached promise). A missing/corrupt file resolves to null: in three.js a texture that
+   * never receives an image renders the panel solid BLACK forever, and the old remote "fallback" was never used.
    */
-  public static loadHybridTexture(urlPath: string, fallbackUrl: string, widthMm: number, heightMm: number): THREE.Texture {
-    const cacheKey = `${urlPath}_${fallbackUrl}_${widthMm}_${heightMm}`;
-    
-    if (this.cachedTextures[cacheKey]) {
-      return this.cachedTextures[cacheKey];
+  private static loadBaseTexture(urlPath: string): Promise<THREE.Texture | null> {
+    let pending = this.baseTextures.get(urlPath);
+    if (!pending) {
+      pending = new Promise<THREE.Texture | null>((resolve) => {
+        this.loader.load(urlPath, (texture: THREE.Texture) => resolve(texture), undefined, () => resolve(null));
+      });
+      this.baseTextures.set(urlPath, pending);
     }
+    return pending;
+  }
 
-    // Hybrid Check: Attempt loading from workshop library first, fallback to stable web link if blocked
-    const selectedSource = urlPath && urlPath.trim() !== '' ? urlPath : fallbackUrl;
-    const texture = this.loader.load(selectedSource);
-    
-    // Activate continuous tile wrapping grids mapping
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
-    
-    // Proportion repeats smoothly over total panel area size to eliminate blurriness or compression stretching
-    const repeatX = widthMm / 1000;
-    const repeatY = heightMm / 1000;
-    texture.repeat.set(repeatX, repeatY);
-    
-    this.cachedTextures[cacheKey] = texture;
-    return texture;
+  /**
+   * Attaches the texture to the material only once it has really loaded.
+   * Each panel gets its own clone (own repeat / rotation) that shares the same image data, so rotating one
+   * panel's grain can no longer rotate every other panel that uses the same file.
+   */
+  public static applyTextureAsync(
+    material: THREE.MeshStandardMaterial,
+    urlPath: string,
+    widthMm: number,
+    heightMm: number,
+    rotateGrain: boolean
+  ): void {
+    this.loadBaseTexture(urlPath).then((base) => {
+      if (!base) return; // file missing: keep the flat colour
+      const texture = base.clone();
+      texture.needsUpdate = true; // a clone starts at version 0, so it must be flagged for GPU upload
+      texture.wrapS = THREE.RepeatWrapping;
+      texture.wrapT = THREE.RepeatWrapping;
+      texture.repeat.set(widthMm / 1000, heightMm / 1000);
+      if (rotateGrain) {
+        texture.center.set(0.5, 0.5);
+        texture.rotation = Math.PI / 2; // precise π/2 radial shift
+      } else {
+        texture.rotation = 0;
+      }
+      material.map = texture;
+      material.needsUpdate = true;
+    });
   }
 
   /**
@@ -114,6 +134,9 @@ export class TextureEngine {
       metalness: 0.0
     };
 
+    let texturePath: string | null = null;
+    let rotateGrain = false;
+
     if (material) {
       // 1. Process and compile the exact structural finish metrics from the schema
       const properties = this.evaluateSchemaFinishes(material.type);
@@ -121,39 +144,30 @@ export class TextureEngine {
       baseConfig.metalness = properties.metalness;
       baseConfig.color = "#FFFFFF"; // Pure neutralization allows texture mapping images to pop naturally
 
-      // 2. Map structural fallback assets if local server URLs are missing or network blocks occur
+      // 2. Resolve the texture file from the brand (strict filename convention: no spaces / brackets / hyphens)
       const isWood = material.type.toLowerCase().includes('wood') || material.type.toLowerCase().includes('timber');
-      
-      // Cleanse brand text string to match strict filename conventions (removes spaces, brackets, hyphens)
       const cleanBrand = material.brand.toLowerCase().replace(/[^a-z0-9]/g, '');
       const prefix = isWood ? 'wood_' : 'stone_';
 
-      // Hybrid Asset Pipeline: Auto-targets webp, fallbacks natively to jpg/jpeg through server index configurations
-      const localLibraryPath = `/textures/${prefix}${cleanBrand}.webp`;
+      // Only files that really exist in /public/textures are requested (.webp, .jpg and .jpeg are all tried),
+      // so a missing texture costs no 404 and leaves the flat colour instead of a black panel.
+      texturePath = resolveConventionTexture(prefix, cleanBrand);
 
-      const remoteFallbackUrl = isWood
-        ? 'https://githubusercontent.com' // High-grade continuous oak matrix
-        : 'https://githubusercontent.com';
-
-      const compiledTexture = this.loadHybridTexture(localLibraryPath, remoteFallbackUrl, widthMm, heightMm);
-
-      // 3. JABR MATRIX ROTATION: Handle dynamic fibrous grain orientation swaps at 90 degrees
-      if (isWood && grainDirection === 'horizontal') {
-        compiledTexture.center.set(0.5, 0.5);
-        compiledTexture.rotation = Math.PI / 2; // Precise π/2 radial shift rotation
-      } else {
-        compiledTexture.rotation = 0;
-      }
-
-      baseConfig.map = compiledTexture;
+      // 3. JABR MATRIX ROTATION: horizontal grain = 90 degrees
+      rotateGrain = isWood && grainDirection === 'horizontal';
     }
 
-    return new THREE.MeshStandardMaterial({
+    const compiledMaterial = new THREE.MeshStandardMaterial({
       color: new THREE.Color(baseConfig.color),
       roughness: baseConfig.roughness,
       metalness: baseConfig.metalness,
-      map: baseConfig.map,
       envMapIntensity: 1.0
     });
+
+    if (texturePath) {
+      this.applyTextureAsync(compiledMaterial, texturePath, widthMm, heightMm, rotateGrain);
+    }
+
+    return compiledMaterial;
   }
 }
