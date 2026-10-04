@@ -70,13 +70,13 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
           const deduction = finalCabinet.frontConfig.openingType === 'DOORS' 
             ? (finalCabinet.height > 900 ? 3 : 2) * finalCabinet.frontConfig.elementCount 
             : finalCabinet.frontConfig.elementCount;
-          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - deduction) };
+          return { ...h, availableQty: Math.max(0, h.availableQty - deduction) };
         }
         if (finalCabinet.category === 'BASE_UNIT' && h.modelType.includes('Adjustable Kitchen Legs')) {
-          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - 4) };
+          return { ...h, availableQty: Math.max(0, h.availableQty - 4) };
         }
         if (finalCabinet.category === 'WALL_UNIT' && h.modelType.includes('Cabinet Hanger Plates')) {
-          return { ...h, quantityIncoming: Math.max(0, h.quantityIncoming - 2) };
+          return { ...h, availableQty: Math.max(0, h.availableQty - 2) };
         }
         return h;
       });
@@ -115,13 +115,13 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
           const restorationAmount = targetCabinet.frontConfig.openingType === 'DOORS'
             ? (targetCabinet.height > 900 ? 3 : 2) * targetCabinet.frontConfig.elementCount
             : targetCabinet.frontConfig.elementCount;
-          return { ...h, quantityIncoming: h.quantityIncoming + restorationAmount };
+          return { ...h, availableQty: h.availableQty + restorationAmount };
         }
         if (targetCabinet.category === 'BASE_UNIT' && h.modelType.includes('Adjustable Kitchen Legs')) {
-          return { ...h, quantityIncoming: h.quantityIncoming + 4 };
+          return { ...h, availableQty: h.availableQty + 4 };
         }
         if (targetCabinet.category === 'WALL_UNIT' && h.modelType.includes('Cabinet Hanger Plates')) {
-          return { ...h, quantityIncoming: h.quantityIncoming + 2 };
+          return { ...h, availableQty: h.availableQty + 2 };
         }
         return h;
       });
