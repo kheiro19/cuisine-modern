@@ -44,6 +44,16 @@ export interface InjectedHardwareItem {
   availableQty: number;    // Stock counts in pieces or full functional kits in the workshop
 }
 
+/** An independent PVC edge-band roll. Registered in stock; not yet consumed by the BOM. */
+export interface EdgeBandRoll {
+  id: string;
+  brand: string;
+  thickness: number;          // mm
+  width: number;              // mm
+  totalLengthMeters: number;  // roll length in meters
+  rollPriceDA: number;        // price of the whole roll in Algerian Dinars
+}
+
 export interface WorkshopInventoryState {
   woodPanels: InjectedWoodMaterial[];
   hardwareItems: InjectedHardwareItem[];
