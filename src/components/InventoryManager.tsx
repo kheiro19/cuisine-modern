@@ -85,7 +85,7 @@ export default function InventoryManager() {
       'Vertical Gola Single Profile', 'Vertical Gola Double Profile',
       'Aluminum Inset Handle Profile', 'Standard Drilling Handle'
     ],
-    'Assembly Fixing': [
+    'Assembly & Fixing': [
       'Adjustable Kitchen Legs (100mm - 150mm)', 'Cabinet Hanger Plates (Heavy Duty)',
       'Confirmated Assembly Screws (5x50mm)', 'PVC Plinth Base Board (With Rubber)',
       'Corner Filler Profiles', 'Aluminum Sink Bottom Protector'
@@ -208,7 +208,7 @@ export default function InventoryManager() {
     if (isNaN(val) || val <= 0) return;
     setEdgeThicknessList([...edgeThicknessList, val].sort((a, b) => a - b));
     setSelectedEdgeThickness(val);
-    setNewEdgeThInput('');
+    setNewEdgeThicknessInput('');
     setShowEdgeThicknessInput(false);
   };
 
@@ -217,7 +217,7 @@ export default function InventoryManager() {
     if (isNaN(val) || val <= 0) return;
     setEdgeWidthList([...edgeWidthList, val].sort((a, b) => a - b));
     setSelectedEdgeWidth(val);
-    setNewEdgeWInput('');
+    setNewEdgeWidthInput('');
     setShowEdgeWidthInput(false);
   };
 
@@ -254,7 +254,7 @@ export default function InventoryManager() {
       thickness: woodThickness,
       edgeThickness: 0, 
       edgeWidth: 0,
-      quantityIncoming: parsedQty,
+      currentQty: parsedQty,
       averagePriceDA: parsedPrice
     });
 
@@ -298,7 +298,7 @@ export default function InventoryManager() {
       category: selectedHwCategory,
       brand: selectedHwBrand,
       modelType: selectedHwModel,
-      quantityIncoming: parsedQty,
+      availableQty: parsedQty,
       pricePerUnitDA: parsedPrice
     });
 
@@ -431,7 +431,7 @@ export default function InventoryManager() {
                 </select>
                 {showEdgeThInput && (
                   <div className="flex items-center space-x-1 pt-1 animate-fade-in">
-                    <input type="number" step="0.1" placeholder="mm" value={newEdgeThInput} onChange={(e) => setNewEdgeThInput(e.target.value)} className="w-16 border rounded p-0.5 text-center font-bold" />
+                    <input type="number" step="0.1" placeholder="mm" value={newEdgeThInput} onChange={(e) => setNewEdgeThicknessInput(e.target.value)} className="w-16 border rounded p-0.5 text-center font-bold" />
                     <button type="button" onClick={handleAddNewEdgeThickness} className="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded text-[10px]">✓</button>
                   </div>
                 )}
@@ -488,7 +488,7 @@ export default function InventoryManager() {
                 <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
                 <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
                 <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
-                               <option value="Assembly Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
+                               <option value="Assembly & Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
               </select>
             </div>
 
@@ -556,11 +556,13 @@ export default function InventoryManager() {
                 <span className="text-gray-400 text-[10px]">{w.widthSheet}x{w.heightSheet}mm | T: {w.thickness}mm</span>
               </div>
               <div className="text-right">
-                <span className="text-indigo-600 font-bold block">{w.quantityIncoming} Sheets</span>
+                <span className="text-indigo-600 font-bold block">{w.currentQty} Sheets</span>
                 <span className="text-emerald-600 font-bold">{w.averagePriceDA.toLocaleString()} DA</span>
               </div>
             </div>
           ))}
+		  
+          {/* Render Active Custom Edge Band PVC Rolls */}
 
           {inventory.edgeBandRolls?.map((e) => (
             <div key={e.id} className="border border-slate-100 p-2 rounded-lg flex justify-between items-center bg-blue-50/30 font-mono text-[11px]">
@@ -582,7 +584,7 @@ export default function InventoryManager() {
                 <span className="text-gray-400 text-[10px] uppercase tracking-tight">{h.category}</span>
               </div>
               <div className="text-right">
-                <span className="text-indigo-600 font-bold block">{h.quantityIncoming} Pcs</span>
+                <span className="text-indigo-600 font-bold block">{h.availableQty} Pcs</span>
                 <span className="text-emerald-600 font-bold">{h.pricePerUnitDA.toLocaleString()} DA</span>
               </div>
             </div>
