@@ -72,6 +72,11 @@ export interface CabinetFrontConfiguration {
   hardwareItemId: string;      // Directly references targeted InjectedHardwareItem from workshop stock
   hasGolaProfile: boolean;     // Structural flag triggering automatic height offset and traverse recess
   golaProfileItemId?: string;  // References specific Gola aluminum model from active hardware list
+  /**
+   * DRAWERS only: where the Gola channels are. Slot k (0 = top drawer) = channel just ABOVE drawer k.
+   * Missing on older saved cabinets -> one channel at the top (see math/gola.ts).
+   */
+  golaSlots?: number[];
 }
 
 /** A texture picked in the 3D showcase for the fronts. Visual only: the stock material (price, thickness) is untouched. */

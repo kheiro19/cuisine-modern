@@ -1,5 +1,5 @@
 // src/components/Kitchen3DCanvas.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Center } from '@react-three/drei';
 import * as THREE from 'three';
@@ -45,6 +45,22 @@ export default function Kitchen3DCanvas({
   const [urlInput, setUrlInput] = useState<string>('');
   const [urlError, setUrlError] = useState<string>('');
 
+  // Colour strip: arrows to scroll it (touch swipe and the mouse wheel also work). Arrows hide at either end.
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [canScrollPrev, setCanScrollPrev] = useState<boolean>(false);
+  const [canScrollNext, setCanScrollNext] = useState<boolean>(false);
+  const updateStripArrows = useCallback(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    setCanScrollPrev(el.scrollLeft > 4);
+    setCanScrollNext(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  const scrollStrip = (direction: -1 | 1) => {
+    const el = stripRef.current;
+    if (!el) return;
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * 0.8), behavior: 'smooth' });
+  };
+
   // A cabinet deleted from anywhere (list, undo…) simply closes the panel.
   const selectedCabinet = useMemo(() => cabinets.find(c => c.id === selectedCabinetId) ?? null, [cabinets, selectedCabinetId]);
 
@@ -52,6 +68,16 @@ export default function Kitchen3DCanvas({
   // Online library: src/data/onlineTextures.ts + links pasted during this session.
   const onlineCollection = useMemo(() => [...onlineTextureCatalog, ...customOnline], [customOnline]);
   const activeCollection = activeSource === 'local' ? textureCatalog : onlineCollection;
+
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+    el.scrollLeft = 0;
+    updateStripArrows();
+    const raf = requestAnimationFrame(updateStripArrows); // after the tiles are laid out
+    window.addEventListener('resize', updateStripArrows);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', updateStripArrows); };
+  }, [activeCollection, selectedCabinetId, activeSource, updateStripArrows]);
 
   const addOnlineTexture = () => {
     const entry = makeOnlineTextureEntry(urlInput);
@@ -223,7 +249,22 @@ export default function Kitchen3DCanvas({
           )}
 
           {/* Endless Fluid Micro-interaction Horizontal Strip Panel */}
-          <div className="flex space-x-3 overflow-x-auto py-1 scrollbar-none snap-x snap-mandatory">
+          <div className="flex items-center gap-2" dir="ltr">
+          <button
+            type="button"
+            aria-label="الألوان السابقة"
+            onClick={() => scrollStrip(-1)}
+            disabled={!canScrollPrev}
+            className={`flex-shrink-0 w-8 h-14 rounded-xl border border-slate-200 bg-white/80 hover:bg-white text-slate-700 text-xl font-bold flex items-center justify-center shadow-sm transition-opacity ${canScrollPrev ? 'cursor-pointer opacity-100' : 'opacity-30 cursor-default'}`}
+          >
+            ‹
+          </button>
+          <div
+            ref={stripRef}
+            onScroll={updateStripArrows}
+            onWheel={(e) => { const el = stripRef.current; if (el && Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY; }}
+            style={{ touchAction: 'pan-x' }}
+            className="flex flex-1 min-w-0 space-x-3 overflow-x-auto py-1 scrollbar-none snap-x">
             {/* First tile: back to the stock material */}
             <div
               onClick={() => onApplyTextureOverride(selectedCabinet.id, '', '', applyToAll)}
@@ -252,6 +293,16 @@ export default function Kitchen3DCanvas({
                 <div className="absolute inset-0 bg-indigo-900/10 opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             ))}
+          </div>
+          <button
+            type="button"
+            aria-label="ألوان أخرى"
+            onClick={() => scrollStrip(1)}
+            disabled={!canScrollNext}
+            className={`flex-shrink-0 w-8 h-14 rounded-xl border border-slate-200 bg-white/80 hover:bg-white text-slate-700 text-xl font-bold flex items-center justify-center shadow-sm transition-opacity ${canScrollNext ? 'cursor-pointer opacity-100' : 'opacity-30 cursor-default'}`}
+          >
+            ›
+          </button>
           </div>
         </div>
       )}

@@ -3,6 +3,8 @@ import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';
+import { golaSlotsOf } from '../math/gola';
+import { PANEL } from '../math/constants';
 
 interface CabinetAssembly3DProps {
   cabinet: CabinetObject;
@@ -36,7 +38,13 @@ export default function CabinetAssembly3D({
   const h = cabinet.height / 1000;
   const d = cabinet.depth / 1000;
 
-  const golaOffset = cabinet.frontConfig.hasGolaProfile ? 0.045 : 0.0;
+  // Gola channels: doors -> one at the top; drawers -> any set of slots (slot k = just above drawer k, counted from the top).
+  const golaOffset = PANEL.GOLA_OFFSET_MM / 1000;
+  const golaSlots = useMemo(() => golaSlotsOf(cabinet.frontConfig), [cabinet.frontConfig]);
+  const golaCount = golaSlots.length;
+  const topGolaOffset = golaSlots.includes(0) ? golaOffset : 0; // moves the front stretcher rail when the top has a channel
+  const golaMetal = useMemo(() => new THREE.MeshStandardMaterial({ color: '#C7CBD1', metalness: 0.85, roughness: 0.3, transparent: isXRayMode, opacity: isXRayMode ? 0.4 : 1 }), [isXRayMode]);
+  const golaRecess = useMemo(() => new THREE.MeshStandardMaterial({ color: '#111827', roughness: 0.9, transparent: isXRayMode, opacity: isXRayMode ? 0.4 : 1 }), [isXRayMode]);
 
   // Resolve structural width clearance based on your elite ultra-slim gap concept
   const dynamicAdjustment = cabinet.frontConfig.elementCount === 1 ? 0.001 : 0.001; 
@@ -89,7 +97,7 @@ export default function CabinetAssembly3D({
       </mesh>
 
       {/* 🪚 Top Stretcher Rails / Traverses */}
-      <mesh position={[w / 2, h - th / 2, golaOffset / 2]} castShadow receiveShadow material={bottomTopMaterial}>
+      <mesh position={[w / 2, h - th / 2, topGolaOffset / 2]} castShadow receiveShadow material={bottomTopMaterial}>
         <boxGeometry args={[w - (2 * th), th, 0.1]} />
       </mesh>
       <mesh position={[w / 2, h - th / 2, -d / 2 + 0.05]} castShadow receiveShadow material={bottomTopMaterial}>
@@ -119,7 +127,7 @@ export default function CabinetAssembly3D({
         <group>
           {Array.from({ length: cabinet.frontConfig.elementCount }).map((_, idx) => {
             const doorWidth = (w - dynamicAdjustment) / cabinet.frontConfig.elementCount;
-            const doorHeight = h - golaOffset - 0.004;
+            const doorHeight = h - golaCount * golaOffset - 0.004;
             const defaultDoorX = (doorWidth / 2) + (idx * doorWidth) + 0.002;
             
             const isLeftHinge = idx % 2 === 0;
@@ -127,7 +135,7 @@ export default function CabinetAssembly3D({
             const appliedRotation = isLeftHinge ? -currentRotation : currentRotation;
 
             return (
-              <group key={idx} position={[pivotXOffset, (h - golaOffset) / 2, frontZPositionDefault]}>
+              <group key={idx} position={[pivotXOffset, (h - golaCount * golaOffset) / 2, frontZPositionDefault]}>
                 <group position={[isLeftHinge ? doorWidth / 2 : -doorWidth / 2, 0, 0]} rotation={[0, appliedRotation, 0]}>
                   <mesh castShadow material={frontMaterialCompiled}>
                     <boxGeometry args={[doorWidth - 0.001, doorHeight, fTh]} />
@@ -141,26 +149,59 @@ export default function CabinetAssembly3D({
 
       {showFronts && cabinet.frontConfig.openingType === 'DRAWERS' && (
         <group>
-          {Array.from({ length: cabinet.frontConfig.elementCount }).map((_, idx) => {
+          {(() => {
+            // Stack the drawers from the bottom up. Drawer k (k = 0 is the top one) gets a Gola channel above it when k is in golaSlots.
+            const n = cabinet.frontConfig.elementCount;
             const drawerWidth = w - dynamicAdjustment;
-            const drawerHeight = (h - golaOffset - 0.004) / cabinet.frontConfig.elementCount;
-            const drawerY = (drawerHeight / 2) + (idx * drawerHeight) + 0.002;
-            
+            const drawerHeight = (h - golaCount * golaOffset - 0.004) / n;
             const animatedZPosition = frontZPositionDefault + currentDrawerSlide;
+            const nodes: React.ReactNode[] = [];
+            let y = 0.002;
+            for (let k = n - 1; k >= 0; k--) {
+              const drawerY = y + drawerHeight / 2;
+              nodes.push(
+                <group key={`drawer-${k}`}>
+                  {/* Outward sliding architectural facade front panel */}
+                  <mesh position={[w / 2, drawerY, animatedZPosition]} castShadow material={frontMaterialCompiled}>
+                    <boxGeometry args={[drawerWidth, drawerHeight - 0.002, fTh]} />
+                  </mesh>
+                  {/* Synchronized internal structural drawer box element */}
+                  <mesh position={[w / 2, drawerY, animatedZPosition - (d * 0.4) - (fTh / 2)]} castShadow material={shelfMaterial}>
+                    <boxGeometry args={[drawerWidth - 0.04, drawerHeight * 0.6, d * 0.8]} />
+                  </mesh>
+                </group>
+              );
+              y += drawerHeight;
+              if (golaSlots.includes(k)) {
+                // Fixed to the carcase (does not slide with the drawers): dark recess + aluminium lip
+                const gapCenterY = y + golaOffset / 2;
+                nodes.push(
+                  <group key={`gola-${k}`}>
+                    <mesh position={[w / 2, gapCenterY, frontZPositionDefault]} material={golaRecess}>
+                      <boxGeometry args={[drawerWidth, golaOffset - 0.002, fTh * 0.6]} />
+                    </mesh>
+                    <mesh position={[w / 2, y + 0.008, frontZPositionDefault + fTh / 2 + 0.002]} castShadow material={golaMetal}>
+                      <boxGeometry args={[drawerWidth, 0.016, 0.006]} />
+                    </mesh>
+                  </group>
+                );
+                y += golaOffset;
+              }
+            }
+            return nodes;
+          })()}
+        </group>
+      )}
 
-            return (
-              <group key={idx}>
-                {/* Outward sliding architectural facade front panel */}
-                <mesh position={[w / 2, drawerY, animatedZPosition]} castShadow material={frontMaterialCompiled}>
-                  <boxGeometry args={[drawerWidth, drawerHeight - 0.002, fTh]} />
-                </mesh>
-                {/* Synchronized internal structural drawer box element */}
-                <mesh position={[w / 2, drawerY, animatedZPosition - (d * 0.4) - (fTh / 2)]} castShadow material={shelfMaterial}>
-                  <boxGeometry args={[drawerWidth - 0.04, drawerHeight * 0.6, d * 0.8]} />
-                </mesh>
-              </group>
-            );
-          })}
+      {/* Gola channel above the doors (top of the cabinet) */}
+      {showFronts && cabinet.frontConfig.openingType === 'DOORS' && golaCount > 0 && (
+        <group>
+          <mesh position={[w / 2, h - golaOffset / 2 - 0.002, frontZPositionDefault]} material={golaRecess}>
+            <boxGeometry args={[w - dynamicAdjustment, golaOffset - 0.002, fTh * 0.6]} />
+          </mesh>
+          <mesh position={[w / 2, h - golaOffset - 0.002 + 0.008, frontZPositionDefault + fTh / 2 + 0.002]} castShadow material={golaMetal}>
+            <boxGeometry args={[w - dynamicAdjustment, 0.016, 0.006]} />
+          </mesh>
         </group>
       )}
     </group>

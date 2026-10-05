@@ -13,6 +13,7 @@ import {
 } from '../types/flatma';
 import { LIMITS } from './constants';
 import { clampInt } from './utils';
+import { golaSlotsOf } from './gola';
 
 export type CabinetSubtype =
   // 1. الخزائن العلوية (Wall Cabinets)
@@ -98,6 +99,8 @@ export interface CabinetDraft {
   elementCount: number;
   shelvesCount: number;
   hasGola: boolean;
+  /** Drawers only: channel above drawer k (k counted from the top). See math/gola.ts. */
+  golaSlots: number[];
   carcaseMaterialId: string;
   frontMaterialId: string;
   hardwareItemId: string;
@@ -118,6 +121,7 @@ export function draftFromPreset(
     elementCount: p.elementCount,
     shelvesCount: p.shelvesCount,
     hasGola: p.hasGola,
+    golaSlots: [],
     carcaseMaterialId: keep?.carcaseMaterialId ?? '',
     frontMaterialId: keep?.frontMaterialId ?? '',
     hardwareItemId: '', // re-picked automatically for the new kind of front
@@ -168,10 +172,13 @@ export function resolveDraft(
     d.elementCount = 0;
     d.hardwareItemId = '';
     d.hasGola = false;
+    d.golaSlots = [];
   } else {
     d.elementCount = clampInt(d.elementCount, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2);
     if (chosen?.category === 'Overhead Lift Systems') d.elementCount = 1;
     d.hasGola = d.hasGola && d.category === 'BASE_UNIT';
+    // Doors keep a single top channel; drawers keep the slots the user picked (clamped to the drawer count).
+    d.golaSlots = d.hasGola ? golaSlotsOf({ openingType: d.openingType, elementCount: d.elementCount, hasGolaProfile: true, golaSlots: d.golaSlots }) : [];
   }
 
   const fallback = defaultSheet(woods)?.id ?? '';
@@ -190,6 +197,7 @@ function frontConfigOf(d: CabinetDraft): CabinetObject['frontConfig'] {
     elementCount: d.elementCount,
     hardwareItemId: d.hardwareItemId,
     hasGolaProfile: d.hasGola,
+    golaSlots: d.openingType === 'DRAWERS' && d.hasGola ? d.golaSlots : undefined,
   };
 }
 
@@ -240,6 +248,7 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     elementCount: c.frontConfig.elementCount,
     shelvesCount: c.shelvesCount,
     hasGola: c.frontConfig.hasGolaProfile,
+    golaSlots: c.frontConfig.golaSlots ?? [],
     carcaseMaterialId: c.carcaseMaterialId,
     frontMaterialId: c.frontMaterialId,
     hardwareItemId: c.frontConfig.hardwareItemId,

@@ -1,6 +1,7 @@
 // src/math/bomEngine.ts
 
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { frontStackHeightMm } from './gola';
 
 export interface BOMWoodRow {
   cabinetName: string;
@@ -177,14 +178,14 @@ export function generateFactoryBOMReport(
     // 🚪 STEP 2: PROCEDURAL DECONSTRUCTION OF EXTERIOR FACADES
     // ========================================================
     if (cab.frontConfig.openingType !== 'NONE') {
-      const golaOffset = cab.frontConfig.hasGolaProfile ? 45 : 0; // Gola cutout offset allowance (mm)
+      const frontStackMm = frontStackHeightMm(cab.height, cab.frontConfig); // height left after every Gola channel (mm)
       
       // 📐 Dynamic Ultra-Slim Clearance Offsets (1mm for single setup, 1mm total shared for symmetric multiple setups)
       const dynamicAdjustment = 1; 
 
       if (cab.frontConfig.openingType === 'DOORS') {
         const individualDoorWidth = Math.round((cab.width - dynamicAdjustment) / cab.frontConfig.elementCount);
-        const netDoorHeight = cab.height - golaOffset - 4; // Clearance offsets
+        const netDoorHeight = frontStackMm; // Clearance + Gola offsets already removed
         
         woodSummary.push({
           cabinetName: cab.name,
@@ -225,7 +226,7 @@ export function generateFactoryBOMReport(
 
       } else if (cab.frontConfig.openingType === 'DRAWERS') {
         const individualDrawerWidth = cab.width - dynamicAdjustment;
-        const individualDrawerHeight = Math.round((cab.height - golaOffset - 4) / cab.frontConfig.elementCount);
+        const individualDrawerHeight = Math.round(frontStackMm / cab.frontConfig.elementCount);
 
         woodSummary.push({
           cabinetName: cab.name,

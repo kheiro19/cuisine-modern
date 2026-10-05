@@ -22,7 +22,7 @@ import {
   resolveDraft,
 } from './math/cabinetPresets';
 import { nextPositionX } from './math/layout';
-import { LIMITS } from './math/constants';
+import { LIMITS, PANEL } from './math/constants';
 import { uid } from './math/utils';
 import { CabinetObject, FrontOpeningType } from './types/flatma';
 
@@ -373,6 +373,41 @@ export default function App() {
                   Gola
                 </label>
               </div>
+
+              {/* Gola placement: for drawers the user decides exactly where each channel goes */}
+              {resolved.hasGola && resolved.openingType === 'DRAWERS' && (
+                <div className="bg-white border rounded p-1.5 space-y-1">
+                  <span className="block font-bold text-[10px]">مواضع الـ Gola (اضغط الشريط لتفعيله / إلغائه):</span>
+                  <div className="flex items-stretch gap-3" style={{ direction: 'ltr' }}>
+                    <div className="flex flex-col w-24 flex-shrink-0">
+                      {Array.from({ length: resolved.elementCount }).map((_, k) => {
+                        const active = resolved.golaSlots.includes(k);
+                        return (
+                          <React.Fragment key={k}>
+                            <button
+                              type="button"
+                              title={k === 0 ? 'Gola في أعلى الخزانة (فوق الدرج 1)' : `Gola بين الدرج ${k} والدرج ${k + 1}`}
+                              onClick={() => {
+                                const next = active ? resolved.golaSlots.filter((x) => x !== k) : [...resolved.golaSlots, k].sort((a, b) => a - b);
+                                patchDraft({ golaSlots: next, hasGola: next.length > 0 });
+                              }}
+                              className={`h-3.5 my-0.5 rounded-sm border text-[8px] leading-none font-bold cursor-pointer transition-colors ${active ? 'bg-slate-700 border-slate-800 text-white' : 'bg-slate-100 border-dashed border-slate-300 text-slate-400 hover:bg-indigo-100 hover:border-indigo-400'}`}
+                            >
+                              {active ? 'GOLA' : '+'}
+                            </button>
+                            <div className="h-6 rounded-sm border border-slate-300 bg-amber-50 text-[9px] font-bold text-slate-500 flex items-center justify-center">درج {k + 1}</div>
+                          </React.Fragment>
+                        );
+                      })}
+                    </div>
+                    <div className="text-[9px] leading-snug text-slate-500 self-center">
+                      الأعلى = الدرج 1. كل شريط Gola ينقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع الواجهات، ويُوزَّع الباقي بالتساوي على الأدراج.
+                      <br />
+                      <span className="font-bold text-slate-700">المفعّل: {resolved.golaSlots.length}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="space-y-1 bg-slate-50 p-1.5 rounded border">
