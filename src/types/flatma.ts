@@ -110,7 +110,10 @@ export interface CabinetObject {
   carcaseThickness: number;    // Cached physical thickness from stock material
   
   frontMaterialId: string;     // References InjectedWoodMaterial for exterior facades (Doors/Drawers)
-  /** Edge band thickness (mm) chosen for this cabinet. Missing = follow the stock material's edgeThickness. */
+  /** Edge band rolls picked from the stock (EdgeBandRoll.id). Missing = no roll chosen: no band cost, material's own edge thickness. */
+  carcaseEdgeRollId?: string;
+  frontEdgeRollId?: string;
+  /** Cached thickness (mm) of the chosen rolls; follows the stock like carcaseThickness (see FurnitureContext.refresh). */
   carcaseEdgeMm?: number;
   frontEdgeMm?: number;
   frontThickness: number;      // Cached physical thickness from active front sheet material

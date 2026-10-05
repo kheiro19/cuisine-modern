@@ -27,16 +27,15 @@ export const PANEL = {
 } as const;
 
 /**
- * Edge band (chant) rules. The thickness is chosen per cabinet, separately for the carcase and for the fronts.
+ * Edge band (chant). The roll is picked from the workshop stock (thickness + price come from the roll).
  * Cut size = finished size minus the band that is glued on:
  *  - carcase boards (sides, bottom, roof, shelves): band on the FRONT edge only  -> depth - e
  *  - fronts (doors / drawer fronts): band on all 4 edges                          -> width - 2e, height - 2e
+ * Band consumed (and priced) follows the same edges.
  */
 export const EDGE = {
-  OPTIONS_MM: [0, 0.4, 0.8, 1, 1.5, 2, 3],
-  MAX_MM: 5,
-  CARCASE_BANDED_EDGES_ON_DEPTH: 1,
-  FRONT_BANDED_EDGES_PER_AXIS: 2,
+  /** Offcut allowance on the band length that is priced. 1 = exact length, 1.1 = +10 %. */
+  WASTE_FACTOR: 1,
 } as const;
 
 export const HARDWARE_RULES = {

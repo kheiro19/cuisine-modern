@@ -1,8 +1,8 @@
 // src/math/bomEngine.ts
 
-import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem, EdgeBandRoll } from '../types/flatma';
 import { frontStackHeightMm } from './gola';
-import { edgeMmOf } from './edgeBand';
+import { edgeMmOf, bandUsageOf, bandPricePerMeterDA } from './edgeBand';
 
 export interface BOMWoodRow {
   cabinetName: string;
@@ -45,7 +45,8 @@ export interface FinalBOMReport {
 export function generateFactoryBOMReport(
   cabinets: CabinetObject[],
   woodMaterials: InjectedWoodMaterial[],
-  hardwareItems: InjectedHardwareItem[]
+  hardwareItems: InjectedHardwareItem[],
+  edgeRolls: EdgeBandRoll[] = []
 ): FinalBOMReport {
   
   const woodSummary: BOMWoodRow[] = [];
@@ -278,6 +279,28 @@ export function generateFactoryBOMReport(
         }
       }
     }
+
+    // ========================================================
+    // 🎞️ EDGE BAND: metres glued on the carcase / fronts, from the rolls picked in stock
+    // ========================================================
+    bandUsageOf(cab, edgeRolls).forEach((u) => {
+      const mapKey = `edgeband_${u.roll.id}`;
+      const meters = Math.round(u.meters * 100) / 100;
+      if (hardwareSummaryMap[mapKey]) {
+        hardwareSummaryMap[mapKey].quantityRequired = Math.round((hardwareSummaryMap[mapKey].quantityRequired + meters) * 100) / 100;
+        hardwareSummaryMap[mapKey].totalHardwareCostDA += Math.round(u.costDA);
+      } else {
+        hardwareSummaryMap[mapKey] = {
+          cabinetName: 'Edge Band (meters)',
+          category: 'Edge Band',
+          brand: u.roll.brand,
+          modelType: `Edge Band PVC ${u.roll.thickness}x${u.roll.width}mm (per meter)`,
+          quantityRequired: meters,
+          unitPriceDA: Math.round(bandPricePerMeterDA(u.roll) * 100) / 100,
+          totalHardwareCostDA: Math.round(u.costDA)
+        };
+      }
+    });
 
     // ========================================================
     // ⚙️ STEP 3: AUTOMATIC STRUCTURAL FIXING ACCUMULATION

@@ -1,6 +1,7 @@
 // src/math/costEngine.ts
 
-import { InjectedWoodMaterial, InjectedHardwareItem, CabinetObject } from '../types/flatma';
+import { InjectedWoodMaterial, InjectedHardwareItem, CabinetObject, EdgeBandRoll } from '../types/flatma';
+import { bandUsageOf } from './edgeBand';
 
 /**
  * 📈 Calculates the Moving Average Cost (السعر المتوسط التراكمي) when new inventory arrives
@@ -44,7 +45,8 @@ export function calculatePanelCost(
 export function computeCabinetTotalCost(
   cabinet: CabinetObject,
   woodMaterials: InjectedWoodMaterial[],
-  hardwareItems: InjectedHardwareItem[]
+  hardwareItems: InjectedHardwareItem[],
+  edgeRolls: EdgeBandRoll[] = []
 ): number {
   let totalCost = 0;
 
@@ -99,6 +101,9 @@ export function computeCabinetTotalCost(
     const hangersHardware = hardwareItems.find(i => i.modelType.includes('Cabinet Hanger Plates'));
     if (hangersHardware) totalCost += 2 * hangersHardware.pricePerUnitDA;
   }
+
+  // 5. Edge band consumed (roll price prorated by the metres glued on carcase + fronts)
+  totalCost += bandUsageOf(cabinet, edgeRolls).reduce((sum, u) => sum + u.costDA, 0);
 
   return Math.round(totalCost);
 }

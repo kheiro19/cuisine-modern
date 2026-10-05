@@ -22,7 +22,8 @@ import {
   resolveDraft,
 } from './math/cabinetPresets';
 import { nextPositionX } from './math/layout';
-import { EDGE, LIMITS, PANEL } from './math/constants';
+import { LIMITS, PANEL } from './math/constants';
+import { bandPricePerMeterDA } from './math/edgeBand';
 import { uid } from './math/utils';
 import { CabinetObject, FrontOpeningType } from './types/flatma';
 
@@ -57,6 +58,7 @@ export default function App() {
   } = useFurniture();
 
   const woods = inventory.woodPanels;
+  const edgeRolls = inventory.edgeBandRolls ?? [];
   const hardwareItems = inventory.hardwareItems;
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
@@ -77,8 +79,8 @@ export default function App() {
   const editing = editingId ? cabinets.find((c) => c.id === editingId) ?? null : null;
 
   // The form keeps the raw typed values; this is the consistent version used for the preview and for saving.
-  const resolved = useMemo(() => resolveDraft(draft, woods, hardwareItems), [draft, woods, hardwareItems]);
-  const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods), [resolved, woods]);
+  const resolved = useMemo(() => resolveDraft(draft, woods, hardwareItems, edgeRolls), [draft, woods, hardwareItems, edgeRolls]);
+  const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods, edgeRolls), [resolved, woods, edgeRolls]);
   const preset = SUBTYPE_PRESETS[resolved.subtype];
 
   const compatibleCategories = compatibleHardwareCategories(resolved.category, resolved.openingType);
@@ -87,11 +89,11 @@ export default function App() {
   const isLift = selectedHardware?.category === 'Overhead Lift Systems';
 
   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));
-  const normalizeDraft = () => setDraft((prev) => resolveDraft(prev, woods, hardwareItems));
+  const normalizeDraft = () => setDraft((prev) => resolveDraft(prev, woods, hardwareItems, edgeRolls));
 
   const handleSubtypeChange = (subtype: CabinetSubtype) =>
     setDraft((prev) =>
-      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeMm: prev.carcaseEdgeMm, frontEdgeMm: prev.frontEdgeMm }),
+      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId }),
     );
 
   const handleOpeningTypeChange = (openingType: FrontOpeningType) =>
@@ -139,14 +141,14 @@ export default function App() {
 
   const handleExportFactoryBOM = () => {
     if (cabinets.length === 0) return;
-    const report = generateFactoryBOMReport(cabinets, woods, hardwareItems);
+    const report = generateFactoryBOMReport(cabinets, woods, hardwareItems, edgeRolls);
     setBomReportText(convertBOMToCSVString(report));
     setInvoiceText('');
   };
 
   const handlePrintCustomerInvoice = () => {
     if (cabinets.length === 0) return;
-    const report = generateFactoryBOMReport(cabinets, woods, hardwareItems);
+    const report = generateFactoryBOMReport(cabinets, woods, hardwareItems, edgeRolls);
     setInvoiceText(formatCustomerInvoiceText(generateCustomerInvoice(report, 20, 30)));
     setBomReportText('');
   };
@@ -419,16 +421,15 @@ export default function App() {
                   ))}
                 </select>
                 <select
-                  value={resolved.carcaseEdgeMm === null ? 'stock' : String(resolved.carcaseEdgeMm)}
-                  onChange={(e) => patchDraft({ carcaseEdgeMm: e.target.value === 'stock' ? null : Number(e.target.value) })}
-                  disabled={!canSave}
-                  title="سمك شريط الحافة (edge band) لهذا الجزء: يُطرح من مقاسات القص"
-                  className="w-28 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
-                  style={{ direction: 'ltr' }}
+                  value={resolved.carcaseEdgeRollId}
+                  onChange={(e) => patchDraft({ carcaseEdgeRollId: e.target.value })}
+                  disabled={!canSave || edgeRolls.length === 0}
+                  title="شريط الحافة (edge band) من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة"
+                  className="w-44 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
                 >
-                  <option value="stock">حافة المخزن ({woods.find((m) => m.id === resolved.carcaseMaterialId)?.edgeThickness ?? 0} مم)</option>
-                  {EDGE.OPTIONS_MM.map((mm) => (
-                    <option key={mm} value={String(mm)}>{mm === 0 ? 'بدون حافة' : `${mm} مم`}</option>
+                  <option value="">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
+                  {edgeRolls.map((r) => (
+                    <option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>
                   ))}
                 </select>
               </div>
@@ -440,21 +441,20 @@ export default function App() {
                   ))}
                 </select>
                 <select
-                  value={resolved.frontEdgeMm === null ? 'stock' : String(resolved.frontEdgeMm)}
-                  onChange={(e) => patchDraft({ frontEdgeMm: e.target.value === 'stock' ? null : Number(e.target.value) })}
-                  disabled={!canSave}
-                  title="سمك شريط الحافة (edge band) لهذا الجزء: يُطرح من مقاسات القص"
-                  className="w-28 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
-                  style={{ direction: 'ltr' }}
+                  value={resolved.frontEdgeRollId}
+                  onChange={(e) => patchDraft({ frontEdgeRollId: e.target.value })}
+                  disabled={!canSave || edgeRolls.length === 0}
+                  title="شريط الحافة (edge band) من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة"
+                  className="w-44 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
                 >
-                  <option value="stock">حافة المخزن ({woods.find((m) => m.id === resolved.frontMaterialId)?.edgeThickness ?? 0} مم)</option>
-                  {EDGE.OPTIONS_MM.map((mm) => (
-                    <option key={mm} value={String(mm)}>{mm === 0 ? 'بدون حافة' : `${mm} مم`}</option>
+                  <option value="">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
+                  {edgeRolls.map((r) => (
+                    <option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>
                   ))}
                 </select>
               </div>
               <span className="block text-[9px] leading-snug text-slate-500">
-                الواجهات: الحافة على الجوانب الأربعة (العرض والارتفاع − 2×الحافة). الهيكل: الحافة على الحافة الأمامية فقط (العمق − الحافة).
+                اختر لفّة شريط الحافة من المخزن: سمكها يُطرح من مقاسات القص وثمنها (سعر اللفّة ÷ طولها × الأمتار المستعملة) يدخل في التكلفة والفاتورة. الواجهات: الحافة على الجوانب الأربعة (العرض والارتفاع − 2×الحافة). الهيكل: الحافة الأمامية فقط (العمق − الحافة).
               </span>
             </div>
 

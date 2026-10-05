@@ -6,12 +6,13 @@
 import {
   CabinetCategory,
   CabinetObject,
+  EdgeBandRoll,
   FrontOpeningType,
   HardwareCategory,
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { EDGE, LIMITS } from './constants';
+import { LIMITS } from './constants';
 import { clampInt } from './utils';
 import { golaSlotsOf } from './gola';
 
@@ -103,15 +104,15 @@ export interface CabinetDraft {
   golaSlots: number[];
   carcaseMaterialId: string;
   frontMaterialId: string;
-  /** null = follow the stock material's edge thickness */
-  carcaseEdgeMm: number | null;
-  frontEdgeMm: number | null;
+  /** EdgeBandRoll id from the stock ('' = none chosen) */
+  carcaseEdgeRollId: string;
+  frontEdgeRollId: string;
   hardwareItemId: string;
 }
 
 export function draftFromPreset(
   subtype: CabinetSubtype,
-  keep?: Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId'> & Partial<Pick<CabinetDraft, 'carcaseEdgeMm' | 'frontEdgeMm'>>,
+  keep?: Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId'> & Partial<Pick<CabinetDraft, 'carcaseEdgeRollId' | 'frontEdgeRollId'>>,
 ): CabinetDraft {
   const p = SUBTYPE_PRESETS[subtype];
   return {
@@ -127,8 +128,8 @@ export function draftFromPreset(
     golaSlots: [],
     carcaseMaterialId: keep?.carcaseMaterialId ?? '',
     frontMaterialId: keep?.frontMaterialId ?? '',
-    carcaseEdgeMm: keep?.carcaseEdgeMm ?? null,
-    frontEdgeMm: keep?.frontEdgeMm ?? null,
+    carcaseEdgeRollId: keep?.carcaseEdgeRollId ?? '',
+    frontEdgeRollId: keep?.frontEdgeRollId ?? '',
     hardwareItemId: '', // re-picked automatically for the new kind of front
   };
 }
@@ -155,6 +156,7 @@ export function resolveDraft(
   raw: CabinetDraft,
   woods: InjectedWoodMaterial[],
   hardware: InjectedHardwareItem[],
+  edgeRolls: EdgeBandRoll[] = [],
 ): CabinetDraft {
   const d: CabinetDraft = { ...raw };
   d.width = clampInt(d.width, LIMITS.WIDTH_MM[0], LIMITS.WIDTH_MM[1], LIMITS.WIDTH_MM[0]);
@@ -189,9 +191,9 @@ export function resolveDraft(
   const fallback = defaultSheet(woods)?.id ?? '';
   d.carcaseMaterialId = woods.some((m) => m.id === d.carcaseMaterialId) ? d.carcaseMaterialId : fallback;
   d.frontMaterialId = woods.some((m) => m.id === d.frontMaterialId) ? d.frontMaterialId : fallback;
-  const cleanEdge = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(EDGE.MAX_MM, Math.max(0, v)) : null);
-  d.carcaseEdgeMm = cleanEdge(d.carcaseEdgeMm);
-  d.frontEdgeMm = cleanEdge(d.frontEdgeMm);
+  // A roll that is no longer in stock is dropped (the choice goes back to "none").
+  d.carcaseEdgeRollId = edgeRolls.some((r) => r.id === d.carcaseEdgeRollId) ? d.carcaseEdgeRollId : '';
+  d.frontEdgeRollId = edgeRolls.some((r) => r.id === d.frontEdgeRollId) ? d.frontEdgeRollId : '';
   return d;
 }
 
@@ -225,8 +227,8 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     shelvesCount: d.shelvesCount,
     carcaseMaterialId: d.carcaseMaterialId,
     frontMaterialId: d.frontMaterialId,
-    carcaseEdgeMm: d.carcaseEdgeMm ?? undefined,
-    frontEdgeMm: d.frontEdgeMm ?? undefined,
+    carcaseEdgeRollId: d.carcaseEdgeRollId || undefined,
+    frontEdgeRollId: d.frontEdgeRollId || undefined,
     frontConfig: frontConfigOf(d),
   };
 }
@@ -242,8 +244,8 @@ export function draftToCabinetPatch(d: CabinetDraft): Partial<CabinetObject> {
     shelvesCount: d.shelvesCount,
     carcaseMaterialId: d.carcaseMaterialId,
     frontMaterialId: d.frontMaterialId,
-    carcaseEdgeMm: d.carcaseEdgeMm ?? undefined,
-    frontEdgeMm: d.frontEdgeMm ?? undefined,
+    carcaseEdgeRollId: d.carcaseEdgeRollId || undefined,
+    frontEdgeRollId: d.frontEdgeRollId || undefined,
     frontConfig: frontConfigOf(d),
   };
 }
@@ -263,20 +265,22 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     golaSlots: c.frontConfig.golaSlots ?? [],
     carcaseMaterialId: c.carcaseMaterialId,
     frontMaterialId: c.frontMaterialId,
-    carcaseEdgeMm: c.carcaseEdgeMm ?? null,
-    frontEdgeMm: c.frontEdgeMm ?? null,
+    carcaseEdgeRollId: c.carcaseEdgeRollId ?? '',
+    frontEdgeRollId: c.frontEdgeRollId ?? '',
     hardwareItemId: c.frontConfig.hardwareItemId,
   };
 }
 
 /** The throw-away cabinet the preview renders: same object, same assembly components as the showcase. */
-export function draftToPreviewCabinet(d: CabinetDraft, woods: InjectedWoodMaterial[]): CabinetObject {
+export function draftToPreviewCabinet(d: CabinetDraft, woods: InjectedWoodMaterial[], edgeRolls: EdgeBandRoll[] = []): CabinetObject {
   const carcase = woods.find((m) => m.id === d.carcaseMaterialId);
   const front = woods.find((m) => m.id === d.frontMaterialId);
   return {
     ...draftToNewCabinet(d, { id: 'preview', name: 'preview', positionX: 0 }),
     carcaseThickness: carcase ? carcase.thickness : 18,
     frontThickness: front ? front.thickness : 18,
+    carcaseEdgeMm: edgeRolls.find((r) => r.id === d.carcaseEdgeRollId)?.thickness,
+    frontEdgeMm: edgeRolls.find((r) => r.id === d.frontEdgeRollId)?.thickness,
     calculatedCostDA: 0,
   };
 }
