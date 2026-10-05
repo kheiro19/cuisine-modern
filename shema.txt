@@ -1,0 +1,37 @@
+cuisine-modern/
+├── public/
+│   └── textures/                   // 📦 مجلد خامات مكتبتك الحقيقية (.webp, .jpg, .jpeg)
+│       ├── wood_panoalgeriepda.webp
+│       ├── wood_agtturkey.jpg
+│       ├── stone_eggeraustria.jpeg
+│       └── stone_neolithglobal.webp
+│
+├── src/
+│   ├── types/
+│   │   └── flatma.ts               // 🔐 نواة الأنواع الصارمة والأنظمة الميكانيكية الـ 5
+│   │
+│   ├── math/
+│   │   ├── costEngine.ts           // 📈 محرك السعر المتوسط التراكمي (Moving Average Cost)
+│   │   ├── bomEngine.ts            // 🪚 جدول القص المصنعي (BOM) بخلوص 1 مم المتراص
+│   │   ├── invoiceEngine.ts        // 🧾 محرك الفاتورة التجارية للزبون بالدينار الجزائري (DA)
+│   │   └── textureEngine.ts        // 🌲 محرك الخامات الفيزيائي الـ 7 (هاي غلوس، مطفي، كتان...)
+│   │
+│   ├── context/
+│   │   └── FurnitureContext.tsx    // 🗄️ الحاوية المركزية للحالات والتراجع (Undo Stack) وجرد المخزن
+│   │
+│   ├── components/
+│   │   ├── InventoryManager.tsx    // 📊 لوحة تحكم وإدخال بيانات المستودع الفعلي للورشة
+│   │   ├── CabinetConfigurator.tsx // 🔧 لوحة تعديل مقاسات الخزائن والألواح والنسب المالية
+│   │   ├── Kitchen2DCanvas.tsx     // 📐 مخطط الرسم 2D والمغناطيسية الملليمترية الفورية
+│   │   ├── Kitchen3DCanvas.tsx     // 🧊 عارض Three.js وشريط التحكم الحركي لفتح الواجهات
+│   │   ├── CabinetAssembly3D.tsx   // 🚪 بناء الخزانة السفلية لوحاً لوحاً مع نظام الـ Gola والأدراج
+│   │   └── WallCabinetAssembly3D.tsx // ✈️ بناء الخزانة العلوية لوحاً لوحاً وأنظمة الرفع Aventos
+│   │
+│   ├── App.tsx                     // 💻 الواجهة التجميعية الشاملة ومحطة التحكم الكلية للنظام
+│   ├── main.tsx                    // 🚀 نقطة الانطلاق وحقن الـ Provider في الـ DOM
+│   └── index.css                   // 🎨 ملف أسلوب التصميم الإجمالي وعزل التحديد أثناء السحب
+│
+├── index.html                      // 📄 حاوية الـ DOM الرئيسية واستيراد خطوط العرض العصرية
+├── tailwind.config.js              // 🎨 إعدادات أسلوب الخطوط البسيطة العصرية (Inter / JetBrains)
+├── vite.config.ts                  // ⚡ سيرفر التجميع والبناء فائق السرعة لـ Three.js
+└── package.json                    // 📦 مصفوفة الحزم والاعتماديات (React, Three.js, Fiber, TS)
