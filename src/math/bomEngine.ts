@@ -2,7 +2,7 @@
 
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { frontStackHeightMm } from './gola';
-import { edgeMmOf } from './edge';
+import { edgeMmOf } from './edgeBand';
 
 export interface BOMWoodRow {
   cabinetName: string;
