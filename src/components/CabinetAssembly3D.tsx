@@ -5,6 +5,7 @@ import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../ty
 import { TextureEngine } from '../math/textureEngine';
 import { golaSlotsOf } from '../math/gola';
 import { PANEL } from '../math/constants';
+import { edgeMmOf } from '../math/edge';
 
 interface CabinetAssembly3DProps {
   cabinet: CabinetObject;
@@ -32,7 +33,7 @@ export default function CabinetAssembly3D({
   // Dimension mapping constants (mm to meters for Three.js space layout)
   const th = carcaseMat ? carcaseMat.thickness / 1000 : 0.018; 
   const fTh = frontMat ? frontMat.thickness / 1000 : 0.018; 
-  const edgeOffset = carcaseMat ? carcaseMat.edgeThickness / 1000 : 0.002;
+  const edgeOffset = edgeMmOf(cabinet, 'carcase', carcaseMat) / 1000; // edge band chosen for this cabinet's carcase
 
   const w = cabinet.width / 1000;
   const h = cabinet.height / 1000;

@@ -2,6 +2,7 @@
 
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { frontStackHeightMm } from './gola';
+import { edgeMmOf } from './edge';
 
 export interface BOMWoodRow {
   cabinetName: string;
@@ -10,6 +11,8 @@ export interface BOMWoodRow {
   materialType: string;
   materialBrand: string;
   thicknessMm: number;
+  /** Edge band thickness (mm) glued on this part; the cut sizes below already have it subtracted. */
+  edgeThicknessMm?: number;
   netWidthMm: number;
   netLengthMm: number;
   quantity: number;
@@ -55,6 +58,10 @@ export function generateFactoryBOMReport(
     const carcaseMat = woodMaterials.find(m => m.id === cab.carcaseMaterialId);
     const frontMat = woodMaterials.find(m => m.id === cab.frontMaterialId);
 
+    const carcaseEdge = edgeMmOf(cab, 'carcase', carcaseMat);
+    const frontEdge = edgeMmOf(cab, 'front', frontMat);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
     const carcaseThickness = cab.carcaseThickness;
     const frontThickness = cab.frontThickness;
 
@@ -84,7 +91,8 @@ export function generateFactoryBOMReport(
       materialType: carcaseTypeName,
       materialBrand: carcaseBrandName,
       thicknessMm: carcaseThickness,
-      netWidthMm: cab.depth,
+      edgeThicknessMm: carcaseEdge,
+      netWidthMm: round2(cab.depth - carcaseEdge),
       netLengthMm: cab.height,
       quantity: 2,
       grainDirection: 'vertical',
@@ -100,7 +108,8 @@ export function generateFactoryBOMReport(
       materialType: carcaseTypeName,
       materialBrand: carcaseBrandName,
       thicknessMm: carcaseThickness,
-      netWidthMm: cab.depth,
+      edgeThicknessMm: carcaseEdge,
+      netWidthMm: round2(cab.depth - carcaseEdge),
       netLengthMm: netBottomWidth,
       quantity: 1,
       grainDirection: 'horizontal',
@@ -132,7 +141,8 @@ export function generateFactoryBOMReport(
         materialType: carcaseTypeName,
         materialBrand: carcaseBrandName,
         thicknessMm: carcaseThickness,
-        netWidthMm: cab.depth,
+      edgeThicknessMm: carcaseEdge,
+        netWidthMm: round2(cab.depth - carcaseEdge),
         netLengthMm: netBottomWidth,
         quantity: 1,
         grainDirection: 'horizontal',
@@ -166,7 +176,8 @@ export function generateFactoryBOMReport(
         materialType: carcaseTypeName,
         materialBrand: carcaseBrandName,
         thicknessMm: carcaseThickness,
-        netWidthMm: shelfDepth,
+      edgeThicknessMm: carcaseEdge,
+        netWidthMm: round2(shelfDepth - carcaseEdge),
         netLengthMm: shelfWidth,
         quantity: cab.shelvesCount,
         grainDirection: 'horizontal',
@@ -184,8 +195,8 @@ export function generateFactoryBOMReport(
       const dynamicAdjustment = 1; 
 
       if (cab.frontConfig.openingType === 'DOORS') {
-        const individualDoorWidth = Math.round((cab.width - dynamicAdjustment) / cab.frontConfig.elementCount);
-        const netDoorHeight = frontStackMm; // Clearance + Gola offsets already removed
+        const individualDoorWidth = round2(Math.round((cab.width - dynamicAdjustment) / cab.frontConfig.elementCount) - 2 * frontEdge); // band on all 4 edges
+        const netDoorHeight = round2(frontStackMm - 2 * frontEdge); // Clearance + Gola offsets removed, minus band top & bottom
         
         woodSummary.push({
           cabinetName: cab.name,
@@ -194,6 +205,7 @@ export function generateFactoryBOMReport(
           materialType: frontTypeName,
           materialBrand: frontBrandName,
           thicknessMm: frontThickness,
+          edgeThicknessMm: frontEdge,
           netWidthMm: individualDoorWidth, // Perfectly maps your 0.5mm split concept for double configurations
           netLengthMm: netDoorHeight,
           quantity: cab.frontConfig.elementCount,
@@ -225,8 +237,8 @@ export function generateFactoryBOMReport(
         }
 
       } else if (cab.frontConfig.openingType === 'DRAWERS') {
-        const individualDrawerWidth = cab.width - dynamicAdjustment;
-        const individualDrawerHeight = Math.round(frontStackMm / cab.frontConfig.elementCount);
+        const individualDrawerWidth = round2(cab.width - dynamicAdjustment - 2 * frontEdge);
+        const individualDrawerHeight = round2(Math.round(frontStackMm / cab.frontConfig.elementCount) - 2 * frontEdge);
 
         woodSummary.push({
           cabinetName: cab.name,
@@ -235,6 +247,7 @@ export function generateFactoryBOMReport(
           materialType: frontTypeName,
           materialBrand: frontBrandName,
           thicknessMm: frontThickness,
+          edgeThicknessMm: frontEdge,
           netWidthMm: individualDrawerWidth,
           netLengthMm: individualDrawerHeight,
           quantity: cab.frontConfig.elementCount,
@@ -327,10 +340,10 @@ export function convertBOMToCSVString(report: FinalBOMReport): string {
   csv += `Total Project Manufacturing Cost,${report.totalKitchenCostDA} DA\n\n`;
   
   csv += `--- SECTION 1: PROCEDURAL WOOD PARTS CUTTING LIST ---\n`;
-  csv += `Cabinet Unit,Category,Component Type,Core Material,Brand,Thickness(mm),Net Width(mm),Net Length(mm),Quantity,Grain Direction,Prorated Cost(DA)\n`;
+  csv += `Cabinet Unit,Category,Component Type,Core Material,Brand,Thickness(mm),Edge Band(mm),Cut Width(mm),Cut Length(mm),Quantity,Grain Direction,Prorated Cost(DA)\n`;
   
   report.woodPanelsSummary.forEach(w => {
-    csv += `"${w.cabinetName}","${w.cabinetCategory}","${w.partType}","${w.materialType}","${w.materialBrand}",${w.thicknessMm},${w.netWidthMm},${w.netLengthMm},${w.quantity},"${w.grainDirection}",${w.estimatedCostDA}\n`;
+    csv += `"${w.cabinetName}","${w.cabinetCategory}","${w.partType}","${w.materialType}","${w.materialBrand}",${w.thicknessMm},${w.edgeThicknessMm ?? 0},${w.netWidthMm},${w.netLengthMm},${w.quantity},"${w.grainDirection}",${w.estimatedCostDA}\n`;
   });
   
   csv += `\n--- SECTION 2: HARDWARE & MECHANICAL ACCESSORIES INVENTORY REPORT ---\n`;

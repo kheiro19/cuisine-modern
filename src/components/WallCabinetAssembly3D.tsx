@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';
+import { edgeMmOf } from '../math/edge';
 
 interface WallCabinetAssembly3DProps {
   cabinet: CabinetObject;
@@ -29,7 +30,7 @@ export default function WallCabinetAssembly3D({
 
   const th = carcaseMat ? carcaseMat.thickness / 1000 : 0.018; 
   const fTh = frontMat ? frontMat.thickness / 1000 : 0.018;
-  const edgeOffset = carcaseMat ? carcaseMat.edgeThickness / 1000 : 0.002;
+  const edgeOffset = edgeMmOf(cabinet, 'carcase', carcaseMat) / 1000; // edge band chosen for this cabinet's carcase
 
   const w = cabinet.width / 1000;
   const h = cabinet.height / 1000;

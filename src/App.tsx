@@ -22,7 +22,7 @@ import {
   resolveDraft,
 } from './math/cabinetPresets';
 import { nextPositionX } from './math/layout';
-import { LIMITS, PANEL } from './math/constants';
+import { EDGE, LIMITS, PANEL } from './math/constants';
 import { uid } from './math/utils';
 import { CabinetObject, FrontOpeningType } from './types/flatma';
 
@@ -91,7 +91,7 @@ export default function App() {
 
   const handleSubtypeChange = (subtype: CabinetSubtype) =>
     setDraft((prev) =>
-      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId }),
+      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeMm: prev.carcaseEdgeMm, frontEdgeMm: prev.frontEdgeMm }),
     );
 
   const handleOpeningTypeChange = (openingType: FrontOpeningType) =>
@@ -418,6 +418,19 @@ export default function App() {
                     <option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>
                   ))}
                 </select>
+                <select
+                  value={resolved.carcaseEdgeMm === null ? 'stock' : String(resolved.carcaseEdgeMm)}
+                  onChange={(e) => patchDraft({ carcaseEdgeMm: e.target.value === 'stock' ? null : Number(e.target.value) })}
+                  disabled={!canSave}
+                  title="سمك شريط الحافة (edge band) لهذا الجزء: يُطرح من مقاسات القص"
+                  className="w-28 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
+                  style={{ direction: 'ltr' }}
+                >
+                  <option value="stock">حافة المخزن ({woods.find((m) => m.id === resolved.carcaseMaterialId)?.edgeThickness ?? 0} مم)</option>
+                  {EDGE.OPTIONS_MM.map((mm) => (
+                    <option key={mm} value={String(mm)}>{mm === 0 ? 'بدون حافة' : `${mm} مم`}</option>
+                  ))}
+                </select>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-[10px] whitespace-nowrap w-14">الواجهات:</span>
@@ -426,7 +439,23 @@ export default function App() {
                     <option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>
                   ))}
                 </select>
+                <select
+                  value={resolved.frontEdgeMm === null ? 'stock' : String(resolved.frontEdgeMm)}
+                  onChange={(e) => patchDraft({ frontEdgeMm: e.target.value === 'stock' ? null : Number(e.target.value) })}
+                  disabled={!canSave}
+                  title="سمك شريط الحافة (edge band) لهذا الجزء: يُطرح من مقاسات القص"
+                  className="w-28 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
+                  style={{ direction: 'ltr' }}
+                >
+                  <option value="stock">حافة المخزن ({woods.find((m) => m.id === resolved.frontMaterialId)?.edgeThickness ?? 0} مم)</option>
+                  {EDGE.OPTIONS_MM.map((mm) => (
+                    <option key={mm} value={String(mm)}>{mm === 0 ? 'بدون حافة' : `${mm} مم`}</option>
+                  ))}
+                </select>
               </div>
+              <span className="block text-[9px] leading-snug text-slate-500">
+                الواجهات: الحافة على الجوانب الأربعة (العرض والارتفاع − 2×الحافة). الهيكل: الحافة على الحافة الأمامية فقط (العمق − الحافة).
+              </span>
             </div>
 
             <div className="pt-1 space-y-1.5">

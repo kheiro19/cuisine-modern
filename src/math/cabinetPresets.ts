@@ -11,7 +11,7 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { LIMITS } from './constants';
+import { EDGE, LIMITS } from './constants';
 import { clampInt } from './utils';
 import { golaSlotsOf } from './gola';
 
@@ -103,12 +103,15 @@ export interface CabinetDraft {
   golaSlots: number[];
   carcaseMaterialId: string;
   frontMaterialId: string;
+  /** null = follow the stock material's edge thickness */
+  carcaseEdgeMm: number | null;
+  frontEdgeMm: number | null;
   hardwareItemId: string;
 }
 
 export function draftFromPreset(
   subtype: CabinetSubtype,
-  keep?: Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId'>,
+  keep?: Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId'> & Partial<Pick<CabinetDraft, 'carcaseEdgeMm' | 'frontEdgeMm'>>,
 ): CabinetDraft {
   const p = SUBTYPE_PRESETS[subtype];
   return {
@@ -124,6 +127,8 @@ export function draftFromPreset(
     golaSlots: [],
     carcaseMaterialId: keep?.carcaseMaterialId ?? '',
     frontMaterialId: keep?.frontMaterialId ?? '',
+    carcaseEdgeMm: keep?.carcaseEdgeMm ?? null,
+    frontEdgeMm: keep?.frontEdgeMm ?? null,
     hardwareItemId: '', // re-picked automatically for the new kind of front
   };
 }
@@ -184,6 +189,9 @@ export function resolveDraft(
   const fallback = defaultSheet(woods)?.id ?? '';
   d.carcaseMaterialId = woods.some((m) => m.id === d.carcaseMaterialId) ? d.carcaseMaterialId : fallback;
   d.frontMaterialId = woods.some((m) => m.id === d.frontMaterialId) ? d.frontMaterialId : fallback;
+  const cleanEdge = (v: number | null) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(EDGE.MAX_MM, Math.max(0, v)) : null);
+  d.carcaseEdgeMm = cleanEdge(d.carcaseEdgeMm);
+  d.frontEdgeMm = cleanEdge(d.frontEdgeMm);
   return d;
 }
 
@@ -217,6 +225,8 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     shelvesCount: d.shelvesCount,
     carcaseMaterialId: d.carcaseMaterialId,
     frontMaterialId: d.frontMaterialId,
+    carcaseEdgeMm: d.carcaseEdgeMm ?? undefined,
+    frontEdgeMm: d.frontEdgeMm ?? undefined,
     frontConfig: frontConfigOf(d),
   };
 }
@@ -232,6 +242,8 @@ export function draftToCabinetPatch(d: CabinetDraft): Partial<CabinetObject> {
     shelvesCount: d.shelvesCount,
     carcaseMaterialId: d.carcaseMaterialId,
     frontMaterialId: d.frontMaterialId,
+    carcaseEdgeMm: d.carcaseEdgeMm ?? undefined,
+    frontEdgeMm: d.frontEdgeMm ?? undefined,
     frontConfig: frontConfigOf(d),
   };
 }
@@ -251,6 +263,8 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     golaSlots: c.frontConfig.golaSlots ?? [],
     carcaseMaterialId: c.carcaseMaterialId,
     frontMaterialId: c.frontMaterialId,
+    carcaseEdgeMm: c.carcaseEdgeMm ?? null,
+    frontEdgeMm: c.frontEdgeMm ?? null,
     hardwareItemId: c.frontConfig.hardwareItemId,
   };
 }
