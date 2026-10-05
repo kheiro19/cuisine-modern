@@ -5,7 +5,7 @@ import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../ty
 import { TextureEngine } from '../math/textureEngine';
 import { golaSlotsOf } from '../math/gola';
 import { PANEL } from '../math/constants';
-import { edgeMmOf } from '../math/edge';
+import { edgeMmOf } from '../math/edgeBand';
 
 interface CabinetAssembly3DProps {
   cabinet: CabinetObject;

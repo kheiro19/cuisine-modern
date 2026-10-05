@@ -1,147 +1,357 @@
-// src/components/WallCabinetAssembly3D.tsx
-import React, { useMemo } from 'react';
-import * as THREE from 'three';
-import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
-import { TextureEngine } from '../math/textureEngine';
-import { edgeMmOf } from '../math/edge';
+// src/math/bomEngine.ts
 
-interface WallCabinetAssembly3DProps {
-  cabinet: CabinetObject;
-  showFronts: boolean;
-  isXRayMode: boolean;
-  woodPanels: InjectedWoodMaterial[];
-  hardwareItems: InjectedHardwareItem[];
-  openProgress: number; // Kinematic vertical translation matrix hook [0 - 1]
+import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { frontStackHeightMm } from './gola';
+import { edgeMmOf } from './edgeBand';
+
+export interface BOMWoodRow {
+  cabinetName: string;
+  cabinetCategory: string;
+  partType: string;
+  materialType: string;
+  materialBrand: string;
+  thicknessMm: number;
+  /** Edge band thickness (mm) glued on this part; the cut sizes below already have it subtracted. */
+  edgeThicknessMm?: number;
+  netWidthMm: number;
+  netLengthMm: number;
+  quantity: number;
+  grainDirection: 'vertical' | 'horizontal' | 'none';
+  estimatedCostDA: number;
 }
 
-export default function WallCabinetAssembly3D({
-  cabinet,
-  showFronts,
-  isXRayMode,
-  woodPanels,
-  hardwareItems,
-  openProgress
-}: WallCabinetAssembly3DProps) {
+export interface BOMHardwareRow {
+  cabinetName: string;
+  category: string;
+  brand: string;
+  modelType: string;
+  quantityRequired: number;
+  unitPriceDA: number;
+  totalHardwareCostDA: number;
+}
+
+export interface FinalBOMReport {
+  projectTimestamp: string;
+  totalKitchenCostDA: number;
+  woodPanelsSummary: BOMWoodRow[];
+  hardwareAccessoriesSummary: BOMHardwareRow[];
+}
+
+/**
+ * 🏭 Core Industrial BOM & Cost Export Engine (Flatma Production Specification)
+ * Scans the virtual layout setup and extracts pristine manufacturing metrics for the factory floor.
+ * Upgraded with Ultra-Slim Minimalist Gaps: 1mm for single front, 1mm total shared for multiple configurations.
+ */
+export function generateFactoryBOMReport(
+  cabinets: CabinetObject[],
+  woodMaterials: InjectedWoodMaterial[],
+  hardwareItems: InjectedHardwareItem[]
+): FinalBOMReport {
   
-  // Resolve stock items from workshop context supply
-  const carcaseMat = useMemo(() => woodPanels.find(m => m.id === cabinet.carcaseMaterialId), [woodPanels, cabinet.carcaseMaterialId]);
-  const frontMat = useMemo(() => woodPanels.find(m => m.id === cabinet.frontMaterialId), [woodPanels, cabinet.frontMaterialId]);
-  const activeHardware = useMemo(() => hardwareItems.find(h => h.id === cabinet.frontConfig.hardwareItemId), [hardwareItems, cabinet.frontConfig.hardwareItemId]);
+  const woodSummary: BOMWoodRow[] = [];
+  const hardwareSummaryMap: { [key: string]: BOMHardwareRow } = {};
+  let totalKitchenCost = 0;
 
-  const th = carcaseMat ? carcaseMat.thickness / 1000 : 0.018; 
-  const fTh = frontMat ? frontMat.thickness / 1000 : 0.018;
-  const edgeOffset = edgeMmOf(cabinet, 'carcase', carcaseMat) / 1000; // edge band chosen for this cabinet's carcase
+  cabinets.forEach((cab) => {
+    totalKitchenCost += cab.calculatedCostDA;
 
-  const w = cabinet.width / 1000;
-  const h = cabinet.height / 1000;
-  const d = cabinet.depth / 1000;
+    const carcaseMat = woodMaterials.find(m => m.id === cab.carcaseMaterialId);
+    const frontMat = woodMaterials.find(m => m.id === cab.frontMaterialId);
 
-  const dynamicAdjustment = cabinet.frontConfig.elementCount === 1 ? 0.001 : 0.001;
-  const frontZPositionDefault = activeHardware?.modelType.includes('Inset Hinge') 
-    ? (d / 2) - (fTh / 2) - edgeOffset 
-    : (d / 2) + (fTh / 2);
+    const carcaseEdge = edgeMmOf(cab, 'carcase', carcaseMat);
+    const frontEdge = edgeMmOf(cab, 'front', frontMat);
+    const round2 = (n: number) => Math.round(n * 100) / 100;
 
-  const isOverheadLiftSystem = activeHardware?.category === 'Overhead Lift Systems';
+    const carcaseThickness = cab.carcaseThickness;
+    const frontThickness = cab.frontThickness;
 
-  // 2. Dynamic PBR Compiling for المعلقة Wall Node Framework Components
-  const leftRightMaterial = useMemo(() => 
-    TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.depth, cabinet.height, isXRayMode, "#F59E0B", "vertical"),
-    [carcaseMat, cabinet.depth, cabinet.height, isXRayMode]
-  );
+    // Resolve materials names for industrial clarity
+    const carcaseTypeName = carcaseMat ? carcaseMat.type : 'Standard Melamine';
+    const carcaseBrandName = carcaseMat ? carcaseMat.brand : 'Generic';
+    const frontTypeName = frontMat ? frontMat.type : 'Acrylic Finish';
+    const frontBrandName = frontMat ? frontMat.brand : 'Generic';
 
-  const bottomTopMaterial = useMemo(() => 
-    TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.width, cabinet.depth, isXRayMode, "#E2E8F0", "horizontal"),
-    [carcaseMat, cabinet.width, cabinet.depth, isXRayMode]
-  );
+    // Helper utility to calculate relative prorated area cost for individual boards
+    const getBoardCost = (wMm: number, hMm: number, mat: InjectedWoodMaterial | undefined) => {
+      if (!mat) return 0;
+      const boardArea = (wMm * hMm) / 1000000;
+      const sheetArea = (mat.widthSheet * mat.heightSheet) / 1000000;
+      return Math.round((boardArea / sheetArea) * mat.averagePriceDA);
+    };
 
-  const frontMaterialCompiled = useMemo(() => 
-    TextureEngine.compileProceduralMaterial(frontMat, cabinet.width, cabinet.height, isXRayMode, "#FAFAFA", "vertical", cabinet.frontTextureOverride),
-    [frontMat, cabinet.width, cabinet.height, isXRayMode, cabinet.frontTextureOverride?.path, cabinet.frontTextureOverride?.finishType]
-  );
+    // ========================================================
+    // 🪚 STEP 1: PROCEDURAL DECONSTRUCTION OF CARCASE COMPONENTS
+    // ========================================================
+    
+    // A. Left & Right Gable/Side Panels (2 Pieces)
+    woodSummary.push({
+      cabinetName: cab.name,
+      cabinetCategory: cab.category,
+      partType: 'Side Panel (Left/Right)',
+      materialType: carcaseTypeName,
+      materialBrand: carcaseBrandName,
+      thicknessMm: carcaseThickness,
+      edgeThicknessMm: carcaseEdge,
+      netWidthMm: round2(cab.depth - carcaseEdge),
+      netLengthMm: cab.height,
+      quantity: 2,
+      grainDirection: 'vertical',
+      estimatedCostDA: getBoardCost(cab.depth, cab.height, carcaseMat) * 2
+    });
 
-  // Calculate Aventos Lift Upwards pathways or standard wing pivots
-  const currentRotation = openProgress * (Math.PI / 2);
-  const liftYDisplacement = openProgress * (h * 0.6);
-  const liftZDisplacement = openProgress * 0.12;
+    // B. Bottom Deck Panel (1 Piece)
+    const netBottomWidth = cab.width - (2 * carcaseThickness);
+    woodSummary.push({
+      cabinetName: cab.name,
+      cabinetCategory: cab.category,
+      partType: 'Bottom Deck Panel',
+      materialType: carcaseTypeName,
+      materialBrand: carcaseBrandName,
+      thicknessMm: carcaseThickness,
+      edgeThicknessMm: carcaseEdge,
+      netWidthMm: round2(cab.depth - carcaseEdge),
+      netLengthMm: netBottomWidth,
+      quantity: 1,
+      grainDirection: 'horizontal',
+      estimatedCostDA: getBoardCost(cab.depth, netBottomWidth, carcaseMat)
+    });
 
-  return (
-    <group>
-      {/* 🪚 Left Solid Wall Panel */}
-      <mesh position={[th / 2, h / 2, 0]} castShadow receiveShadow material={leftRightMaterial}>
-        <boxGeometry args={[th, h, d]} />
-      </mesh>
+    // C. Top Boundary Infrastructure (Traverses vs Solid Roof)
+    if (cab.category === 'BASE_UNIT') {
+      // Base units use 2 structural stretcher rails (Traverses) for stone top placement
+      woodSummary.push({
+        cabinetName: cab.name,
+        cabinetCategory: cab.category,
+        partType: 'Top Stretcher Rail (Traverse)',
+        materialType: carcaseTypeName,
+        materialBrand: carcaseBrandName,
+        thicknessMm: carcaseThickness,
+        netWidthMm: 100, // Standard 100mm industrial rail depth
+        netLengthMm: netBottomWidth,
+        quantity: 2,
+        grainDirection: 'horizontal',
+        estimatedCostDA: getBoardCost(100, netBottomWidth, carcaseMat) * 2
+      });
+    } else {
+      // Wall units require a fully closed solid top roof board
+      woodSummary.push({
+        cabinetName: cab.name,
+        cabinetCategory: cab.category,
+        partType: 'Top Roof Panel',
+        materialType: carcaseTypeName,
+        materialBrand: carcaseBrandName,
+        thicknessMm: carcaseThickness,
+      edgeThicknessMm: carcaseEdge,
+        netWidthMm: round2(cab.depth - carcaseEdge),
+        netLengthMm: netBottomWidth,
+        quantity: 1,
+        grainDirection: 'horizontal',
+        estimatedCostDA: getBoardCost(cab.depth, netBottomWidth, carcaseMat)
+      });
+    }
 
-      {/* 🪚 Right Solid Wall Panel */}
-      <mesh position={[w - th / 2, h / 2, 0]} castShadow receiveShadow material={leftRightMaterial}>
-        <boxGeometry args={[th, h, d]} />
-      </mesh>
+    // D. Backwall Fiberboard Enclosure (3mm High Density Backing)
+    woodSummary.push({
+      cabinetName: cab.name,
+      cabinetCategory: cab.category,
+      partType: 'Backwall Panel (MDF/HDF)',
+      materialType: 'HDF Standard 3mm',
+      materialBrand: carcaseBrandName,
+      thicknessMm: 3,
+      netWidthMm: cab.width,
+      netLengthMm: cab.height,
+      quantity: 1,
+      grainDirection: 'vertical',
+      estimatedCostDA: getBoardCost(cab.width, cab.height, carcaseMat) // Prorated approximation
+    });
 
-      {/* 🪚 Bottom Solid Shelf */}
-      <mesh position={[w / 2, th / 2, 0]} castShadow receiveShadow material={bottomTopMaterial}>
-        <boxGeometry args={[w - (2 * th), th, d - edgeOffset]} />
-      </mesh>
+    // E. Internal Adjustable Modular Shelves Array
+    if (cab.shelvesCount > 0) {
+      const shelfWidth = netBottomWidth - 2; // 2mm total clearance offset for side pinning
+      const shelfDepth = cab.depth - 20;     // 20mm inset recess safety step
+      woodSummary.push({
+        cabinetName: cab.name,
+        cabinetCategory: cab.category,
+        partType: 'Adjustable Internal Shelf',
+        materialType: carcaseTypeName,
+        materialBrand: carcaseBrandName,
+        thicknessMm: carcaseThickness,
+      edgeThicknessMm: carcaseEdge,
+        netWidthMm: round2(shelfDepth - carcaseEdge),
+        netLengthMm: shelfWidth,
+        quantity: cab.shelvesCount,
+        grainDirection: 'horizontal',
+        estimatedCostDA: getBoardCost(shelfDepth, shelfWidth, carcaseMat) * cab.shelvesCount
+      });
+    }
 
-      {/* 🪚 Solid Top Wood Roof Panel (Flatma Closed Box Standard) */}
-      <mesh position={[w / 2, h - th / 2, 0]} castShadow receiveShadow material={bottomTopMaterial}>
-        <boxGeometry args={[w - (2 * th), th, d - edgeOffset]} />
-      </mesh>
+    // ========================================================
+    // 🚪 STEP 2: PROCEDURAL DECONSTRUCTION OF EXTERIOR FACADES
+    // ========================================================
+    if (cab.frontConfig.openingType !== 'NONE') {
+      const frontStackMm = frontStackHeightMm(cab.height, cab.frontConfig); // height left after every Gola channel (mm)
+      
+      // 📐 Dynamic Ultra-Slim Clearance Offsets (1mm for single setup, 1mm total shared for symmetric multiple setups)
+      const dynamicAdjustment = 1; 
 
-      {/* 🪚 Rear Backwall Fiberboard Panel */}
-      <mesh position={[w / 2, h / 2, -d / 2 + 0.0015]} receiveShadow>
-        <boxGeometry args={[w, h, 0.003]} />
-        <meshStandardMaterial color="#D1D5DB" transparent={isXRayMode} opacity={isXRayMode ? 0.3 : 1.0} />
-      </mesh>
+      if (cab.frontConfig.openingType === 'DOORS') {
+        const individualDoorWidth = round2(Math.round((cab.width - dynamicAdjustment) / cab.frontConfig.elementCount) - 2 * frontEdge); // band on all 4 edges
+        const netDoorHeight = round2(frontStackMm - 2 * frontEdge); // Clearance + Gola offsets removed, minus band top & bottom
+        
+        woodSummary.push({
+          cabinetName: cab.name,
+          cabinetCategory: cab.category,
+          partType: `Door Facade Panel (1 of ${cab.frontConfig.elementCount})`,
+          materialType: frontTypeName,
+          materialBrand: frontBrandName,
+          thicknessMm: frontThickness,
+          edgeThicknessMm: frontEdge,
+          netWidthMm: individualDoorWidth, // Perfectly maps your 0.5mm split concept for double configurations
+          netLengthMm: netDoorHeight,
+          quantity: cab.frontConfig.elementCount,
+          grainDirection: 'vertical',
+          estimatedCostDA: getBoardCost(individualDoorWidth, netDoorHeight, frontMat) * cab.frontConfig.elementCount
+        });
 
-      {/* 🪚 Internal Adjustable Floating Shelves */}
-      {cabinet.shelvesCount > 0 && Array.from({ length: cabinet.shelvesCount }).map((_, idx) => {
-        const shelfY = (h / (cabinet.shelvesCount + 1)) * (idx + 1);
-        return (
-          <mesh key={idx} position={[w / 2, shelfY, -0.01]} castShadow receiveShadow material={bottomTopMaterial}>
-            <boxGeometry args={[w - (2 * th) - 0.002, th, d - 0.03]} />
-          </mesh>
-        );
-      })}
+        // Track allocated Hinges into unified summary list
+        const activeHardware = hardwareItems.find(h => h.id === cab.frontConfig.hardwareItemId);
+        if (activeHardware) {
+          const hingesPerDoor = cab.height > 900 ? 3 : 2;
+          const totalHingesCount = cab.frontConfig.elementCount * hingesPerDoor;
+          const mapKey = `${activeHardware.brand}_${activeHardware.modelType}`;
 
-      {/* ======================================================== */}
-      {/* 🚪 MECHANICAL LIFTS VS SIDE OPENING FAÇADES INTEGRATION   */}
-      {/* ======================================================== */}
-      {showFronts && cabinet.frontConfig.openingType === 'DOORS' && (
-        <group>
-          {isOverheadLiftSystem ? (
-            /* ✈️ Aventos Kinematic Mechanical Lift Upwards Activation */
-            <mesh 
-              position={[w / 2, (h / 2) + liftYDisplacement, frontZPositionDefault + liftZDisplacement]} 
-              castShadow 
-              material={frontMaterialCompiled}
-            >
-              <boxGeometry args={[w - dynamicAdjustment, h - 0.004, fTh]} />
-            </mesh>
-          ) : (
-            /* 🚪 Standard Edge Pivot Side Opening Multi-Door Setup Grid */
-            <group>
-              {Array.from({ length: cabinet.frontConfig.elementCount }).map((_, idx) => {
-                const doorWidth = (w - dynamicAdjustment) / cabinet.frontConfig.elementCount;
-                const doorHeight = h - 0.004;
-                const defaultDoorX = (doorWidth / 2) + (idx * doorWidth) + 0.002;
-                
-                const isLeftHinge = idx % 2 === 0;
-                const pivotXOffset = isLeftHinge ? defaultDoorX - (doorWidth / 2) : defaultDoorX + (doorWidth / 2);
-                const appliedRotation = isLeftHinge ? -currentRotation : currentRotation;
+          if (hardwareSummaryMap[mapKey]) {
+            hardwareSummaryMap[mapKey].quantityRequired += totalHingesCount;
+            hardwareSummaryMap[mapKey].totalHardwareCostDA += totalHingesCount * activeHardware.pricePerUnitDA;
+          } else {
+            hardwareSummaryMap[mapKey] = {
+              cabinetName: 'Combined Project Hardware',
+              category: activeHardware.category,
+              brand: activeHardware.brand,
+              modelType: activeHardware.modelType,
+              quantityRequired: totalHingesCount,
+              unitPriceDA: activeHardware.pricePerUnitDA,
+              totalHardwareCostDA: totalHingesCount * activeHardware.pricePerUnitDA
+            };
+          }
+        }
 
-                return (
-                  <group key={idx} position={[pivotXOffset, h / 2, frontZPositionDefault]}>
-                    <group position={[isLeftHinge ? doorWidth / 2 : -doorWidth / 2, 0, 0]} rotation={[0, appliedRotation, 0]}>
-                      <mesh castShadow material={frontMaterialCompiled}>
-                        <boxGeometry args={[doorWidth - 0.001, doorHeight, fTh]} />
-                      </mesh>
-                    </group>
-                  </group>
-                );
-              })}
-            </group>
-          )}
-        </group>
-      )}
-    </group>
-  );
+      } else if (cab.frontConfig.openingType === 'DRAWERS') {
+        const individualDrawerWidth = round2(cab.width - dynamicAdjustment - 2 * frontEdge);
+        const individualDrawerHeight = round2(Math.round(frontStackMm / cab.frontConfig.elementCount) - 2 * frontEdge);
+
+        woodSummary.push({
+          cabinetName: cab.name,
+          cabinetCategory: cab.category,
+          partType: `Drawer Front Facade (1 of ${cab.frontConfig.elementCount})`,
+          materialType: frontTypeName,
+          materialBrand: frontBrandName,
+          thicknessMm: frontThickness,
+          edgeThicknessMm: frontEdge,
+          netWidthMm: individualDrawerWidth,
+          netLengthMm: individualDrawerHeight,
+          quantity: cab.frontConfig.elementCount,
+          grainDirection: 'horizontal',
+          estimatedCostDA: getBoardCost(individualDrawerWidth, individualDrawerHeight, frontMat) * cab.frontConfig.elementCount
+        });
+
+                // Track Drawer slides runners into unified summary list
+        const activeHardware = hardwareItems.find(h => h.id === cab.frontConfig.hardwareItemId);
+        if (activeHardware) {
+          const totalRunnersCount = cab.frontConfig.elementCount; // 1 full mechanical drawer kit set per element
+          const mapKey = `${activeHardware.brand}_${activeHardware.modelType}`;
+
+          if (hardwareSummaryMap[mapKey]) {
+            hardwareSummaryMap[mapKey].quantityRequired += totalRunnersCount;
+            hardwareSummaryMap[mapKey].totalHardwareCostDA += totalRunnersCount * activeHardware.pricePerUnitDA;
+          } else {
+            hardwareSummaryMap[mapKey] = {
+              cabinetName: 'Combined Project Hardware',
+              category: activeHardware.category,
+              brand: activeHardware.brand,
+              modelType: activeHardware.modelType,
+              quantityRequired: totalRunnersCount,
+              unitPriceDA: activeHardware.pricePerUnitDA,
+              totalHardwareCostDA: totalRunnersCount * activeHardware.pricePerUnitDA
+            };
+          }
+        }
+      }
+    }
+
+    // ========================================================
+    // ⚙️ STEP 3: AUTOMATIC STRUCTURAL FIXING ACCUMULATION
+    // ========================================================
+    if (cab.category === 'BASE_UNIT') {
+      const legs = hardwareItems.find(h => h.modelType.includes('Adjustable Kitchen Legs'));
+      if (legs) {
+        const mapKey = `${legs.brand}_${legs.modelType}`;
+        if (hardwareSummaryMap[mapKey]) {
+          hardwareSummaryMap[mapKey].quantityRequired += 4;
+          hardwareSummaryMap[mapKey].totalHardwareCostDA += 4 * legs.pricePerUnitDA;
+        } else {
+          hardwareSummaryMap[mapKey] = {
+            cabinetName: 'Base Fixing System',
+            category: legs.category,
+            brand: legs.brand,
+            modelType: legs.modelType,
+            quantityRequired: 4,
+            unitPriceDA: legs.pricePerUnitDA,
+            totalHardwareCostDA: 4 * legs.pricePerUnitDA
+          };
+        }
+      }
+    } else if (cab.category === 'WALL_UNIT') {
+      const hangers = hardwareItems.find(h => h.modelType.includes('Cabinet Hanger Plates'));
+      if (hangers) {
+        const mapKey = `${hangers.brand}_${hangers.modelType}`;
+        if (hardwareSummaryMap[mapKey]) {
+          hardwareSummaryMap[mapKey].quantityRequired += 2;
+          hardwareSummaryMap[mapKey].totalHardwareCostDA += 2 * hangers.pricePerUnitDA;
+        } else {
+          hardwareSummaryMap[mapKey] = {
+            cabinetName: 'Wall Fixing System',
+            category: hangers.category,
+            brand: hangers.brand,
+            modelType: hangers.modelType,
+            quantityRequired: 2,
+            unitPriceDA: hangers.pricePerUnitDA,
+            totalHardwareCostDA: 2 * hangers.pricePerUnitDA
+          };
+        }
+      }
+    }
+  });
+
+  return {
+    projectTimestamp: new Date().toLocaleString('fr-DZ'),
+    totalKitchenCostDA: totalKitchenCost,
+    woodPanelsSummary: woodSummary,
+    hardwareAccessoriesSummary: Object.values(hardwareSummaryMap)
+  };
+}
+
+/**
+ * 📄 Industrial Utility: Formats the entire factory report layout into a clean downloadable CSV text format string
+ */
+export function convertBOMToCSVString(report: FinalBOMReport): string {
+  let csv = `FLATMA FACTORY PRODUCTION BOM REPORT\n`;
+  csv += `Generated Timestamp,${report.projectTimestamp}\n`;
+  csv += `Total Project Manufacturing Cost,${report.totalKitchenCostDA} DA\n\n`;
+  
+  csv += `--- SECTION 1: PROCEDURAL WOOD PARTS CUTTING LIST ---\n`;
+  csv += `Cabinet Unit,Category,Component Type,Core Material,Brand,Thickness(mm),Edge Band(mm),Cut Width(mm),Cut Length(mm),Quantity,Grain Direction,Prorated Cost(DA)\n`;
+  
+  report.woodPanelsSummary.forEach(w => {
+    csv += `"${w.cabinetName}","${w.cabinetCategory}","${w.partType}","${w.materialType}","${w.materialBrand}",${w.thicknessMm},${w.edgeThicknessMm ?? 0},${w.netWidthMm},${w.netLengthMm},${w.quantity},"${w.grainDirection}",${w.estimatedCostDA}\n`;
+  });
+  
+  csv += `\n--- SECTION 2: HARDWARE & MECHANICAL ACCESSORIES INVENTORY REPORT ---\n`;
+  csv += `Allocation Group,Hardware Category,Brand Supplier,Model Specification,Total Pieces Required,Unit Cost(DA),Aggregated System Cost(DA)\n`;
+  
+  report.hardwareAccessoriesSummary.forEach(h => {
+    csv += `"${h.cabinetName}","${h.category}","${h.brand}","${h.modelType}",${h.quantityRequired},${h.unitPriceDA},${h.totalHardwareCostDA}\n`;
+  });
+
+  return csv;
 }
