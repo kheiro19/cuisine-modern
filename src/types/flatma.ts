@@ -12,6 +12,22 @@ export interface Vector3D {
 }
 
 // ========================================================
+// 🧱 MULTI-WALL ROOM LAYOUT ENGINE — TYPES RE-EXPORTED FROM THE ENGINE
+// ========================================================
+// Single source of truth lives in src/engine/wallGeometry.ts (the resolver/geometry module).
+// Re-exported here so the rest of the app (components, App.tsx) can import room/wall types
+// from '../types/flatma' alongside every other domain type, without duplicating definitions.
+export type {
+  Point2D,
+  RoomSegmentInput,
+  RoomShape,
+  WallSegment,
+  WallJointKind,
+  WallJoint,
+  ResolvedRoom,
+} from '../engine/wallGeometry';
+
+// ========================================================
 // 📦 1. WORKSHOP CENTRAL INVENTORY STRUCTURAL DATA TYPES
 // ========================================================
 
@@ -101,6 +117,21 @@ export interface CabinetObject {
   positionX: number;
   positionY: number;
   positionZ: number;
+
+  // ---- Multi-wall layout engine (Strangler Pattern: additive, optional, non-breaking) ----
+  // When present, these take priority over positionX/positionZ for placement (see
+  // Kitchen3DCanvas.resolveCabinetTransform). When absent, positionX/positionY/positionZ
+  // remain the fallback/cache, exactly as before this feature existed.
+  /** Which wall (WallSegment.id) this cabinet is attached to. */
+  wallId?: string;
+  /** Distance in mm along the wall, measured from the wall's startPoint. Replaces positionX for wall-aware placement. */
+  positionOnWall?: number;
+  /** Distance in mm the cabinet protrudes from the wall into the room (its depth axis). Replaces positionZ-derived offset. */
+  depthIntoRoom?: number;
+  /** Cached world-space Y rotation (degrees) derived from the wall's angle; kept in sync by the layout engine. */
+  rotationYDeg?: number;
+  /** If this cabinet occupies a corner footprint, references the WallJoint.id it is seated in. */
+  cornerJointId?: string;
   
   // Internal Dividers State
   shelvesCount: number;

@@ -5,12 +5,16 @@ import { OrbitControls, Grid, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import CabinetAssembly3D from './CabinetAssembly3D';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
-import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import RoomEnvironment3D from './RoomEnvironment3D';
+import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem, ResolvedRoom, WallSegment } from '../types/flatma';
 import { textureCatalog } from '../data/textureCatalog';
 import type { TextureEntry } from '../data/textureCatalog';
 import { onlineTextureCatalog, makeOnlineTextureEntry } from '../data/onlineTextures';
 import { LAYOUT } from '../math/constants';
 import { computeCountertopOutline } from '../math/countertop';
+import { wallLocalToWorld } from '../engine/wallGeometry';
+
+const LEGACY_WALL_ID = 'legacy-wall-0';
 
 interface Kitchen3DCanvasProps {
   cabinets: CabinetObject[];
@@ -23,6 +27,10 @@ interface Kitchen3DCanvasProps {
   /** An empty texturePath means "back to the stock material". */
   onApplyTextureOverride: (cabinetId: string, texturePath: string, finishType: string, applyToAll: boolean) => void;
   onDeleteCabinet: (cabinetId: string) => void;
+  /** Resolved multi-wall room (optional). When absent, a single legacy straight wall is synthesized. */
+  room?: ResolvedRoom;
+  /** Toggles visibility of the translucent room walls/floor. Defaults to true; irrelevant until `room` is set. */
+  showRoomEnvironment?: boolean;
 }
 
 export default function Kitchen3DCanvas({
@@ -34,7 +42,9 @@ export default function Kitchen3DCanvas({
   woodPanels,
   hardwareItems,
   onApplyTextureOverride,
-  onDeleteCabinet
+  onDeleteCabinet,
+  room,
+  showRoomEnvironment = true
 }: Kitchen3DCanvasProps) {
 
   const [openProgress, setOpenProgress] = useState<number>(0);
@@ -102,6 +112,32 @@ export default function Kitchen3DCanvas({
   const maxBoundaryXMm = useMemo(() => cabinets.length > 0 ? Math.max(...cabinets.map(c => c.positionX + c.width)) : 1200, [cabinets]);
   const sceneWidthMeters = maxBoundaryXMm / 1000;
 
+  // Multi-wall layout engine: use the resolved room's walls when available, otherwise fall back to a single
+  // synthetic straight wall that reproduces the legacy (pre-wall-engine) single-wall behaviour exactly.
+  const effectiveWalls: WallSegment[] = useMemo(() => {
+    if (room && room.walls.length > 0) return room.walls;
+    return [{
+      id: LEGACY_WALL_ID,
+      index: 0,
+      startPoint: { x: 0, z: 0 },
+      endPoint: { x: maxBoundaryXMm, z: 0 },
+      angleDeg: 0,
+      length: maxBoundaryXMm
+    }];
+  }, [room, maxBoundaryXMm]);
+
+  // Resolves a cabinet's wall-local placement (new wallId/positionOnWall/depthIntoRoom fields when present,
+  // with the legacy positionX/positionY/positionZ fields as fallback/cache) into a world-space transform.
+  const resolveCabinetTransform = useCallback((cabinet: CabinetObject) => {
+    const wallId = (cabinet.wallId && effectiveWalls.some(w => w.id === cabinet.wallId))
+      ? cabinet.wallId
+      : effectiveWalls[0].id;
+    const wallSeg = effectiveWalls.find(w => w.id === wallId) ?? effectiveWalls[0];
+    const posOnWall = cabinet.positionOnWall ?? cabinet.positionX;
+    const depthIntoRoomMm = cabinet.depthIntoRoom ?? (cabinet.depth / 2 - cabinet.positionZ);
+    return wallLocalToWorld(wallSeg, posOnWall, depthIntoRoomMm);
+  }, [effectiveWalls]);
+
   // Horizontal worktop. The old shape was built in the XY plane and extruded along Z (a thin VERTICAL slab),
   // offset by half the scene width, at a hard-coded 720 mm height.
   const countertopGeometry = useMemo(() => {
@@ -146,14 +182,15 @@ export default function Kitchen3DCanvas({
               {cabinets.map((cabinet) => {
                 const isWallNode = cabinet.category === 'WALL_UNIT';
                 const verticalYOffset = isWallNode ? wallElevationMeters : 0;
-                // Back planes are flush against the wall (z = 0): a 350 mm wall unit and a 600 mm base unit share
-                // the same back, instead of both being centred on z = 0 (which floated wall units off the wall).
-                const zMeters = (-cabinet.positionZ + cabinet.depth / 2) / 1000;
+                // Wall-aware transform: resolves wallId/positionOnWall/depthIntoRoom (or the legacy
+                // positionX/positionY/positionZ fallback) into a world-space x/z/rotationY via the wall engine.
+                const transform = resolveCabinetTransform(cabinet);
 
                 return (
                   <group
                     key={cabinet.id}
-                    position={[cabinet.positionX / 1000, verticalYOffset, zMeters]}
+                    position={[transform.x / 1000, verticalYOffset, transform.z / 1000]}
+                    rotation={[0, THREE.MathUtils.degToRad(transform.rotationYDeg), 0]}
                     onClick={(e) => {
                       e.stopPropagation();
                       setSelectedCabinetId(cabinet.id); // Raycasting simulation trigger
@@ -174,6 +211,10 @@ export default function Kitchen3DCanvas({
                   <meshStandardMaterial color="#FFFFFF" roughness={0.2} metalness={0.0} transparent={isXRayMode} opacity={isXRayMode ? 0.35 : 1.0} />
                 </mesh>
               )}
+
+              {/* 🏠 Room Environment: translucent walls + floor derived from the resolved room shape.
+                  Returns null entirely (no visual effect) when no room has been defined yet or the toggle is off. */}
+              <RoomEnvironment3D walls={effectiveWalls} visible={!!room && showRoomEnvironment} />
             </group>
           </Center>
 

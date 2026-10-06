@@ -4,6 +4,7 @@ import { useFurniture } from './context/FurnitureContext';
 import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import CabinetPreview3D from './components/CabinetPreview3D';
+import RoomShapeEditor from './components/RoomShapeEditor';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
 import {
@@ -25,7 +26,7 @@ import { nextPositionX } from './math/layout';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { uid } from './math/utils';
-import { CabinetObject, FrontOpeningType } from './types/flatma';
+import { CabinetObject, FrontOpeningType, ResolvedRoom } from './types/flatma';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
@@ -66,6 +67,11 @@ export default function App() {
 
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
+
+  // Multi-wall room engine: `room` starts undefined (no behavioural change until the user applies a shape via
+  // RoomShapeEditor). `showRoomEnvironment` toggles the translucent walls/floor once a room exists.
+  const [room, setRoom] = useState<ResolvedRoom | undefined>(undefined);
+  const [showRoomEnvironment, setShowRoomEnvironment] = useState<boolean>(true);
 
   const [bomReportText, setBomReportText] = useState<string>('');
   const [invoiceText, setInvoiceText] = useState<string>('');
@@ -180,6 +186,9 @@ export default function App() {
         {!isWorkspaceMinimized && (
           <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[750px] overflow-y-auto animate-fade-in">
             <InventoryManager />
+            <div className="mt-3">
+              <RoomShapeEditor onApply={setRoom} />
+            </div>
           </div>
         )}
 
@@ -245,7 +254,7 @@ export default function App() {
               </button>
             )}
 
-                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات) */}
+                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات + الغرفة) */}
             <div className="absolute top-3 left-32 z-40 flex bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 space-x-2 shadow-md">
               <button 
                 type="button" 
@@ -260,6 +269,15 @@ export default function App() {
                 className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${isXRayMode ? 'bg-teal-600 text-white shadow-inner animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
               >
                 {isXRayMode ? '💀 وضع X-Ray نشط (شفاف)' : '💀 تشغيل شفافية الألواح X-Ray'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowRoomEnvironment(p => !p)}
+                disabled={!room}
+                title={!room ? 'حدد شكل الغرفة أولاً من اللوحة الجانبية' : undefined}
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all ${!room ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : showRoomEnvironment ? 'bg-emerald-600 text-white cursor-pointer' : 'bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer'}`}
+              >
+                {showRoomEnvironment ? '🏠 إخفاء الغرفة' : '🏠 إظهار الغرفة'}
               </button>
             </div>
 
@@ -281,6 +299,8 @@ export default function App() {
                   deleteCabinet(id);
                   if (editingId === id) setEditingId(null);
                 }}
+                room={room}
+                showRoomEnvironment={showRoomEnvironment}
               />
             </div>
           </div>
