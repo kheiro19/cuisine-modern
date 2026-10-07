@@ -2,6 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from '../context/FurnitureContext';
 import { HardwareCategory } from '../types/flatma';
+import HardwareViewer3D from './Hardware3D';
 
 export default function InventoryManager() {
   const { inventory, addWoodMaterial, addHardwareItem, addEdgeBandRoll } = useFurniture();
@@ -514,6 +515,7 @@ export default function InventoryManager() {
               <select value={selectedHwModel} onChange={(e) => setSelectedHwModel(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium text-indigo-700">
                 {currentAvailableModels.map((m, i) => <option key={i} value={m}>{m}</option>)}
               </select>
+              <HardwareViewer3D modelType={selectedHwModel} />
               {showHwModelInput && (
                 <div className="flex items-center space-x-2 pt-1 animate-fade-in">
                   <input type="text" placeholder="Insert custom system model name..." value={newHwModelInput} onChange={(e) => setNewHwModelInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
