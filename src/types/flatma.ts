@@ -12,22 +12,6 @@ export interface Vector3D {
 }
 
 // ========================================================
-// 🧱 MULTI-WALL ROOM LAYOUT ENGINE — TYPES RE-EXPORTED FROM THE ENGINE
-// ========================================================
-// Single source of truth lives in src/engine/wallGeometry.ts (the resolver/geometry module).
-// Re-exported here so the rest of the app (components, App.tsx) can import room/wall types
-// from '../types/flatma' alongside every other domain type, without duplicating definitions.
-export type {
-  Point2D,
-  RoomSegmentInput,
-  RoomShape,
-  WallSegment,
-  WallJointKind,
-  WallJoint,
-  ResolvedRoom,
-} from '../engine/wallGeometry';
-
-// ========================================================
 // 📦 1. WORKSHOP CENTRAL INVENTORY STRUCTURAL DATA TYPES
 // ========================================================
 
@@ -49,6 +33,7 @@ export type HardwareCategory =
   | 'Drawer Slide Systems' 
   | 'Overhead Lift Systems' 
   | 'Gola & Handle Profiles' 
+  | 'Push-Open Systems'
   | 'Assembly & Fixing';
 
 export interface InjectedHardwareItem {
@@ -82,10 +67,37 @@ export interface WorkshopInventoryState {
 export type CabinetCategory = 'BASE_UNIT' | 'WALL_UNIT';
 export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
 
+/**
+ * A cabinet is a vertical stack of ZONES (bottom -> top) between the bottom board and the top. Each zone is one thing:
+ * a set of doors, a set of drawers, an open compartment, an appliance niche or a fixed apron panel.
+ * Cabinets saved without `zones` are read as ONE zone made from frontConfig + shelvesCount (see math/zones.ts).
+ */
+export type ZoneKind = 'DOORS' | 'DRAWERS' | 'OPEN' | 'APPLIANCE' | 'APRON';
+export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE';
+
+export interface CabinetZone {
+  kind: ZoneKind;
+  /** Opening height (mm). Undefined = flexible: the zones without a height share what is left equally. */
+  heightMm?: number;
+  /** DOORS / DRAWERS: number of facades (a lift counts every door as one lifting facade). */
+  count?: number;
+  /** DOORS / OPEN: adjustable shelves inside this zone. */
+  shelves?: number;
+  /** APPLIANCE only. The appliance is supplied by the customer: it adds a niche, never a price. */
+  appliance?: ApplianceKind;
+  /** APPLIANCE only (dishwasher, fridge): a decor panel in the fronts material hides the appliance. */
+  panelFront?: boolean;
+}
+
+/** How the fronts open: a handle (not priced), Gola channels, or a push-to-open mechanism (priced per facade). */
+export type OpeningMode = 'HANDLE' | 'GOLA' | 'PUSH';
+
 export interface CabinetFrontConfiguration {
   openingType: FrontOpeningType;
   elementCount: number;        // Spatial layout mapping: e.g., 1, 2, or 3 doors / 2, 3, or 4 drawers
-  hardwareItemId: string;      // Directly references targeted InjectedHardwareItem from workshop stock
+  hardwareItemId: string;      // Directly references targeted InjectedHardwareItem from workshop stock (hinges / lift, or runners on a drawers-only cabinet)
+  /** Drawer runners when the cabinet mixes doors and drawers (hardwareItemId is then the hinge / lift). */
+  drawerHardwareItemId?: string;
   hasGolaProfile: boolean;     // Structural flag triggering automatic height offset and traverse recess
   golaProfileItemId?: string;  // References specific Gola aluminum model from active hardware list
   /**
@@ -117,21 +129,6 @@ export interface CabinetObject {
   positionX: number;
   positionY: number;
   positionZ: number;
-
-  // ---- Multi-wall layout engine (Strangler Pattern: additive, optional, non-breaking) ----
-  // When present, these take priority over positionX/positionZ for placement (see
-  // Kitchen3DCanvas.resolveCabinetTransform). When absent, positionX/positionY/positionZ
-  // remain the fallback/cache, exactly as before this feature existed.
-  /** Which wall (WallSegment.id) this cabinet is attached to. */
-  wallId?: string;
-  /** Distance in mm along the wall, measured from the wall's startPoint. Replaces positionX for wall-aware placement. */
-  positionOnWall?: number;
-  /** Distance in mm the cabinet protrudes from the wall into the room (its depth axis). Replaces positionZ-derived offset. */
-  depthIntoRoom?: number;
-  /** Cached world-space Y rotation (degrees) derived from the wall's angle; kept in sync by the layout engine. */
-  rotationYDeg?: number;
-  /** If this cabinet occupies a corner footprint, references the WallJoint.id it is seated in. */
-  cornerJointId?: string;
   
   // Internal Dividers State
   shelvesCount: number;
@@ -151,6 +148,12 @@ export interface CabinetObject {
   
   // Advanced Mechanical Kinematics Configuration
   frontConfig: CabinetFrontConfiguration;
+
+  /** Interior zones, bottom -> top. Authoritative for geometry, BOM, cost, stock and 3D when present. */
+  zones?: CabinetZone[];
+  openingMode?: OpeningMode;
+  /** GLASS: aluminium frame + glass pane (also assumed when the front sheet's type says glass). */
+  frontStyle?: 'SOLID' | 'GLASS';
   
   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
   frontTextureOverride?: FrontTextureOverride;

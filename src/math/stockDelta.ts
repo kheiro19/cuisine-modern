@@ -5,27 +5,12 @@
 // needing 4 legs with 2 in stock left 4: stock invented from nothing), and Undo never touched the stock.
 // Stock may now go negative: a negative number is a visible shortage, not a silent clamp.
 import { CabinetObject, InjectedHardwareItem } from '../types/flatma';
+import { hardwareRequirements } from './partsEngine';
 
-const LEGS_KEYWORD = 'Adjustable Kitchen Legs';
-const HANGERS_KEYWORD = 'Cabinet Hanger Plates';
-
-/** Units of each hardware item (by id) a cabinet uses — the same rule costEngine prices. */
+/** Units of each hardware item (by id) a cabinet uses: the very requirements the BOM and the price use. */
 export function hardwareConsumption(cab: CabinetObject, items: InjectedHardwareItem[]): Record<string, number> {
   const out: Record<string, number> = {};
-  const add = (id: string, qty: number) => {
-    out[id] = (out[id] ?? 0) + qty;
-  };
-  const { openingType, elementCount, hardwareItemId } = cab.frontConfig;
-  if (openingType !== 'NONE' && items.some((i) => i.id === hardwareItemId)) {
-    add(hardwareItemId, openingType === 'DOORS' ? (cab.height > 900 ? 3 : 2) * elementCount : elementCount);
-  }
-  if (cab.category === 'BASE_UNIT') {
-    const legs = items.find((i) => i.modelType.includes(LEGS_KEYWORD));
-    if (legs) add(legs.id, 4);
-  } else {
-    const hangers = items.find((i) => i.modelType.includes(HANGERS_KEYWORD));
-    if (hangers) add(hangers.id, 2);
-  }
+  for (const req of hardwareRequirements(cab, items)) out[req.item.id] = (out[req.item.id] ?? 0) + req.quantity;
   return out;
 }
 

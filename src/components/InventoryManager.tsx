@@ -85,6 +85,10 @@ export default function InventoryManager() {
       'Vertical Gola Single Profile', 'Vertical Gola Double Profile',
       'Aluminum Inset Handle Profile', 'Standard Drilling Handle'
     ],
+    'Push-Open Systems': [
+      'Magnetic Push Latch (Touch Latch)', 'Mechanical Tip-On (Blum Tip-On)',
+      'Electric Servo-Drive (Blum Servo-Drive)', 'Push-to-Open for Drawers (Silent)'
+    ],
     'Assembly & Fixing': [
       'Adjustable Kitchen Legs (100mm - 150mm)', 'Cabinet Hanger Plates (Heavy Duty)',
       'Confirmated Assembly Screws (5x50mm)', 'PVC Plinth Base Board (With Rubber)',
@@ -488,6 +492,7 @@ export default function InventoryManager() {
                 <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
                 <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
                 <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
+                <option value="Push-Open Systems">📁 6. Push-Open Systems (فتح بالضغط)</option>
                                <option value="Assembly & Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
               </select>
             </div>

@@ -4,7 +4,6 @@ import { useFurniture } from './context/FurnitureContext';
 import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
 import CabinetPreview3D from './components/CabinetPreview3D';
-import RoomShapeEditor from './components/RoomShapeEditor';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
 import {
@@ -15,7 +14,8 @@ import {
   SUBTYPE_PRESETS,
   SubtypeGroup,
   cabinetToDraft,
-  compatibleHardwareCategories,
+  doorHardwareCategories,
+  drawerHardwareCategories,
   draftFromPreset,
   draftToCabinetPatch,
   draftToNewCabinet,
@@ -26,17 +26,35 @@ import { nextPositionX } from './math/layout';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { uid } from './math/utils';
-import { CabinetObject, FrontOpeningType, ResolvedRoom } from './types/flatma';
+import { ApplianceKind, CabinetObject, CabinetZone, OpeningMode, ZoneKind } from './types/flatma';
+import { APPLIANCES, ZONE_LABELS, zonesOf } from './math/zones';
+import { priceCabinet } from './math/partsEngine';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
 // (The former flat-rectangle board generator is kept for reference in _archive/parametricBoards.legacy.ts.)
 
-const frontSummary = (c: CabinetObject): string => {
-  const { openingType, elementCount } = c.frontConfig;
-  if (openingType === 'DOORS') return `أبواب ×${elementCount}`;
-  if (openingType === 'DRAWERS') return `أدراج ×${elementCount}`;
-  return 'مفتوحة';
+const frontSummary = (c: CabinetObject): string =>
+  zonesOf(c)
+    .slice()
+    .reverse() // top -> bottom, the way the cabinet is read
+    .map((z) =>
+      z.kind === 'DOORS' ? `أبواب ×${z.count ?? 1}`
+      : z.kind === 'DRAWERS' ? `أدراج ×${z.count ?? 1}`
+      : z.kind === 'APPLIANCE' ? APPLIANCES[z.appliance ?? 'OVEN'].label
+      : z.kind === 'APRON' ? 'لوح ثابت'
+      : 'مفتوح')
+    .join(' + ');
+
+const ZONE_KINDS: ZoneKind[] = ['DOORS', 'DRAWERS', 'OPEN', 'APPLIANCE', 'APRON'];
+
+/** A zone of another kind starts from sensible values (an appliance zone from the appliance's own niche height). */
+const zoneOfKind = (kind: ZoneKind, previous: CabinetZone): CabinetZone => {
+  if (kind === 'DOORS') return { kind, count: previous.count ?? 2, shelves: 0 };
+  if (kind === 'DRAWERS') return { kind, count: previous.count ?? 2 };
+  if (kind === 'OPEN') return { kind, shelves: 2 };
+  if (kind === 'APPLIANCE') return { kind, appliance: 'OVEN', heightMm: APPLIANCES.OVEN.nicheHeightMm };
+  return { kind: 'APRON', heightMm: 150 };
 };
 
 const FRONT_COUNT_OPTIONS = Array.from(
@@ -68,11 +86,6 @@ export default function App() {
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
 
-  // Multi-wall room engine: `room` starts undefined (no behavioural change until the user applies a shape via
-  // RoomShapeEditor). `showRoomEnvironment` toggles the translucent walls/floor once a room exists.
-  const [room, setRoom] = useState<ResolvedRoom | undefined>(undefined);
-  const [showRoomEnvironment, setShowRoomEnvironment] = useState<boolean>(true);
-
   const [bomReportText, setBomReportText] = useState<string>('');
   const [invoiceText, setInvoiceText] = useState<string>('');
 
@@ -89,10 +102,17 @@ export default function App() {
   const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods, edgeRolls), [resolved, woods, edgeRolls]);
   const preset = SUBTYPE_PRESETS[resolved.subtype];
 
-  const compatibleCategories = compatibleHardwareCategories(resolved.category, resolved.openingType);
-  const hardwareOptions = hardwareItems.filter((h) => compatibleCategories.includes(h.category));
-  const selectedHardware = hardwareItems.find((h) => h.id === resolved.hardwareItemId);
-  const isLift = selectedHardware?.category === 'Overhead Lift Systems';
+  const hasDoorZone = resolved.zones.some((z) => z.kind === 'DOORS');
+  const hasDrawerZone = resolved.zones.some((z) => z.kind === 'DRAWERS');
+  const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category));
+  const drawerOptions = hardwareItems.filter((h) => drawerHardwareCategories().includes(h.category));
+  const isLift = hardwareItems.find((h) => h.id === resolved.hardwareItemId)?.category === 'Overhead Lift Systems';
+  const golaAllowed = resolved.category === 'BASE_UNIT' && resolved.zones.length === 1 && (hasDoorZone || hasDrawerZone);
+
+  // The preview is priced by the very function the BOM sums, so this figure is the BOM figure.
+  const previewPricing = useMemo(() => priceCabinet(previewCabinet, woods, hardwareItems, edgeRolls), [previewCabinet, woods, hardwareItems, edgeRolls]);
+  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
+  const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
 
   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));
   const normalizeDraft = () => setDraft((prev) => resolveDraft(prev, woods, hardwareItems, edgeRolls));
@@ -102,8 +122,20 @@ export default function App() {
       draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId }),
     );
 
-  const handleOpeningTypeChange = (openingType: FrontOpeningType) =>
-    patchDraft({ openingType, hardwareItemId: '', elementCount: openingType === 'NONE' ? 0 : Math.max(1, resolved.elementCount) });
+  // ---- zones editor: edits go to the raw draft (typing is never fought); display uses the resolved one -------------
+  const baseZones = (): CabinetZone[] => (draft.zones.length === resolved.zones.length ? draft.zones : resolved.zones);
+  const setZones = (next: CabinetZone[]) => patchDraft({ zones: next });
+  const updateZone = (i: number, fields: Partial<CabinetZone>) => setZones(baseZones().map((z, k) => (k === i ? { ...z, ...fields } : z)));
+  const replaceZone = (i: number, zone: CabinetZone) => setZones(baseZones().map((z, k) => (k === i ? zone : z)));
+  const moveZone = (i: number, delta: number) => {
+    const zs = baseZones().slice();
+    const j = i + delta;
+    if (j < 0 || j >= zs.length) return;
+    [zs[i], zs[j]] = [zs[j], zs[i]];
+    setZones(zs);
+  };
+  const removeZone = (i: number) => { if (baseZones().length > 1) setZones(baseZones().filter((_, k) => k !== i)); };
+  const addZone = () => setZones([...baseZones(), { kind: 'DOORS', count: 2, shelves: 0 }]);
 
   const canSave = woods.length > 0;
 
@@ -186,9 +218,6 @@ export default function App() {
         {!isWorkspaceMinimized && (
           <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[750px] overflow-y-auto animate-fade-in">
             <InventoryManager />
-            <div className="mt-3">
-              <RoomShapeEditor onApply={setRoom} />
-            </div>
           </div>
         )}
 
@@ -254,7 +283,7 @@ export default function App() {
               </button>
             )}
 
-                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات + الغرفة) */}
+                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات) */}
             <div className="absolute top-3 left-32 z-40 flex bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 space-x-2 shadow-md">
               <button 
                 type="button" 
@@ -269,15 +298,6 @@ export default function App() {
                 className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${isXRayMode ? 'bg-teal-600 text-white shadow-inner animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
               >
                 {isXRayMode ? '💀 وضع X-Ray نشط (شفاف)' : '💀 تشغيل شفافية الألواح X-Ray'}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowRoomEnvironment(p => !p)}
-                disabled={!room}
-                title={!room ? 'حدد شكل الغرفة أولاً من اللوحة الجانبية' : undefined}
-                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all ${!room ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : showRoomEnvironment ? 'bg-emerald-600 text-white cursor-pointer' : 'bg-slate-800 text-slate-400 hover:text-slate-200 cursor-pointer'}`}
-              >
-                {showRoomEnvironment ? '🏠 إخفاء الغرفة' : '🏠 إظهار الغرفة'}
               </button>
             </div>
 
@@ -299,8 +319,6 @@ export default function App() {
                   deleteCabinet(id);
                   if (editingId === id) setEditingId(null);
                 }}
-                room={room}
-                showRoomEnvironment={showRoomEnvironment}
               />
             </div>
           </div>
@@ -339,97 +357,147 @@ export default function App() {
               <div>D:<input type="number" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
             </div>
 
+            {/* الأقسام: كل خزانة = كومة أقسام من الأسفل للأعلى، تُعرض هنا من الأعلى للأسفل */}
             <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-[10px]">الأقسام (من الأعلى للأسفل):</span>
+                <button type="button" onClick={addZone} disabled={resolved.zones.length >= LIMITS.ZONES[1]} className="px-2 py-0.5 rounded border border-indigo-300 bg-white text-indigo-700 text-[10px] font-bold hover:bg-indigo-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">➕ قسم</button>
+              </div>
+
+              {resolved.zones.map((z, i) => ({ z, i })).reverse().map(({ z, i }) => {
+                const band = previewPricing.model.layout.bands[i];
+                const raw = baseZones()[i];
+                return (
+                  <div key={i} className="bg-white border rounded p-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <select value={z.kind} onChange={(e) => replaceZone(i, zoneOfKind(e.target.value as ZoneKind, z))} className="border bg-white rounded p-0.5 text-[11px] font-bold">
+                        {ZONE_KINDS.map((k) => (
+                          <option key={k} value={k} disabled={k === 'DRAWERS' && resolved.category === 'WALL_UNIT'}>{ZONE_LABELS[k]}</option>
+                        ))}
+                      </select>
+                      {(z.kind === 'DOORS' || z.kind === 'DRAWERS') && (
+                        <label className="flex items-center gap-1 text-[10px] font-bold">
+                          {z.kind === 'DOORS' ? 'عدد الأبواب' : 'عدد الأدراج'}
+                          <select value={z.count ?? 1} onChange={(e) => updateZone(i, { count: Number(e.target.value) })} className="border bg-white rounded p-0.5 text-[11px]" style={{ direction: 'ltr' }}>
+                            {FRONT_COUNT_OPTIONS.map((n) => (<option key={n} value={n}>{n}</option>))}
+                          </select>
+                        </label>
+                      )}
+                      {z.kind === 'APPLIANCE' && (
+                        <select
+                          value={z.appliance ?? 'OVEN'}
+                          onChange={(e) => { const a = e.target.value as ApplianceKind; replaceZone(i, { kind: 'APPLIANCE', appliance: a, heightMm: APPLIANCES[a].nicheHeightMm }); }}
+                          className="border bg-white rounded p-0.5 text-[11px]"
+                        >
+                          {(Object.keys(APPLIANCES) as ApplianceKind[]).map((a) => (<option key={a} value={a}>{APPLIANCES[a].label}</option>))}
+                        </select>
+                      )}
+                      <span className="flex gap-0.5 mr-auto" style={{ direction: 'ltr' }}>
+                        <button type="button" title="نقل القسم للأعلى" disabled={i === resolved.zones.length - 1} onClick={() => moveZone(i, 1)} className="w-5 h-5 text-[10px] rounded border bg-white hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">↑</button>
+                        <button type="button" title="نقل القسم للأسفل" disabled={i === 0} onClick={() => moveZone(i, -1)} className="w-5 h-5 text-[10px] rounded border bg-white hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">↓</button>
+                        <button type="button" title="حذف القسم" disabled={resolved.zones.length <= 1} onClick={() => removeZone(i)} className="w-5 h-5 text-[10px] rounded border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">✕</button>
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
+                      <label className="flex items-center gap-1 font-bold">
+                        الارتفاع
+                        <input type="number" min={LIMITS.ZONE_HEIGHT_MM[0]} max={LIMITS.ZONE_HEIGHT_MM[1]} placeholder="تلقائي" value={raw?.heightMm ?? ''} onChange={(e) => updateZone(i, { heightMm: e.target.value === '' ? undefined : Number(e.target.value) })} onBlur={normalizeDraft} className="w-16 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
+                      </label>
+                      {(z.kind === 'DOORS' || z.kind === 'OPEN') && (
+                        <label className="flex items-center gap-1 font-bold">
+                          رفوف
+                          <input type="number" min={LIMITS.SHELVES[0]} max={LIMITS.SHELVES[1]} value={raw?.shelves ?? 0} onChange={(e) => updateZone(i, { shelves: Number(e.target.value) })} onBlur={normalizeDraft} className="w-10 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
+                        </label>
+                      )}
+                      {z.kind === 'APPLIANCE' && (z.appliance === 'DISHWASHER' || z.appliance === 'FRIDGE') && (
+                        <label className="flex items-center gap-1 font-bold">
+                          <input type="checkbox" checked={!!z.panelFront} onChange={(e) => updateZone(i, { panelFront: e.target.checked })} />
+                          واجهة لوح
+                        </label>
+                      )}
+                      {band && <span className="text-slate-500">الفتحة الفعلية: {Math.round(band.openingHeightMm)} مم</span>}
+                      {z.kind === 'APPLIANCE' && z.appliance && <span className="text-slate-500">الجهاز يوفره الزبون · {APPLIANCES[z.appliance].note}</span>}
+                    </div>
+                  </div>
+                );
+              })}
+
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-[10px] whitespace-nowrap">نوع الواجهة:</span>
-                <select value={resolved.openingType} onChange={(e) => handleOpeningTypeChange(e.target.value as FrontOpeningType)} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                  <option value="DOORS">أبواب</option>
-                  <option value="DRAWERS" disabled={resolved.category === 'WALL_UNIT'}>أدراج{resolved.category === 'WALL_UNIT' ? ' (غير متاحة للعلوية)' : ''}</option>
-                  <option value="NONE">بدون واجهات (مفتوحة)</option>
+                <span className="font-bold text-[10px] whitespace-nowrap">نمط الفتح:</span>
+                <select value={resolved.openingMode} onChange={(e) => patchDraft({ openingMode: e.target.value as OpeningMode, golaSlots: [] })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
+                  <option value="HANDLE">مقبض</option>
+                  <option value="GOLA" disabled={!golaAllowed}>Gola (قناة){golaAllowed ? '' : ' — سفلية بقسم واحد فقط'}</option>
+                  <option value="PUSH" disabled={!hasDoorZone && !hasDrawerZone}>فتح بالضغط (Push)</option>
                 </select>
               </div>
 
-              {resolved.openingType !== 'NONE' && (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-[10px] whitespace-nowrap">{resolved.openingType === 'DOORS' ? 'عدد الأبواب:' : 'عدد الأدراج:'}</span>
-                  <div className="flex flex-wrap gap-1" style={{ direction: 'ltr' }}>
-                    {FRONT_COUNT_OPTIONS.map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        disabled={isLift}
-                        onClick={() => patchDraft({ elementCount: n })}
-                        className={`w-7 h-6 rounded border text-[11px] font-bold ${resolved.elementCount === n ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-100'} ${isLift ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {isLift && <span className="block text-[9px] text-slate-500">الرافعة الهيدروليكية تعني واجهة واحدة دائماً.</span>}
-
-              {resolved.openingType !== 'NONE' &&
-                (hardwareOptions.length > 0 ? (
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-[10px] whitespace-nowrap">العتاد:</span>
-                    <select value={resolved.hardwareItemId} onChange={(e) => patchDraft({ hardwareItemId: e.target.value })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                      {hardwareOptions.map((h) => (
-                        <option key={h.id} value={h.id}>{h.brand} — {h.modelType}</option>
-                      ))}
-                    </select>
-                  </div>
-                ) : (
-                  <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">
-                    ⚠️ لا يوجد في المخزن عتاد متوافق ({compatibleCategories.join(' / ')}): ستُحقن الوحدة بلا مفصلات/سكك ولن تُسعَّر.
-                  </span>
-                ))}
-
-              <div className="flex items-center justify-between gap-2">
+              {hasDoorZone && (
                 <label className="flex items-center gap-1 text-[10px] font-bold">
-                  عدد الرفوف:
-                  <input type="number" min={LIMITS.SHELVES[0]} max={LIMITS.SHELVES[1]} value={draft.shelvesCount} onChange={(e) => patchDraft({ shelvesCount: Number(e.target.value) })} onBlur={normalizeDraft} className="w-12 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
+                  <input type="checkbox" checked={resolved.frontStyle === 'GLASS'} onChange={(e) => patchDraft({ frontStyle: e.target.checked ? 'GLASS' : 'SOLID' })} />
+                  أبواب زجاجية (إطار ألمنيوم + زجاج)
                 </label>
-                <label className={`flex items-center gap-1 text-[10px] font-bold ${resolved.category !== 'BASE_UNIT' || resolved.openingType === 'NONE' ? 'opacity-50' : ''}`}>
-                  <input type="checkbox" checked={resolved.hasGola} disabled={resolved.category !== 'BASE_UNIT' || resolved.openingType === 'NONE'} onChange={(e) => patchDraft({ hasGola: e.target.checked })} />
-                  Gola
-                </label>
-              </div>
+              )}
+
+              {hasDoorZone && (doorOptions.length > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-[10px] whitespace-nowrap">عتاد الأبواب:</span>
+                  <select value={resolved.hardwareItemId} onChange={(e) => patchDraft({ hardwareItemId: e.target.value })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
+                    {doorOptions.map((h) => (<option key={h.id} value={h.id}>{h.brand} — {h.modelType}</option>))}
+                  </select>
+                </div>
+              ) : (
+                <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا يوجد في المخزن مفصلات{resolved.category === 'WALL_UNIT' ? ' أو رافعة' : ''}: لن تُسعَّر الأبواب.</span>
+              ))}
+              {isLift && <span className="block text-[9px] text-slate-500">رافعة: كل باب يرتفع بعدّته المستقلة (بابان = رافعتان).</span>}
+
+              {hasDrawerZone && (drawerOptions.length > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-[10px] whitespace-nowrap">سكك الأدراج:</span>
+                  <select value={resolved.drawerHardwareItemId} onChange={(e) => patchDraft({ drawerHardwareItemId: e.target.value })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
+                    {drawerOptions.map((h) => (<option key={h.id} value={h.id}>{h.brand} — {h.modelType}</option>))}
+                  </select>
+                </div>
+              ) : (
+                <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا توجد سكك أدراج في المخزن: لن تُسعَّر.</span>
+              ))}
 
               {/* Gola placement: for drawers the user decides exactly where each channel goes */}
-              {resolved.hasGola && resolved.openingType === 'DRAWERS' && (
-                <div className="bg-white border rounded p-1.5 space-y-1">
-                  <span className="block font-bold text-[10px]">مواضع الـ Gola (اضغط الشريط لتفعيله / إلغائه):</span>
-                  <div className="flex items-stretch gap-3" style={{ direction: 'ltr' }}>
-                    <div className="flex flex-col w-24 flex-shrink-0">
-                      {Array.from({ length: resolved.elementCount }).map((_, k) => {
-                        const active = resolved.golaSlots.includes(k);
-                        return (
-                          <React.Fragment key={k}>
-                            <button
-                              type="button"
-                              title={k === 0 ? 'Gola في أعلى الخزانة (فوق الدرج 1)' : `Gola بين الدرج ${k} والدرج ${k + 1}`}
-                              onClick={() => {
-                                const next = active ? resolved.golaSlots.filter((x) => x !== k) : [...resolved.golaSlots, k].sort((a, b) => a - b);
-                                patchDraft({ golaSlots: next, hasGola: next.length > 0 });
-                              }}
-                              className={`h-3.5 my-0.5 rounded-sm border text-[8px] leading-none font-bold cursor-pointer transition-colors ${active ? 'bg-slate-700 border-slate-800 text-white' : 'bg-slate-100 border-dashed border-slate-300 text-slate-400 hover:bg-indigo-100 hover:border-indigo-400'}`}
-                            >
-                              {active ? 'GOLA' : '+'}
-                            </button>
-                            <div className="h-6 rounded-sm border border-slate-300 bg-amber-50 text-[9px] font-bold text-slate-500 flex items-center justify-center">درج {k + 1}</div>
-                          </React.Fragment>
-                        );
-                      })}
-                    </div>
-                    <div className="text-[9px] leading-snug text-slate-500 self-center">
-                      الأعلى = الدرج 1. كل شريط Gola ينقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع الواجهات، ويُوزَّع الباقي بالتساوي على الأدراج.
-                      <br />
-                      <span className="font-bold text-slate-700">المفعّل: {resolved.golaSlots.length}</span>
+              {resolved.openingMode === 'GOLA' && resolved.zones[0].kind === 'DRAWERS' && (() => {
+                const n = resolved.zones[0].count ?? 1;
+                return (
+                  <div className="bg-white border rounded p-1.5 space-y-1">
+                    <span className="block font-bold text-[10px]">مواضع الـ Gola (اضغط الشريط لتفعيله / إلغائه):</span>
+                    <div className="flex items-stretch gap-3" style={{ direction: 'ltr' }}>
+                      <div className="flex flex-col w-24 flex-shrink-0">
+                        {Array.from({ length: n }).map((_, k) => {
+                          const active = resolved.golaSlots.includes(k);
+                          return (
+                            <React.Fragment key={k}>
+                              <button
+                                type="button"
+                                title={k === 0 ? 'Gola في أعلى الخزانة (فوق الدرج 1)' : `Gola بين الدرج ${k} والدرج ${k + 1}`}
+                                onClick={() => {
+                                  const next = active ? resolved.golaSlots.filter((x) => x !== k) : [...resolved.golaSlots, k].sort((a, b) => a - b);
+                                  patchDraft({ golaSlots: next });
+                                }}
+                                className={`h-3.5 my-0.5 rounded-sm border text-[8px] leading-none font-bold cursor-pointer transition-colors ${active ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-dashed border-slate-300 text-slate-400 hover:bg-slate-100'}`}
+                              >
+                                {active ? 'GOLA' : '+'}
+                              </button>
+                              <div className="h-6 rounded-sm border border-slate-300 bg-amber-50 text-[9px] font-bold text-slate-500 flex items-center justify-center">درج {k + 1}</div>
+                            </React.Fragment>
+                          );
+                        })}
+                      </div>
+                      <div className="text-[9px] leading-snug text-slate-500 self-center">
+                        الأعلى = الدرج 1. كل شريط Gola ينقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع الواجهات، ويُوزَّع الباقي بالتساوي على الأدراج.
+                        <br />
+                        <span className="font-bold text-slate-700">المفعّل: {resolved.golaSlots.length}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             <div className="space-y-1 bg-slate-50 p-1.5 rounded border">
@@ -478,6 +546,19 @@ export default function App() {
               </span>
             </div>
 
+            <div className="bg-slate-50 border rounded p-1.5 space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-bold">
+                <span>التكلفة التقديرية للتصنيع</span>
+                <span className="font-mono" style={{ direction: 'ltr' }}>{previewPricing.totalDA.toLocaleString('fr-DZ')} دج</span>
+              </div>
+              <div className="text-[9px] text-slate-500">نفس الرقم الذي يجمعه تقرير BOM لهذه الخزانة (ألواح + شريط حافة + عتاد).</div>
+              {designIssues.map((i, k) => (
+                <span key={k} className={`block text-[9px] leading-snug rounded p-1 border ${i.severity === 'error' ? 'text-red-800 bg-red-50 border-red-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
+                  {i.severity === 'error' ? '⛔' : '⚠️'} {i.message}
+                </span>
+              ))}
+            </div>
+
             <div className="pt-1 space-y-1.5">
               <button type="button" disabled={!canSave} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canSave ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
                 {editing ? '💾 تحديث الوحدة المحددة' : '➕ حقن وتثبيت الوحدة في المطبخ'}
@@ -501,7 +582,7 @@ export default function App() {
                 <div key={c.id} className={`flex items-center justify-between gap-1 border rounded p-1 text-[10px] ${c.id === editing?.id ? 'border-indigo-500 bg-indigo-50' : c.id === activeCabinetId ? 'border-slate-400 bg-slate-50' : 'border-slate-200'}`}>
                   <div className="min-w-0">
                     <div className="font-bold truncate" title={c.name}>{c.name}</div>
-                    <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{c.width}×{c.height}×{c.depth} · {frontSummary(c)}</div>
+                    <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{c.width}×{c.height}×{c.depth} · {frontSummary(c)} · {c.calculatedCostDA.toLocaleString('fr-DZ')} دج</div>
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <button type="button" onClick={() => handleEditCabinet(c.id)} title="تعديل" className="px-1.5 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">✏️</button>

@@ -13,8 +13,10 @@ export const PANEL = {
   SHELF_WIDTH_CLEARANCE_MM: 2,
   /** Total gap budget shared by the fronts across the cabinet width ("1 mm متراص"). */
   FRONT_GAP_TOTAL_MM: 1,
-  /** Height clearance subtracted from the available front height. */
+  /** Height clearance subtracted from the available front height (half at the bottom, half at the top). */
   FRONT_HEIGHT_CLEARANCE_MM: 4,
+  /** Reveal between two stacked facades that belong to DIFFERENT zones (drawer over door, apron over doors...). */
+  FRONT_REVEAL_MM: 3,
   /** Height removed from the facade stack when a Gola channel is embedded. */
   GOLA_OFFSET_MM: 45,
   /** Used only when a cabinet references a material that is not in stock. */
@@ -50,9 +52,12 @@ export const HARDWARE_RULES = {
     { upToMm: 2000, hinges: 4 },
   ],
   HINGES_ABOVE_LAST_STEP: 5,
-  /** An overhead lift (Aventos…) is one kit per cabinet, not per hinge. */
-  LIFT_KITS_PER_CABINET: 1,
-  GOLA_PROFILES_PER_CABINET: 1,
+  /** An overhead lift (Aventos…) is one kit per lifting facade: 1 or 2 lift doors = 1 or 2 kits, never per hinge. */
+  LIFT_KITS_PER_FACADE: 1,
+  /** One cut-to-width Gola profile piece per Gola channel of the cabinet. */
+  GOLA_PROFILES_PER_CHANNEL: 1,
+  /** Push-to-open latch / Tip-On unit per opening facade (doors and drawers, not fixed aprons or panels). */
+  PUSH_LATCHES_PER_FACADE: 1,
 } as const;
 
 export const LIMITS = {
@@ -61,6 +66,8 @@ export const LIMITS = {
   DEPTH_MM: [100, 900],
   SHELVES: [0, 10],
   FRONT_ELEMENTS: [1, 6],
+  ZONES: [1, 6],
+  ZONE_HEIGHT_MM: [50, 2600],
   PERCENT: [0, 100],
   QUANTITY_MAX: 100000,
   PRICE_MAX_DA: 100000000,
