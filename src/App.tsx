@@ -95,6 +95,7 @@ export default function App() {
   // ---- the cabinet being designed (form + preview) --------------------------------------------------------------
   const [draft, setDraft] = useState<CabinetDraft>(() => draftFromPreset('Deep_Drawers'));
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [targetWall, setTargetWall] = useState<'BACK' | 'LEFT' | 'RIGHT'>('BACK');
   const editing = editingId ? cabinets.find((c) => c.id === editingId) ?? null : null;
 
   // The form keeps the raw typed values; this is the consistent version used for the preview and for saving.
@@ -150,7 +151,8 @@ export default function App() {
       draftToNewCabinet(resolved, {
         id: uid('cab'),
         name: `${preset.label} #${cabinets.length + 1}`,
-        positionX: nextPositionX(cabinets, resolved.category),
+        positionX: nextPositionX(cabinets, resolved.category, targetWall),
+        wall: targetWall,
       }),
     );
   };
@@ -315,6 +317,7 @@ export default function App() {
                 woodPanels={woods}
                 hardwareItems={hardwareItems}
                 onApplyTextureOverride={handleApplyTexture}
+                onUpdateCabinet={updateCabinet}
                 onDeleteCabinet={(id) => {
                   deleteCabinet(id);
                   if (editingId === id) setEditingId(null);
@@ -560,6 +563,14 @@ export default function App() {
             </div>
 
             <div className="pt-1 space-y-1.5">
+              {!editing && (
+                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-600">
+                  <span>الجدار:</span>
+                  {([['LEFT', 'يسار'], ['BACK', 'خلف'], ['RIGHT', 'يمين']] as const).map(([w, l]) => (
+                    <button key={w} type="button" onClick={() => setTargetWall(w)} className={`flex-1 py-1 rounded border ${targetWall === w ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{l}</button>
+                  ))}
+                </div>
+              )}
               <button type="button" disabled={!canSave} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canSave ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
                 {editing ? '💾 تحديث الوحدة المحددة' : '➕ حقن وتثبيت الوحدة في المطبخ'}
               </button>

@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from '../context/FurnitureContext';
 import { HardwareCategory } from '../types/flatma';
-import HardwareViewer3D from './Hardware3D';
+import HardwareViewer3D, { HardwareGallery3D } from './Hardware3D';
 
 export default function InventoryManager() {
   const { inventory, addWoodMaterial, addHardwareItem, addEdgeBandRoll } = useFurniture();
@@ -485,6 +485,10 @@ export default function InventoryManager() {
         </button>
 
         {hardwareExpanded && (
+          <div className="p-3.5 pb-0 text-left">
+            <div className="text-[10px] font-bold text-slate-400 mb-1.5">📷 مكتبة الصور ثلاثية الأبعاد (اضغط على نظام لاختياره في النموذج)</div>
+            <HardwareGallery3D onSelect={(c, m) => { setSelectedHwCategory(c as HardwareCategory); setSelectedHwModel(m); }} />
+          </div>
           <form onSubmit={submitHardwareToStock} className="p-3.5 space-y-3 text-left">
             <div>
               <label className="text-[10px] font-bold text-slate-400 block mb-1">System Kinematic Category</label>

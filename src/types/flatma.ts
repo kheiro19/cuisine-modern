@@ -73,7 +73,7 @@ export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
  * Cabinets saved without `zones` are read as ONE zone made from frontConfig + shelvesCount (see math/zones.ts).
  */
 export type ZoneKind = 'DOORS' | 'DRAWERS' | 'OPEN' | 'APPLIANCE' | 'APRON';
-export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE';
+export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE' | 'WASHER';
 
 export interface CabinetZone {
   kind: ZoneKind;
@@ -113,6 +113,9 @@ export interface FrontTextureOverride {
   finishType?: string;
 }
 
+/** Wall the unit stands against. Positions are measured from the back wall / left wall corner (BACK: from the left wall). */
+export type WallSide = 'BACK' | 'LEFT' | 'RIGHT';
+
 export interface CabinetObject {
   id: string;
   name: string;
@@ -127,6 +130,8 @@ export interface CabinetObject {
   
   // 3D Spatial Grid Vector Coordinates (mm)
   positionX: number;
+  /** Missing = BACK (the old single-run layout). */
+  wall?: WallSide;
   positionY: number;
   positionZ: number;
   

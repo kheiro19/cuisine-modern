@@ -261,3 +261,77 @@ export default function HardwareViewer3D({ modelType, height = 200 }: { modelTyp
     </div>
   );
 }
+
+// ---------- Visible gallery: one tab per category, one 3D card per system ----------
+const GALLERY: { category: string; label: string; models: string[] }[] = [
+  { category: 'Cabinet Hinges', label: '1. مفصلات', models: ['Straight Hinge (Overlay)', 'Half-Crank Hinge (Half-Overlay)', 'Inset Hinge (Cranked)', 'Blind Corner Hinge', '45-Degree Corner Hinge', 'Pie-Corner Hinge (Corner Fold)', 'Thick Door Hinge'] },
+  { category: 'Drawer Slide Systems', label: '2. سكك الأدراج', models: ['Double-Wall Metal Box System', 'Hidden Under-mount Runner (Full Extension)', 'Hidden Under-mount Runner (Partial Extension)', 'Standard Ball Bearing Slide', 'Standard Roller Slide', 'Push-to-Open Heavy Duty Slides'] },
+  { category: 'Overhead Lift Systems', label: '3. أنظمة الرفع', models: ['Bi-fold Lift System (Aventos HF)', 'Up & Over Lift System (Aventos HS)', 'Lift Up System (Aventos HL)', 'Stay Lift System (Aventos HK / HK-top)', 'Standard Gas Strut System', 'Mechanical Stay Friction Hinge'] },
+  { category: 'Gola & Handle Profiles', label: '4. غولا ومقابض', models: ['Horizontal Gola L-Profile (J-Profile)', 'Horizontal Gola C-Profile (Mid-Profile)', 'Vertical Gola Single Profile', 'Vertical Gola Double Profile', 'Aluminum Inset Handle Profile', 'Standard Drilling Handle'] },
+  { category: 'Assembly & Fixing', label: '5. التركيب والبراغي', models: ['Adjustable Kitchen Legs (100mm - 150mm)', 'Cabinet Hanger Plates (Heavy Duty)', 'Confirmated Assembly Screws (5x50mm)', 'PVC Plinth Base Board (With Rubber)', 'Corner Filler Profiles', 'Aluminum Sink Bottom Protector'] },
+];
+
+/** Image library of all hardware systems. Only the active tab mounts its Canvases (max 7 WebGL contexts at a time). */
+export function HardwareGallery3D({ onSelect }: { onSelect?: (category: string, modelType: string) => void }) {
+  const [tab, setTab] = React.useState(0);
+  const g = GALLERY[tab];
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1">
+        {GALLERY.map((x, i) => (
+          <button key={x.category} type="button" onClick={() => setTab(i)}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-bold border ${i === tab ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+            {x.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {g.models.map((m) => (
+          <button key={m} type="button" onClick={() => onSelect?.(g.category, m)} className="text-left">
+            <HardwareViewer3D modelType={m} height={150} />
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Runner pair for ONE drawer, driven by the stock item's modelType. Local frame: x across, y up, z = drawer depth (front at +z/2). Units: mm (wrapped to metres). */
+export function Runner3D({ modelType, lenMm, halfWidthMm, boxHeightMm }: { modelType: string; lenMm: number; halfWidthMm: number; boxHeightMm: number }) {
+  const t = modelType.toLowerCase();
+  const yb = -boxHeightMm / 2;
+  return (
+    <group scale={0.001}>
+      {([-1, 1] as const).map((k) => {
+        const x = k * halfWidthMm;
+        if (t.includes('double-wall')) return (<group key={k}><B s={[3, boxHeightMm + 40, lenMm]} p={[x, 20, 0]} /><Cy r={4} h={lenMm} p={[x, boxHeightMm / 2 + 36, 0]} rot={[PI / 2, 0, 0]} c="accent" /></group>);
+        if (t.includes('ball')) return (<group key={k}><B s={[5, 30, lenMm]} p={[x, yb + 20, 0]} />{[-0.4, -0.2, 0, 0.2, 0.4].map((f) => <Sp key={f} r={4} p={[x + k * 3, yb + 20, f * lenMm]} c="steel" />)}</group>);
+        if (t.includes('roller')) return (<group key={k}><B s={[5, 26, lenMm]} p={[x, yb + 18, 0]} />{[-0.42, 0.42].map((f) => <Cy key={f} r={10} h={5} p={[x + k * 4, yb + 18, f * lenMm]} rot={[0, 0, PI / 2]} c="accent" />)}</group>);
+        if (t.includes('push')) return (<group key={k}><B s={[8, 10, lenMm]} p={[x, yb - 4, 0]} c="dark" /><Cy r={7} h={26} p={[x, yb - 4, lenMm / 2 - 12]} rot={[PI / 2, 0, 0]} c="accent" /></group>);
+        return <B key={k} s={[8, 10, lenMm]} p={[x, yb - 4, 0]} c="accent" />; // hidden under-mount (full / partial)
+      })}
+    </group>
+  );
+}
+
+/** Handle for a facade, driven by the stock item's modelType. Mount it on the facade's FRONT face (z+ = outwards). Units: mm (wrapped to metres). */
+export function Handle3D({ modelType, wMm, hMm, vertical, top, edgeX }: { modelType: string; wMm: number; hMm: number; vertical: boolean; top: boolean; edgeX: number }) {
+  if (modelType.toLowerCase().includes('inset')) {
+    const y = top ? hMm / 2 - 7 : -hMm / 2 + 7;
+    return (
+      <group scale={0.001}>
+        <B s={[Math.max(10, wMm - 4), 14, 16]} p={[0, y, 6]} />
+        <B s={[Math.max(10, wMm - 4), 3, 17]} p={[0, y + (top ? -6 : 6), 6]} c="accent" />
+      </group>
+    );
+  }
+  const y = vertical ? (top ? hMm / 2 - 110 : -hMm / 2 + 110) : hMm / 2 - 45;
+  return (
+    <group scale={0.001} position={[0, 0, 0]}>
+      <group position={[vertical ? edgeX : 0, y, 0]} rotation={[0, 0, vertical ? PI / 2 : 0]}>
+        <B s={[160, 10, 10]} p={[0, 0, 30]} />
+        <B s={[8, 8, 30]} p={[-64, 0, 15]} /><B s={[8, 8, 30]} p={[64, 0, 15]} />
+      </group>
+    </group>
+  );
+}

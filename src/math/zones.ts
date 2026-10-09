@@ -26,6 +26,7 @@ export const APPLIANCES: Record<ApplianceKind, ApplianceSpec> = {
   MICROWAVE: { label: 'ميكروويف مدمج', nicheHeightMm: 380, nicheWidthMm: 560, nicheDepthMm: 550, note: 'ارتفاع 380 للمدمج الصغير، 450 للكبير' },
   COFFEE: { label: 'آلة قهوة / بخار', nicheHeightMm: 450, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تحتاج توصيل ماء وكهرباء' },
   DISHWASHER: { label: 'غسالة صحون', nicheHeightMm: 820, nicheWidthMm: 598, nicheDepthMm: 580, note: 'تتطلب فتحات الماء والصرف' },
+  WASHER: { label: 'غسالة ملابس', nicheHeightMm: 820, nicheWidthMm: 598, nicheDepthMm: 580, note: 'تتطلب فتحات الماء والصرف' },
   FRIDGE: { label: 'ثلاجة مدمجة', nicheHeightMm: 1780, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تهوية علوية وسفلية' },
 };
 
@@ -49,7 +50,7 @@ export function zonesOf(cab: ZonedCabinet): CabinetZone[] {
 
 /** A dishwasher / fridge alone in the cabinet: the appliance IS the bottom and the back, so those boards are not cut. */
 export function isOpenCarcase(zones: CabinetZone[]): boolean {
-  return zones.length === 1 && zones[0].kind === 'APPLIANCE' && (zones[0].appliance === 'DISHWASHER' || zones[0].appliance === 'FRIDGE');
+  return zones.length === 1 && zones[0].kind === 'APPLIANCE' && (zones[0].appliance === 'DISHWASHER' || zones[0].appliance === 'FRIDGE' || zones[0].appliance === 'WASHER');
 }
 
 export interface ZoneIssue {
