@@ -142,7 +142,7 @@ test('PARITY 2b - the 3D layout is physically sane: nothing outside the cabinet,
 
 // ------------------------------------------------------------------------------------------------ regression vs the OLD engine
 function legacy(over = {}) {
-  return { id: 'L', name: 'L', category: 'BASE_UNIT', width: 600, height: 870, depth: 600, positionX: 0, positionY: 0, positionZ: 0, shelvesCount: 1, carcaseMaterialId: 'mel', frontMaterialId: 'mel', carcaseThickness: 18, frontThickness: 18, carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e2', carcaseEdgeMm: 1, frontEdgeMm: 2, frontConfig: { openingType: 'DOORS', elementCount: 2, hardwareItemId: 'hinge', hasGolaProfile: false }, calculatedCostDA: 0, ...over };
+  return { id: 'L', name: 'L', category: 'BASE_UNIT', width: 600, height: 870, depth: 600, positionX: 0, positionY: 0, positionZ: 0, shelvesCount: 1, carcaseMaterialId: 'mel', frontMaterialId: 'mel', carcaseThickness: 18, frontThickness: 18, carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e2', frontConfig: { openingType: 'DOORS', elementCount: 2, hardwareItemId: 'hinge', hasGolaProfile: false }, calculatedCostDA: 0, ...over };
 }
 // ------------------------------------------------------------------------------------------------ edge band
 test('edge band: carcase boards lose the band on the front edge only, facades on all four sides; rails are not banded', () => {

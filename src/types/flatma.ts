@@ -1,16 +1,5 @@
 // src/types/flatma.ts
 
-export interface Vector2D {
-  x: number;
-  y: number;
-}
-
-export interface Vector3D {
-  x: number;
-  y: number;
-  z: number;
-}
-
 // ========================================================
 // 📦 1. WORKSHOP CENTRAL INVENTORY STRUCTURAL DATA TYPES
 // ========================================================
@@ -73,7 +62,7 @@ export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
  * Cabinets saved without `zones` are read as ONE zone made from frontConfig + shelvesCount (see math/zones.ts).
  */
 export type ZoneKind = 'DOORS' | 'DRAWERS' | 'OPEN' | 'APPLIANCE' | 'APRON';
-export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE' | 'WASHER';
+export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE';
 
 export interface CabinetZone {
   kind: ZoneKind;
@@ -113,9 +102,6 @@ export interface FrontTextureOverride {
   finishType?: string;
 }
 
-/** Wall the unit stands against. Positions are measured from the back wall / left wall corner (BACK: from the left wall). */
-export type WallSide = 'BACK' | 'LEFT' | 'RIGHT';
-
 export interface CabinetObject {
   id: string;
   name: string;
@@ -130,8 +116,6 @@ export interface CabinetObject {
   
   // 3D Spatial Grid Vector Coordinates (mm)
   positionX: number;
-  /** Missing = BACK (the old single-run layout). */
-  wall?: WallSide;
   positionY: number;
   positionZ: number;
   
@@ -143,12 +127,9 @@ export interface CabinetObject {
   carcaseThickness: number;    // Cached physical thickness from stock material
   
   frontMaterialId: string;     // References InjectedWoodMaterial for exterior facades (Doors/Drawers)
-  /** Edge band rolls picked from the stock (EdgeBandRoll.id). Missing = no roll chosen: no band cost, material's own edge thickness. */
+  /** Edge band rolls picked from the stock (EdgeBandRoll.id). Missing = no roll chosen: no band cost (the sheet's own edge thickness, if any, still applies). */
   carcaseEdgeRollId?: string;
   frontEdgeRollId?: string;
-  /** Cached thickness (mm) of the chosen rolls; follows the stock like carcaseThickness (see FurnitureContext.refresh). */
-  carcaseEdgeMm?: number;
-  frontEdgeMm?: number;
   frontThickness: number;      // Cached physical thickness from active front sheet material
   
   // Advanced Mechanical Kinematics Configuration
@@ -165,11 +146,6 @@ export interface CabinetObject {
 
   // Real-time Pricing Cache calculated via Moving Average Engine
   calculatedCostDA: number;
-}
-
-export interface WallGeometry {
-  id: string;
-  length: number; // Total physical length of the kitchen setup grid in mm (e.g., 4000)
 }
 
 export interface AdvancedHardwareSettings {

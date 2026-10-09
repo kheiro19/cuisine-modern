@@ -39,6 +39,9 @@ export interface AssemblyGeometry {
   appliances: ApplianceGeo[];
 }
 
+export const facadeKey = (f: Pick<Facade, 'zoneIndex' | 'kind' | 'index'>): string => `facade-${f.zoneIndex}-${f.kind}-${f.index}`;
+export const applianceKey = (zoneIndex: number): string => `appliance-${zoneIndex}`;
+
 export interface AssemblyOptions {
   carcaseTh: number;
   frontTh: number;

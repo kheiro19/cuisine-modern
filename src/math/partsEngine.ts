@@ -14,9 +14,12 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { EDGE, HARDWARE_RULES, PANEL } from './constants';
+import { EDGE, FASTENER_STOCK, HARDWARE_RULES, PANEL } from './constants';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
 import { bandPricePerMeterDA } from './edgeBand';
+import { hingesPerDoor } from './hinges';
+import { assemblyGeometry } from './assemblyGeometry';
+import { buildFasteners, fastenerCounts } from './fasteners';
 
 export type PartRole = 'carcase' | 'back' | 'front';
 export type GrainDirection = 'vertical' | 'horizontal' | 'none';
@@ -34,7 +37,7 @@ export interface CabinetPart {
   edge: EdgeBanding;
 }
 
-export type HardwareGroup = 'Front Hardware' | 'Gola Profile' | 'Push-Open' | 'Base Fixing System' | 'Wall Fixing System';
+export type HardwareGroup = 'Front Hardware' | 'Gola Profile' | 'Push-Open' | 'Assembly Fixings' | 'Base Fixing System' | 'Wall Fixing System';
 
 export interface HardwareRequirement {
   item: InjectedHardwareItem;
@@ -70,12 +73,7 @@ export function isLiftItem(hw?: InjectedHardwareItem): boolean {
   return !!hw && hw.category === 'Overhead Lift Systems';
 }
 
-export function hingesPerDoor(doorHeightMm: number): number {
-  for (const step of HARDWARE_RULES.HINGE_STEPS) {
-    if (doorHeightMm <= step.upToMm) return step.hinges;
-  }
-  return HARDWARE_RULES.HINGES_ABOVE_LAST_STEP;
-}
+export { hingesPerDoor };
 
 /** Hardware that opens DOORS (hinges / lift) or DRAWERS (runners). Looks at both ids stored on the cabinet. */
 export function pickFrontHardware(cab: CabinetObject, kind: 'DOORS' | 'DRAWERS', items: InjectedHardwareItem[]): InjectedHardwareItem | undefined {
@@ -153,8 +151,14 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
 
 // ---------------------------------------------------------------------------------------------- hardware
 
-export function hardwareRequirements(cab: CabinetObject, items: InjectedHardwareItem[], plan?: FrontPlan): HardwareRequirement[] {
-  const th = cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM;
+export function hardwareRequirements(
+  cab: CabinetObject,
+  items: InjectedHardwareItem[],
+  plan?: FrontPlan,
+  dims?: { carcaseTh: number; frontTh: number },
+): HardwareRequirement[] {
+  const th = dims?.carcaseTh ?? (cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM);
+  const fTh = dims?.frontTh ?? (cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
   const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th));
   const out: HardwareRequirement[] = [];
   const add = (item: InjectedHardwareItem | undefined, quantity: number, group: HardwareGroup) => {
@@ -184,6 +188,11 @@ export function hardwareRequirements(cab: CabinetObject, items: InjectedHardware
     const gola = items.find((h) => h.id === cab.frontConfig.golaProfileItemId) ?? items.find((h) => h.category === 'Gola & Handle Profiles');
     add(gola, frontPlan.channels.length * HARDWARE_RULES.GOLA_PROFILES_PER_CHANNEL, 'Gola Profile');
   }
+
+  // Connectors: the very ones the atomic workspace draws (cams, dowels, back screws, shelf pins).
+  const geo = assemblyGeometry(cab, { carcaseTh: th, frontTh: fTh, lift: isLiftItem(doorHw), inset: !!doorHw && doorHw.modelType.includes('Inset Hinge') });
+  const counts = fastenerCounts(buildFasteners(geo, cab, { carcaseTh: th, frontTh: fTh }));
+  FASTENER_STOCK.forEach((rule) => add(items.find((h) => h.modelType.includes(rule.keyword)), counts[rule.kind], 'Assembly Fixings'));
 
   if (cab.category === 'BASE_UNIT') add(items.find((h) => h.modelType.includes(HARDWARE_RULES.LEGS_KEYWORD)), HARDWARE_RULES.LEGS_PER_BASE_UNIT, 'Base Fixing System');
   else add(items.find((h) => h.modelType.includes(HARDWARE_RULES.HANGERS_KEYWORD)), HARDWARE_RULES.HANGERS_PER_WALL_UNIT, 'Wall Fixing System');
@@ -327,7 +336,7 @@ export function priceCabinet(
   usage('carcase', carcaseRoll);
   usage('front', frontRoll);
 
-  const requirements = hardwareRequirements(cab, hardwareItems, model.plan);
+  const requirements = hardwareRequirements(cab, hardwareItems, model.plan, { carcaseTh, frontTh });
   if (cab.category === 'BASE_UNIT' && !requirements.some((r) => r.group === 'Base Fixing System')) issues.push({ code: 'NO_LEGS_IN_STOCK', severity: 'warning', message: `No "${HARDWARE_RULES.LEGS_KEYWORD}" item in stock — legs are not priced` });
   if (cab.category === 'WALL_UNIT' && !requirements.some((r) => r.group === 'Wall Fixing System')) issues.push({ code: 'NO_HANGERS_IN_STOCK', severity: 'warning', message: `No "${HARDWARE_RULES.HANGERS_KEYWORD}" item in stock — hangers are not priced` });
   const hardware: PricedHardware[] = requirements.map((r) => ({ ...r, totalCostDA: Math.round(r.quantity * r.item.pricePerUnitDA) }));

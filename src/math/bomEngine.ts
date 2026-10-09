@@ -59,6 +59,7 @@ const GROUP_LABEL: Record<HardwareGroup, string> = {
   'Front Hardware': 'Combined Project Hardware',
   'Gola Profile': 'Gola Profile',
   'Push-Open': 'Push-Open Mechanism',
+  'Assembly Fixings': 'Assembly Fixings (cams, dowels, screws, pins)',
   'Base Fixing System': 'Base Fixing System',
   'Wall Fixing System': 'Wall Fixing System',
 };

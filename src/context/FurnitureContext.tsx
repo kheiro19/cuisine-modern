@@ -69,15 +69,10 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
   const refresh = (cab: CabinetObject): CabinetObject => {
     const carcaseMat = inventory.woodPanels.find(m => m.id === cab.carcaseMaterialId);
     const frontMat = inventory.woodPanels.find(m => m.id === cab.frontMaterialId);
-    const carcaseRoll = inventory.edgeBandRolls.find(r => r.id === cab.carcaseEdgeRollId);
-    const frontRoll = inventory.edgeBandRolls.find(r => r.id === cab.frontEdgeRollId);
     const thick = {
       ...cab,
       carcaseThickness: carcaseMat ? carcaseMat.thickness : 18,
       frontThickness: frontMat ? frontMat.thickness : 18,
-      // edge band thickness follows the chosen stock roll (undefined = none chosen)
-      carcaseEdgeMm: carcaseRoll?.thickness,
-      frontEdgeMm: frontRoll?.thickness
     };
     return { ...thick, calculatedCostDA: computeCabinetTotalCost(thick, inventory.woodPanels, inventory.hardwareItems, inventory.edgeBandRolls) };
   };

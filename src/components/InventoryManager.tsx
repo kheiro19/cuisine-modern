@@ -2,7 +2,6 @@
 import React, { useState, useMemo } from 'react';
 import { useFurniture } from '../context/FurnitureContext';
 import { HardwareCategory } from '../types/flatma';
-import HardwareViewer3D, { HardwareGallery3D } from './Hardware3D';
 
 export default function InventoryManager() {
   const { inventory, addWoodMaterial, addHardwareItem, addEdgeBandRoll } = useFurniture();
@@ -93,6 +92,8 @@ export default function InventoryManager() {
     'Assembly & Fixing': [
       'Adjustable Kitchen Legs (100mm - 150mm)', 'Cabinet Hanger Plates (Heavy Duty)',
       'Confirmated Assembly Screws (5x50mm)', 'PVC Plinth Base Board (With Rubber)',
+      'Cam Lock Connector (Minifix) with Bolt', 'Wooden Dowel (8x30mm)',
+      'Back Panel Screw (3.5x16mm)', 'Shelf Support Pin (5mm)',
       'Corner Filler Profiles', 'Aluminum Sink Bottom Protector'
     ]
   }), []);
@@ -199,7 +200,7 @@ export default function InventoryManager() {
     setShowDimensionInput(false);
   };
 
-    const handleAddNewThickness = () => {
+  const handleAddNewThickness = () => {
     const val = parseInt(newThicknessInput, 10);
     if (isNaN(val) || val <= 0) return;
     setThicknessList([...thicknessList, val].sort((a, b) => a - b));
@@ -390,7 +391,7 @@ export default function InventoryManager() {
               )}
             </div>
 
-                          {/* Quantity Controls */}
+             {/* Quantity Controls */}
             <div className="grid grid-cols-2 gap-3 font-mono">
               <div>
                 <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Sheets</label>
@@ -485,68 +486,60 @@ export default function InventoryManager() {
         </button>
 
         {hardwareExpanded && (
-          <>
-            <div className="p-3.5 pb-0 text-left">
-              <div className="text-[10px] font-bold text-slate-400 mb-1.5">📷 مكتبة الصور ثلاثية الأبعاد (اضغط على نظام لاختياره في النموذج)</div>
-              <HardwareGallery3D onSelect={(c, m) => { setSelectedHwCategory(c as HardwareCategory); setSelectedHwModel(m); }} />
+          <form onSubmit={submitHardwareToStock} className="p-3.5 space-y-3 text-left">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 block mb-1">System Kinematic Category</label>
+              <select value={selectedHwCategory} onChange={(e) => setSelectedHwCategory(e.target.value as HardwareCategory)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                <option value="Cabinet Hinges">⚙️ 1. Cabinet Hinges System (مفصلات أبواب)</option>
+                <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
+                <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
+                <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
+                <option value="Push-Open Systems">📁 6. Push-Open Systems (فتح بالضغط)</option>
+                               <option value="Assembly & Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
+              </select>
             </div>
-            
-            <form onSubmit={submitHardwareToStock} className="p-3.5 space-y-3 text-left">
+
+            {/* Hardware Manufacturer Brand */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Hardware Manufacturer Brand</label>
+              <select value={selectedHwBrand} onChange={(e) => setSelectedHwBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
+                {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
+              </select>
+            </div>
+
+            {/* Specification Model Name */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Specification Model Name</label>
+                <button type="button" onClick={() => setShowHwModelInput(!showHwModelInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
+              </div>
+              <select value={selectedHwModel} onChange={(e) => setSelectedHwModel(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium text-indigo-700">
+                {currentAvailableModels.map((m, i) => <option key={i} value={m}>{m}</option>)}
+              </select>
+              {showHwModelInput && (
+                <div className="flex items-center space-x-2 pt-1 animate-fade-in">
+                  <input type="text" placeholder="Insert custom system model name..." value={newHwModelInput} onChange={(e) => setNewHwModelInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
+                  <button type="button" onClick={handleAddNewHwModel} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
+                </div>
+              )}
+            </div>
+
+            {/* Pricing metrics grid */}
+            <div className="grid grid-cols-2 gap-3 font-mono">
               <div>
-                <label className="text-[10px] font-bold text-slate-400 block mb-1">System Kinematic Category</label>
-                <select value={selectedHwCategory} onChange={(e) => setSelectedHwCategory(e.target.value as HardwareCategory)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
-                  <option value="Cabinet Hinges">⚙️ 1. Cabinet Hinges System (مفصلات أبواب)</option>
-                  <option value="Drawer Slide Systems">📁 2. Drawer Slide Systems (سكك أدراج)</option>
-                  <option value="Overhead Lift Systems">📁 3. Overhead Lift Systems (أنظمة رفع علوية)</option>
-                  <option value="Gola & Handle Profiles">📁 4. Gola & Handle Profiles (بروفيلات مقابض)</option>
-                  <option value="Push-Open Systems">📁 6. Push-Open Systems (فتح بالضغط)</option>
-                  <option value="Assembly & Fixing">📁 5. Assembly & Fixing Screws (أرجل وبراغي تركيب)</option>
-                </select>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Pcs/Sets</label>
+                <input type="number" value={hwQty} onChange={(e) => setHwQty(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
               </div>
-
-              {/* Hardware Manufacturer Brand */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Hardware Manufacturer Brand</label>
-                <select value={selectedHwBrand} onChange={(e) => setSelectedHwBrand(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium">
-                  {supplierList.map((b, i) => <option key={i} value={b}>{b}</option>)}
-                </select>
+              <div>
+                <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Unit Price (DA)</label>
+                <input type="number" value={hwPrice} onChange={(e) => setHwPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
               </div>
+            </div>
 
-                            {/* Specification Model Name */}
-              <div className="space-y-1">
-                <div className="flex justify-between items-center">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">Specification Model Name</label>
-                  <button type="button" onClick={() => setShowHwModelInput(!showHwModelInput)} className="text-indigo-600 font-bold hover:text-indigo-800 text-xs cursor-pointer">＋ Add New</button>
-                </div>
-                <select value={selectedHwModel} onChange={(e) => setSelectedHwModel(e.target.value)} className="w-full border bg-white rounded-lg p-2 focus:outline-none font-medium text-indigo-700">
-                  {currentAvailableModels.map((m, i) => <option key={i} value={m}>{m}</option>)}
-                </select>
-                <HardwareViewer3D modelType={selectedHwModel} />
-                {showHwModelInput && (
-                  <div className="flex items-center space-x-2 pt-1 animate-fade-in">
-                    <input type="text" placeholder="Insert custom system model name..." value={newHwModelInput} onChange={(e) => setNewHwModelInput(e.target.value)} className="flex-1 border rounded-md p-1 focus:outline-none font-medium text-slate-800" />
-                    <button type="button" onClick={handleAddNewHwModel} className="bg-indigo-600 text-white font-bold px-3 py-1 rounded-md hover:bg-indigo-700">Save</button>
-                  </div>
-                )}
-              </div>
-
-              {/* Pricing metrics grid */}
-              <div className="grid grid-cols-2 gap-3 font-mono">
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Qty Pcs/Sets</label>
-                  <input type="number" value={hwQty} onChange={(e) => setHwQty(e.target.value)} className="w-full border rounded-lg p-1.5 text-center focus:outline-none font-bold" />
-                </div>
-                <div>
-                  <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Unit Price (DA)</label>
-                  <input type="number" value={hwPrice} onChange={(e) => setHwPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
-                </div>
-              </div>
-
-              <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl transition-all shadow-xs cursor-pointer text-center">
-                Inject Hardware Accessory
-              </button>
-            </form>
-          </>
+            <button type="submit" className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl transition-all shadow-xs cursor-pointer text-center">
+              Inject Hardware Accessory
+            </button>
+          </form>
         )}
       </div>
 
@@ -577,6 +570,7 @@ export default function InventoryManager() {
           ))}
 		  
           {/* Render Active Custom Edge Band PVC Rolls */}
+
           {inventory.edgeBandRolls?.map((e) => (
             <div key={e.id} className="border border-slate-100 p-2 rounded-lg flex justify-between items-center bg-blue-50/30 font-mono text-[11px]">
               <div>

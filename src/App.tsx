@@ -32,7 +32,7 @@ import { priceCabinet } from './math/partsEngine';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
-// (The former flat-rectangle board generator is kept for reference in _archive/parametricBoards.legacy.ts.)
+// (The former flat-rectangle board generator was removed: the preview now renders the real cabinet.)
 
 const frontSummary = (c: CabinetObject): string =>
   zonesOf(c)
@@ -95,12 +95,11 @@ export default function App() {
   // ---- the cabinet being designed (form + preview) --------------------------------------------------------------
   const [draft, setDraft] = useState<CabinetDraft>(() => draftFromPreset('Deep_Drawers'));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [targetWall, setTargetWall] = useState<'BACK' | 'LEFT' | 'RIGHT'>('BACK');
   const editing = editingId ? cabinets.find((c) => c.id === editingId) ?? null : null;
 
   // The form keeps the raw typed values; this is the consistent version used for the preview and for saving.
   const resolved = useMemo(() => resolveDraft(draft, woods, hardwareItems, edgeRolls), [draft, woods, hardwareItems, edgeRolls]);
-  const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods, edgeRolls), [resolved, woods, edgeRolls]);
+  const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods), [resolved, woods]);
   const preset = SUBTYPE_PRESETS[resolved.subtype];
 
   const hasDoorZone = resolved.zones.some((z) => z.kind === 'DOORS');
@@ -151,8 +150,7 @@ export default function App() {
       draftToNewCabinet(resolved, {
         id: uid('cab'),
         name: `${preset.label} #${cabinets.length + 1}`,
-        positionX: nextPositionX(cabinets, resolved.category, targetWall),
-        wall: targetWall,
+        positionX: nextPositionX(cabinets, resolved.category),
       }),
     );
   };
@@ -317,7 +315,6 @@ export default function App() {
                 woodPanels={woods}
                 hardwareItems={hardwareItems}
                 onApplyTextureOverride={handleApplyTexture}
-                onUpdateCabinet={updateCabinet}
                 onDeleteCabinet={(id) => {
                   deleteCabinet(id);
                   if (editingId === id) setEditingId(null);
@@ -563,14 +560,6 @@ export default function App() {
             </div>
 
             <div className="pt-1 space-y-1.5">
-              {!editing && (
-                <div className="flex items-center gap-1 text-[10px] font-bold text-slate-600">
-                  <span>الجدار:</span>
-                  {([['LEFT', 'يسار'], ['BACK', 'خلف'], ['RIGHT', 'يمين']] as const).map(([w, l]) => (
-                    <button key={w} type="button" onClick={() => setTargetWall(w)} className={`flex-1 py-1 rounded border ${targetWall === w ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-slate-300'}`}>{l}</button>
-                  ))}
-                </div>
-              )}
               <button type="button" disabled={!canSave} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canSave ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
                 {editing ? '💾 تحديث الوحدة المحددة' : '➕ حقن وتثبيت الوحدة في المطبخ'}
               </button>

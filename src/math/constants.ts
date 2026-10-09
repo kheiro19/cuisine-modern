@@ -88,3 +88,42 @@ export const LAYOUT = {
   DEFAULT_WALL_LENGTH_MM: 2400,
   SNAP_THRESHOLD_MM: 15,
 } as const;
+
+/**
+ * Connectors drawn in the atomic workspace AND counted for the BOM (same rules, so what you see is what you buy).
+ * Typical 32 mm-system sizes: edit them to match your own hardware.
+ */
+export const FASTENER = {
+  DOWEL_DIA_MM: 8,
+  DOWEL_LEN_MM: 30,
+  CAM_DIA_MM: 15,
+  CAM_DEPTH_MM: 12,
+  BOLT_DIA_MM: 7,
+  BOLT_LEN_MM: 34,
+  /** Distance from a board's front / back edge to the first connector. */
+  EDGE_SETBACK_MM: 37,
+  /** A dowel sits this far from its cam, toward the middle of the joint. */
+  DOWEL_OFFSET_MM: 32,
+  /** Boards deeper than this get one more connector in the middle. */
+  MID_CONNECTOR_DEPTH_MM: 450,
+  BACK_SCREW_PITCH_MM: 150,
+  BACK_SCREW_DIA_MM: 3.5,
+  BACK_SCREW_LEN_MM: 16,
+  SHELF_PIN_DIA_MM: 5,
+  SHELF_PIN_LEN_MM: 10,
+  SHELF_PIN_SETBACK_MM: 40,
+  HINGE_CUP_DIA_MM: 35,
+  HINGE_CUP_DEPTH_MM: 12,
+  /** Distance from the door's hinge edge to the centre of the cup. */
+  HINGE_CUP_EDGE_MM: 22.5,
+  /** Distance from the door's top / bottom edge to the first / last hinge. */
+  HINGE_END_OFFSET_MM: 100,
+} as const;
+
+/** Stock items (matched by the text in their model name) that cover the connectors the cabinet needs. */
+export const FASTENER_STOCK = [
+  { keyword: 'Cam Lock', kind: 'CAM' },
+  { keyword: 'Wooden Dowel', kind: 'DOWEL' },
+  { keyword: 'Back Panel Screw', kind: 'BACK_SCREW' },
+  { keyword: 'Shelf Support Pin', kind: 'SHELF_PIN' },
+] as const;
