@@ -60,6 +60,25 @@ export const HARDWARE_RULES = {
   PUSH_LATCHES_PER_FACADE: 1,
 } as const;
 
+/**
+ * Pull-out frames (a basket / larder frame on full-extension runners behind a front).
+ * Typical catalogue limits: edit them to match your own hardware supplier.
+ */
+export const PULL_OUT = {
+  MIN_FRONT_WIDTH_MM: 150,
+  MAX_FRONT_WIDTH_MM: 600,
+  /** Full-extension runners start at 450 mm. */
+  MIN_CABINET_DEPTH_MM: 450,
+  /** Baskets drawn when a zone does not say how many (a drawers zone has no shelves field). */
+  DEFAULT_LEVELS: 3,
+  /** Space each runner takes on each side of the frame. */
+  RUNNER_SPACE_MM: 13,
+  /** The frame is this much shorter than its front, at the top and at the bottom. */
+  VERTICAL_MARGIN_MM: 40,
+  /** Gap between the back of the front and the frame. */
+  FRONT_GAP_MM: 10,
+} as const;
+
 export const LIMITS = {
   WIDTH_MM: [100, 1500],
   HEIGHT_MM: [100, 2700],

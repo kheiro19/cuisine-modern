@@ -5,7 +5,8 @@
 // Cabinet-local coordinates: x 0..width (left to right), y 0..height (bottom to top), z centred on the depth
 // (back face at -depth/2, front at +depth/2).
 import { ApplianceKind, CabinetObject } from '../types/flatma';
-import { PANEL } from './constants';
+import { PANEL, PULL_OUT } from './constants';
+import { FacadeMotion, constructionOf, motionOf } from '../rules';
 import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
 
 export interface BoxGeo {
@@ -15,7 +16,14 @@ export interface BoxGeo {
   centerMm: [number, number, number];
 }
 
-export type FacadeMotion = 'SWING' | 'SLIDE' | 'LIFT' | 'FIXED';
+export type { FacadeMotion };
+
+/** The basket frame behind a pull-out front, in the same millimetres as the boxes (closed position). */
+export interface FrameGeo {
+  sizeMm: [number, number, number];
+  centerMm: [number, number, number];
+  levels: number;
+}
 
 export interface FacadeGeo extends Facade {
   motion: FacadeMotion;
@@ -23,6 +31,8 @@ export interface FacadeGeo extends Facade {
   hinge: 'LEFT' | 'RIGHT' | null;
   /** Depth position of the facade centre. */
   zMm: number;
+  /** Pull-out frames only. */
+  frame?: FrameGeo;
 }
 
 export interface ApplianceGeo {
@@ -38,6 +48,9 @@ export interface AssemblyGeometry {
   channels: GolaChannel[];
   appliances: ApplianceGeo[];
 }
+
+/** Length of the runners: 50 mm steps, kept between 250 and 550 mm and 50 mm short of the cabinet depth. */
+export const runnerLengthMm = (depthMm: number): number => Math.max(250, Math.min(550, Math.floor((depthMm - 50) / 50) * 50));
 
 export const facadeKey = (f: Pick<Facade, 'zoneIndex' | 'kind' | 'index'>): string => `facade-${f.zoneIndex}-${f.kind}-${f.index}`;
 export const applianceKey = (zoneIndex: number): string => `appliance-${zoneIndex}`;
@@ -68,7 +81,7 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     layout.dividerBottomsMm.forEach((y, i) => boxes.push({ key: `divider-${i}`, kind: 'divider', sizeMm: [inner, th, D], centerMm: [W / 2, y + th / 2, 0] }));
   }
 
-  if (cab.category === 'BASE_UNIT') {
+  if (constructionOf(cab.category).top === 'RAILS') {
     // Two stretcher rails flush with the front and the back (the front one used to float in the middle of the depth).
     const railZ = D / 2 - PANEL.TRAVERSE_DEPTH_MM / 2;
     boxes.push({ key: 'rail-front', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [W / 2, H - th / 2, railZ] });
@@ -80,9 +93,12 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   // The back is an overlay glued on the rear face (the BOM cuts it width x height), not inside the carcase.
   if (!open) boxes.push({ key: 'back', kind: 'back', sizeMm: [W, H, PANEL.BACK_THICKNESS_MM], centerMm: [W / 2, H / 2, -D / 2 - PANEL.BACK_THICKNESS_MM / 2] });
 
+  // Zones with pull-out frames carry baskets, not fixed shelves (the BOM skips them too).
+  const pullOutZones = new Set(plan.facades.filter((f) => f.kinematic === 'PULL_OUT_FRAME').map((f) => f.zoneIndex));
   layout.bands.forEach((band) => {
     const z = band.zone;
     if (z.kind !== 'DOORS' && z.kind !== 'OPEN') return;
+    if (pullOutZones.has(band.index)) return;
     const count = Math.max(0, Math.round(z.shelves ?? 0));
     for (let k = 0; k < count; k++) {
       const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
@@ -92,8 +108,20 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
 
   const frontZ = o.inset ? D / 2 - frontTh / 2 : D / 2 + frontTh / 2;
   const facades: FacadeGeo[] = plan.facades.map((f) => {
-    const motion: FacadeMotion = f.kind === 'DOOR' ? (o.lift ? 'LIFT' : 'SWING') : f.kind === 'DRAWER' ? 'SLIDE' : 'FIXED';
-    return { ...f, motion, hinge: motion === 'SWING' ? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT') : null, zMm: frontZ };
+    const motion: FacadeMotion = motionOf(f.kind, { lift: o.lift, kinematic: f.kinematic });
+    const geo: FacadeGeo = { ...f, motion, hinge: motion === 'SWING' ? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT') : null, zMm: frontZ };
+    if (motion === 'PULL_OUT') {
+      // One frame per front, between the runners: a door zone shares the inner width among its fronts, drawers use all of it.
+      const columns = f.kind === 'DOOR' ? Math.max(1, f.count) : 1;
+      const column = inner / columns;
+      const w = Math.max(50, column - 2 * PULL_OUT.RUNNER_SPACE_MM);
+      const h = Math.max(100, f.heightMm - 2 * PULL_OUT.VERTICAL_MARGIN_MM);
+      const d = runnerLengthMm(D);
+      const cx = f.kind === 'DOOR' ? th + (f.index + 0.5) * column : W / 2;
+      const zRear = frontZ - frontTh / 2; // back face of the front
+      geo.frame = { sizeMm: [w, h, d], centerMm: [cx, f.yMm + f.heightMm / 2, zRear - PULL_OUT.FRONT_GAP_MM - d / 2], levels: f.levels ?? PULL_OUT.DEFAULT_LEVELS };
+    }
+    return geo;
   });
 
   const appliances: ApplianceGeo[] = [];

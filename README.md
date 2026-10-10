@@ -41,3 +41,7 @@ npm run build    # tsc ثم vite build
 - لإضافة نوع خزانة جديد: أضف صفاً في `SUBTYPE_PRESETS` (قائمة أقسام وأبعاد) دون لمس الرسم أو الحساب.
 - الوصلات تُسعَّر وتُخصم من المخزن إن وُجد صنف مطابق في فئة `Assembly & Fixing` (أسماء: `Cam Lock` و`Wooden Dowel` و`Back Panel Screw` و`Shelf Support Pin`).
 - روابط الخامات الأونلاين الدائمة في `src/data/onlineTextures.ts`.
+
+## قواعد المطبخ (src/rules)
+
+أنواع الخزائن الأربعة والأنظمة الحركية وطرق الفتح وقواعد الهيكل والقوالب كلها في `src/rules`، ملفًا لكل موضوع. خريطة "أين أغيّر؟" في `src/rules/README.md`.

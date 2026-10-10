@@ -9,10 +9,7 @@ import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoi
 import {
   CabinetDraft,
   CabinetSubtype,
-  GROUP_LABELS,
-  SUBTYPES,
   SUBTYPE_PRESETS,
-  SubtypeGroup,
   cabinetToDraft,
   doorHardwareCategories,
   drawerHardwareCategories,
@@ -29,6 +26,7 @@ import { uid } from './math/utils';
 import { ApplianceKind, CabinetObject, CabinetZone, OpeningMode, ZoneKind } from './types/flatma';
 import { APPLIANCES, ZONE_LABELS, zonesOf } from './math/zones';
 import { priceCabinet } from './math/partsEngine';
+import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, hardwareKindOfZone, kinematicOfHardware, templatesOf } from './rules';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
@@ -102,12 +100,13 @@ export default function App() {
   const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods), [resolved, woods]);
   const preset = SUBTYPE_PRESETS[resolved.subtype];
 
-  const hasDoorZone = resolved.zones.some((z) => z.kind === 'DOORS');
-  const hasDrawerZone = resolved.zones.some((z) => z.kind === 'DRAWERS');
+  // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
+  const hasDoorZone = resolved.zones.some((z) => hardwareKindOfZone(z) === 'DOOR');
+  const hasDrawerZone = resolved.zones.some((z) => hardwareKindOfZone(z) === 'DRAWER');
   const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category));
   const drawerOptions = hardwareItems.filter((h) => drawerHardwareCategories().includes(h.category));
-  const isLift = hardwareItems.find((h) => h.id === resolved.hardwareItemId)?.category === 'Overhead Lift Systems';
-  const golaAllowed = resolved.category === 'BASE_UNIT' && resolved.zones.length === 1 && (hasDoorZone || hasDrawerZone);
+  const isLift = kinematicOfHardware(hardwareItems.find((h) => h.id === resolved.hardwareItemId))?.id === 'LIFT';
+  const golaAllowed = canUseGola(resolved.category, resolved.zones); // rules/openings.ts
 
   // The preview is priced by the very function the BOM sums, so this figure is the BOM figure.
   const previewPricing = useMemo(() => priceCabinet(previewCabinet, woods, hardwareItems, edgeRolls), [previewCabinet, woods, hardwareItems, edgeRolls]);
@@ -121,6 +120,10 @@ export default function App() {
     setDraft((prev) =>
       draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId }),
     );
+
+  // The four families (rules/families.ts): switching family loads that family's first ready template.
+  const family: FamilyId = preset.family;
+  const handleFamilyChange = (f: FamilyId) => handleSubtypeChange(templatesOf(f)[0]);
 
   // ---- zones editor: edits go to the raw draft (typing is never fought); display uses the resolved one -------------
   const baseZones = (): CabinetZone[] => (draft.zones.length === resolved.zones.length ? draft.zones : resolved.zones);
@@ -338,15 +341,16 @@ export default function App() {
           <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs animate-fade-in max-h-[750px] overflow-y-auto" style={{ direction: 'rtl' }}>
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
 
-            {/* النموذج: القوالب الـ24 تضبط الخزانة الحقيقية فقط، وكل شيء بعدها قابل للتعديل */}
+            {/* العائلة (4 أنواع) ثم قالب جاهز اختياري: القالب يضبط الخزانة الحقيقية فقط، وكل شيء بعده قابل للتعديل */}
             <div className="space-y-1">
+              <div className="grid grid-cols-4 gap-1">
+                {FAMILY_ORDER.map((f) => (
+                  <button key={f} type="button" onClick={() => handleFamilyChange(f)} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${family === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{FAMILIES[f].label}</button>
+                ))}
+              </div>
               <select value={resolved.subtype} onChange={(e) => handleSubtypeChange(e.target.value as CabinetSubtype)} className="w-full border bg-white rounded-md p-1.5 font-medium text-xs focus:outline-none">
-                {(Object.keys(GROUP_LABELS) as SubtypeGroup[]).map((group) => (
-                  <optgroup key={group} label={GROUP_LABELS[group]}>
-                    {SUBTYPES.filter((s) => SUBTYPE_PRESETS[s].group === group).map((s) => (
-                      <option key={s} value={s}>{SUBTYPE_PRESETS[s].label}</option>
-                    ))}
-                  </optgroup>
+                {templatesOf(family).map((s) => (
+                  <option key={s} value={s}>{SUBTYPE_PRESETS[s].label}</option>
                 ))}
               </select>
             </div>
@@ -416,6 +420,7 @@ export default function App() {
                         </label>
                       )}
                       {band && <span className="text-slate-500">الفتحة الفعلية: {Math.round(band.openingHeightMm)} مم</span>}
+                      {z.kinematic && <span className={KINEMATICS[z.kinematic].status === 'PLANNED' ? 'text-amber-700' : 'text-slate-500'}>الحركة: {KINEMATICS[z.kinematic].label}{KINEMATICS[z.kinematic].status === 'PLANNED' ? ' (غير مجسَّدة بعد)' : ''}</span>}
                       {z.kind === 'APPLIANCE' && z.appliance && <span className="text-slate-500">الجهاز يوفره الزبون · {APPLIANCES[z.appliance].note}</span>}
                     </div>
                   </div>

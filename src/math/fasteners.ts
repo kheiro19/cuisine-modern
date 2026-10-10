@@ -5,7 +5,7 @@
 // that part, so a dowel stays in its board and is visible in the gap, exactly like in a real assembly.
 // Cabinet-local coordinates in millimetres, same as assemblyGeometry.ts.
 import { CabinetObject } from '../types/flatma';
-import { AssemblyGeometry, BoxGeo, FacadeGeo, applianceKey, facadeKey } from './assemblyGeometry';
+import { AssemblyGeometry, BoxGeo, FacadeGeo, applianceKey, facadeKey, runnerLengthMm } from './assemblyGeometry';
 import { FASTENER } from './constants';
 import { hingesPerDoor } from './hinges';
 
@@ -110,11 +110,23 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
       const parent = geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
       out.push(box('LIFT_KIT', [f.xMm + f.widthMm / 2, f.yMm + f.heightMm - 55, zRear - 40], [Math.min(f.widthMm * 0.6, 320), 40, 60], parent));
     } else if (f.motion === 'SLIDE') {
-      const len = Math.max(250, Math.min(550, Math.floor((D - 50) / 50) * 50));
+      const len = runnerLengthMm(D);
       const y = f.yMm + f.heightMm * 0.35;
       const z = zRear - 20 - len / 2;
       out.push(box('RUNNER', [th + 6, y, z], [12, 40, len], 'side-left'));
       out.push(box('RUNNER', [W - th - 6, y, z], [12, 40, len], 'side-right'));
+    } else if (f.motion === 'PULL_OUT' && f.frame) {
+      // Full-extension runners hug the frame (one pair per front). Outer runners fix to the carcase sides; runners
+      // between two side-by-side fronts would need a partition (the model warns about it) and hang on the bottom board.
+      const len = runnerLengthMm(D);
+      const [fw, fh] = f.frame.sizeMm;
+      const cx = f.frame.centerMm[0];
+      const y = f.frame.centerMm[1] - fh / 2 + 20;
+      const z = zRear - 20 - len / 2;
+      const first = f.kind !== 'DOOR' || f.index === 0;
+      const last = f.kind !== 'DOOR' || f.index === f.count - 1;
+      out.push(box('RUNNER', [cx - fw / 2 - 6, y, z], [12, 40, len], first ? 'side-left' : 'bottom'));
+      out.push(box('RUNNER', [cx + fw / 2 + 6, y, z], [12, 40, len], last ? 'side-right' : 'bottom'));
     }
   });
 

@@ -1,4 +1,5 @@
 // src/types/flatma.ts
+import type { KinematicId } from '../rules/kinematics';
 
 // ========================================================
 // 📦 1. WORKSHOP CENTRAL INVENTORY STRUCTURAL DATA TYPES
@@ -76,6 +77,8 @@ export interface CabinetZone {
   appliance?: ApplianceKind;
   /** APPLIANCE only (dishwasher, fridge): a decor panel in the fronts material hides the appliance. */
   panelFront?: boolean;
+  /** How this zone's facades move (see rules/kinematics.ts). Missing = the default of the zone kind (doors swing, drawers slide). */
+  kinematic?: KinematicId;
 }
 
 /** How the fronts open: a handle (not priced), Gola channels, or a push-to-open mechanism (priced per facade). */

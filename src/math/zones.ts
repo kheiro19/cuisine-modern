@@ -9,25 +9,14 @@
 // difference. Cabinets saved without `zones` are ONE zone built from frontConfig + shelvesCount, and keep exactly
 // the facade sizes the BOM always produced for them.
 import { ApplianceKind, CabinetObject, CabinetZone } from '../types/flatma';
-import { LIMITS, PANEL } from './constants';
+import { LIMITS, PANEL, PULL_OUT } from './constants';
 import { golaSlotsOf } from './gola';
+import { APPLIANCES } from '../rules/appliances';
+import { canUseGola } from '../rules/openings';
+import { KinematicId, validKinematic } from '../rules/kinematics';
 
-export interface ApplianceSpec {
-  label: string;
-  /** Standard niche (mm). Editable here: these are typical European built-in sizes, check your suppliers. */
-  nicheHeightMm: number;
-  nicheWidthMm: number;
-  nicheDepthMm: number;
-  note: string;
-}
-
-export const APPLIANCES: Record<ApplianceKind, ApplianceSpec> = {
-  OVEN: { label: 'فرن مدمج', nicheHeightMm: 595, nicheWidthMm: 560, nicheDepthMm: 550, note: 'يلزم فتحة تهوية في الظهر' },
-  MICROWAVE: { label: 'ميكروويف مدمج', nicheHeightMm: 380, nicheWidthMm: 560, nicheDepthMm: 550, note: 'ارتفاع 380 للمدمج الصغير، 450 للكبير' },
-  COFFEE: { label: 'آلة قهوة / بخار', nicheHeightMm: 450, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تحتاج توصيل ماء وكهرباء' },
-  DISHWASHER: { label: 'غسالة صحون', nicheHeightMm: 820, nicheWidthMm: 598, nicheDepthMm: 580, note: 'تتطلب فتحات الماء والصرف' },
-  FRIDGE: { label: 'ثلاجة مدمجة', nicheHeightMm: 1780, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تهوية علوية وسفلية' },
-};
+export { APPLIANCES } from '../rules/appliances';
+export type { ApplianceSpec } from '../rules/appliances';
 
 export const ZONE_LABELS: Record<CabinetZone['kind'], string> = {
   DOORS: 'أبواب',
@@ -140,7 +129,14 @@ export interface Facade {
   /** Left edge / bottom edge measured from the cabinet's left / bottom. */
   xMm: number;
   yMm: number;
+  /** Mechanism declared on the zone (rules/kinematics.ts); set only when it is valid for that zone. */
+  kinematic?: KinematicId;
+  /** Pull-out frames: how many baskets the frame carries. */
+  levels?: number;
 }
+
+/** Baskets in a pull-out frame: the zone's shelves, or the default when it has none (a drawers zone has no shelves). */
+export const pullOutLevels = (z: Pick<CabinetZone, 'shelves'>): number => (z.shelves && z.shelves > 0 ? Math.round(z.shelves) : PULL_OUT.DEFAULT_LEVELS);
 
 export interface GolaChannel {
   /** Slot k = the channel just above drawer k (0 = top). Doors: slot 0 = the channel above the doors. */
@@ -162,9 +158,8 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
   const half = PANEL.FRONT_HEIGHT_CLEARANCE_MM / 2;
   const reveal = PANEL.FRONT_REVEAL_MM / 2;
 
-  // Gola channels only exist on a base cabinet that is one single doors / drawers zone (not on mixed stacks).
-  const only = layout.bands[0]?.zone;
-  const golaOn = n === 1 && cab.category === 'BASE_UNIT' && cab.frontConfig.hasGolaProfile && (only.kind === 'DOORS' || only.kind === 'DRAWERS');
+  // Where Gola channels may exist is decided in rules/openings.ts (canUseGola).
+  const golaOn = cab.frontConfig.hasGolaProfile && canUseGola(cab.category, layout.bands.map((b) => b.zone));
   const slots = golaOn ? golaSlotsOf(cab.frontConfig) : [];
 
   layout.bands.forEach((band, i) => {
@@ -174,12 +169,14 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
     const yHi = Math.round(band.bandTopMm - (i === n - 1 ? half : reveal));
     const extent = Math.max(0, yHi - yLo);
     const fullWidth = Math.max(0, cab.width - PANEL.FRONT_GAP_TOTAL_MM);
+    const mech = validKinematic(z.kinematic, z.kind, cab.category);
+    const mark = mech ? { kinematic: mech, ...(mech === 'PULL_OUT_FRAME' ? { levels: pullOutLevels(z) } : {}) } : {};
 
     if (z.kind === 'DOORS') {
       const count = Math.max(1, Math.round(z.count ?? 1));
       const stack = Math.max(0, extent - slots.length * PANEL.GOLA_OFFSET_MM);
       const width = Math.max(0, Math.round((cab.width - PANEL.FRONT_GAP_TOTAL_MM) / count));
-      for (let k = 0; k < count; k++) facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: width, heightMm: stack, xMm: x0 + k * width, yMm: yLo });
+      for (let k = 0; k < count; k++) facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: width, heightMm: stack, xMm: x0 + k * width, yMm: yLo, ...mark });
       if (slots.length > 0) channels.push({ slot: 0, yMm: yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
     } else if (z.kind === 'DRAWERS') {
       const count = Math.max(1, Math.round(z.count ?? 1));
@@ -187,7 +184,7 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
       const each = Math.round(stack / count);
       let y = yLo;
       for (let k = count - 1; k >= 0; k--) { // bottom drawer first
-        facades.push({ zoneIndex: i, kind: 'DRAWER', index: k, count, widthMm: fullWidth, heightMm: each, xMm: x0, yMm: y });
+        facades.push({ zoneIndex: i, kind: 'DRAWER', index: k, count, widthMm: fullWidth, heightMm: each, xMm: x0, yMm: y, ...mark });
         y += each;
         if (slots.includes(k)) {
           channels.push({ slot: k, yMm: y, heightMm: PANEL.GOLA_OFFSET_MM });

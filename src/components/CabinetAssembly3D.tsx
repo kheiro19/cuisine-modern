@@ -139,6 +139,37 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
         </group>
       );
     }
+    if (f.motion === 'PULL_OUT' && f.frame) {
+      // Basket frame behind the front: two side rails, a back and one tray per level. It travels with the front.
+      const [fw, fh, fd] = f.frame.sizeMm.map((v) => m(v));
+      const offset: [number, number, number] = [m(f.frame.centerMm[0]) - cx, m(f.frame.centerMm[1]) - cy, m(f.frame.centerMm[2]) - z];
+      const bar = 0.008;
+      const levels = Math.max(1, f.frame.levels);
+      const metal = <meshStandardMaterial color="#9CA3AF" metalness={0.8} roughness={0.35} />;
+      return (
+        <group key={key} position={[cx, cy, z + drawerTravel]}>
+          {facadeBody(f)}
+          <group position={offset}>
+            {[-1, 1].map((side) => (
+              <mesh key={side} position={[side * (fw / 2 - bar / 2), 0, 0]} castShadow>
+                <boxGeometry args={[bar, fh, fd]} />
+                {metal}
+              </mesh>
+            ))}
+            <mesh position={[0, 0, -fd / 2 + bar / 2]} castShadow>
+              <boxGeometry args={[fw, fh, bar]} />
+              {metal}
+            </mesh>
+            {Array.from({ length: levels }, (_, i) => (
+              <mesh key={i} position={[0, -fh / 2 + (i * fh) / levels + bar / 2, 0]} castShadow>
+                <boxGeometry args={[fw - 2 * bar, bar, fd - bar]} />
+                {metal}
+              </mesh>
+            ))}
+          </group>
+        </group>
+      );
+    }
     if (f.motion === 'SLIDE') {
       const boxDepth = m(D) * 0.8;
       return (

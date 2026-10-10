@@ -14,7 +14,8 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { EDGE, FASTENER_STOCK, HARDWARE_RULES, PANEL } from './constants';
+import { EDGE, FASTENER_STOCK, PANEL } from './constants';
+import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, effectiveKinematic, hardwareCategoriesFor, hardwareKindOfZone, kinematicOfHardware, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
 import { bandPricePerMeterDA } from './edgeBand';
 import { hingesPerDoor } from './hinges';
@@ -57,6 +58,7 @@ export interface CabinetIssue {
     | 'NO_HANGERS_IN_STOCK'
     | 'BACK_PRICED_AS_CARCASE'
     | 'ZONES_TOO_TALL'
+    | KinematicIssueCode
     | 'APPLIANCE_TOO_NARROW'
     | 'APPLIANCE_TOO_SHALLOW'
     | 'APPLIANCE_ZONE_TOO_SHORT';
@@ -70,26 +72,24 @@ export const isGlassFront = (cab: Pick<CabinetObject, 'frontStyle'>, frontMat?: 
   cab.frontStyle === 'GLASS' || (!!frontMat && /glass/i.test(frontMat.type));
 
 export function isLiftItem(hw?: InjectedHardwareItem): boolean {
-  return !!hw && hw.category === 'Overhead Lift Systems';
+  return kinematicOfHardware(hw)?.id === 'LIFT';
 }
 
-export { hingesPerDoor };
+export { hingesPerDoor, openingModeOf };
 
 /** Hardware that opens DOORS (hinges / lift) or DRAWERS (runners). Looks at both ids stored on the cabinet. */
 export function pickFrontHardware(cab: CabinetObject, kind: 'DOORS' | 'DRAWERS', items: InjectedHardwareItem[]): InjectedHardwareItem | undefined {
   const ids = kind === 'DOORS'
     ? [cab.frontConfig.hardwareItemId, cab.frontConfig.drawerHardwareItemId]
     : [cab.frontConfig.drawerHardwareItemId, cab.frontConfig.hardwareItemId];
-  const ok = (h: InjectedHardwareItem) => (kind === 'DOORS' ? h.category === 'Cabinet Hinges' || h.category === 'Overhead Lift Systems' : h.category === 'Drawer Slide Systems');
+  const categories = hardwareCategoriesFor(kind === 'DOORS' ? 'DOOR' : 'DRAWER');
+  const ok = (h: InjectedHardwareItem) => categories.includes(h.category);
   for (const id of ids) {
     const found = id ? items.find((h) => h.id === id) : undefined;
     if (found && ok(found)) return found;
   }
   return undefined;
 }
-
-export const openingModeOf = (cab: Pick<CabinetObject, 'openingMode' | 'frontConfig'>) =>
-  cab.openingMode ?? (cab.frontConfig.hasGolaProfile ? 'GOLA' : 'HANDLE');
 
 // -------------------------------------------------------------------------------------------------- parts
 
@@ -115,7 +115,7 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
   if (!open) parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
   if (!open && zones.length > 1) parts.push(carcase('Zone Divider Panel', cab.depth, inner, zones.length - 1, 'horizontal', 'FRONT'));
 
-  if (cab.category === 'BASE_UNIT') {
+  if (constructionOf(cab.category).top === 'RAILS') {
     parts.push(carcase('Top Stretcher Rail (Traverse)', PANEL.TRAVERSE_DEPTH_MM, inner, 2, 'horizontal', 'NONE'));
   } else {
     parts.push(carcase('Top Roof Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
@@ -125,7 +125,9 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
     parts.push({ partType: 'Backwall Panel (MDF/HDF)', role: 'back', thicknessMm: PANEL.BACK_THICKNESS_MM, widthMm: cab.width, lengthMm: cab.height, quantity: 1, grain: 'vertical', edge: 'NONE' });
   }
 
-  const shelves = zones.reduce((sum, z) => sum + ((z.kind === 'DOORS' || z.kind === 'OPEN') ? Math.max(0, Math.round(z.shelves ?? 0)) : 0), 0);
+  // A zone with pull-out frames carries baskets (its "shelves" are the basket levels), not fixed shelves.
+  const basketZones = new Set(plan.facades.filter((f) => f.kinematic === 'PULL_OUT_FRAME').map((f) => f.zoneIndex));
+  const shelves = zones.reduce((sum, z, i) => sum + ((z.kind === 'DOORS' || z.kind === 'OPEN') && !basketZones.has(i) ? Math.max(0, Math.round(z.shelves ?? 0)) : 0), 0);
   if (shelves > 0) {
     parts.push(carcase('Adjustable Internal Shelf', cab.depth - PANEL.SHELF_DEPTH_INSET_MM, inner - PANEL.SHELF_WIDTH_CLEARANCE_MM, shelves, 'horizontal', 'FRONT'));
   }
@@ -171,22 +173,31 @@ export function hardwareRequirements(
   const doors = frontPlan.facades.filter((f) => f.kind === 'DOOR');
   const drawers = frontPlan.facades.filter((f) => f.kind === 'DRAWER');
 
+  // Front mechanisms: each facade has an effective mechanism (rules/kinematics.ts) that says which stock item
+  // supplies it (hinges / lift for doors, runners for drawers and pull-out frames) and how many pieces it needs.
   const doorHw = pickFrontHardware(cab, 'DOORS', items);
-  if (doorHw && doors.length > 0) {
-    const qty = isLiftItem(doorHw)
-      ? doors.length * HARDWARE_RULES.LIFT_KITS_PER_FACADE
-      : doors.reduce((sum, f) => sum + hingesPerDoor(f.heightMm), 0);
-    add(doorHw, qty, 'Front Hardware');
-  }
-  add(pickFrontHardware(cab, 'DRAWERS', items), drawers.length, 'Front Hardware');
+  const drawerHw = pickFrontHardware(cab, 'DRAWERS', items);
+  const byMechanism = new Map<KinematicId, Facade[]>();
+  frontPlan.facades.forEach((f) => {
+    const id = effectiveKinematic(f, { lift: isLiftItem(doorHw) });
+    if (id && (f.kind === 'DOOR' || f.kind === 'DRAWER')) byMechanism.set(id, [...(byMechanism.get(id) ?? []), f]);
+  });
+  // Door hardware rows first, then runners: the order the BOM has always listed them in.
+  const hardwareKindOf = (id: KinematicId) => KINEMATICS[id].hardwareKind ?? KINEMATICS[id].drives[0];
+  [...byMechanism.entries()]
+    .sort(([a], [b]) => Number(hardwareKindOf(a) !== 'DOOR') - Number(hardwareKindOf(b) !== 'DOOR'))
+    .forEach(([id, list]) => {
+      const spec = KINEMATICS[id];
+      if (spec.quantity) add(hardwareKindOf(id) === 'DOOR' ? doorHw : drawerHw, spec.quantity(list), 'Front Hardware');
+    });
 
-  const mode = openingModeOf(cab);
-  if (mode === 'PUSH') {
-    add(items.find((h) => h.category === 'Push-Open Systems'), (doors.length + drawers.length) * HARDWARE_RULES.PUSH_LATCHES_PER_FACADE, 'Push-Open');
+  // Opening mode extras (rules/openings.ts).
+  if (openingModeOf(cab) === 'PUSH') {
+    add(items.find((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory), (doors.length + drawers.length) * OPENING_HARDWARE.PUSH.perFacade, 'Push-Open');
   }
   if (frontPlan.channels.length > 0) {
-    const gola = items.find((h) => h.id === cab.frontConfig.golaProfileItemId) ?? items.find((h) => h.category === 'Gola & Handle Profiles');
-    add(gola, frontPlan.channels.length * HARDWARE_RULES.GOLA_PROFILES_PER_CHANNEL, 'Gola Profile');
+    const gola = items.find((h) => h.id === cab.frontConfig.golaProfileItemId) ?? items.find((h) => h.category === OPENING_HARDWARE.GOLA.hardwareCategory);
+    add(gola, frontPlan.channels.length * OPENING_HARDWARE.GOLA.perChannel, 'Gola Profile');
   }
 
   // Connectors: the very ones the atomic workspace draws (cams, dowels, back screws, shelf pins).
@@ -194,8 +205,9 @@ export function hardwareRequirements(
   const counts = fastenerCounts(buildFasteners(geo, cab, { carcaseTh: th, frontTh: fTh }));
   FASTENER_STOCK.forEach((rule) => add(items.find((h) => h.modelType.includes(rule.keyword)), counts[rule.kind], 'Assembly Fixings'));
 
-  if (cab.category === 'BASE_UNIT') add(items.find((h) => h.modelType.includes(HARDWARE_RULES.LEGS_KEYWORD)), HARDWARE_RULES.LEGS_PER_BASE_UNIT, 'Base Fixing System');
-  else add(items.find((h) => h.modelType.includes(HARDWARE_RULES.HANGERS_KEYWORD)), HARDWARE_RULES.HANGERS_PER_WALL_UNIT, 'Wall Fixing System');
+  // Legs (base) or hanger plates (wall): rules/construction.ts.
+  const fixing = constructionOf(cab.category).fixing;
+  add(items.find((h) => h.modelType.includes(fixing.keyword)), fixing.perUnit, fixing.group);
   return out;
 }
 
@@ -291,10 +303,20 @@ export function priceCabinet(
   model.layout.issues.forEach((i) => issues.push({ code: i.code, severity: i.code === 'ZONES_TOO_TALL' ? 'error' : 'warning', message: `Cabinet "${name}": ${i.message}` }));
   if (!carcaseMat) issues.push({ code: 'NO_CARCASE_MATERIAL', severity: 'error', message: `Cabinet "${name}": carcase material is not in stock — carcase not priced` });
   if (hasFacades && !frontMat) issues.push({ code: 'NO_FRONT_MATERIAL', severity: 'error', message: `Cabinet "${name}": front material is not in stock — fronts not priced` });
-  if (zones.some((z) => z.kind === 'DOORS') && !doorHw) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no hinge / lift selected for the doors — not priced` });
-  if (zones.some((z) => z.kind === 'DRAWERS') && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
-  if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === 'Push-Open Systems')) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
-  if (model.plan.channels.length > 0 && !hardwareItems.some((h) => h.id === cab.frontConfig.golaProfileItemId || h.category === 'Gola & Handle Profiles')) issues.push({ code: 'NO_GOLA_ITEM', severity: 'warning', message: `Cabinet "${name}": Gola channels but no "Gola & Handle Profiles" item in stock — profile not priced` });
+  if (zones.some((z) => hardwareKindOfZone(z) === 'DOOR') && !doorHw) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no hinge / lift selected for the doors — not priced` });
+  if (zones.some((z) => hardwareKindOfZone(z) === 'DRAWER') && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
+  if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
+  if (model.plan.channels.length > 0 && !hardwareItems.some((h) => h.id === cab.frontConfig.golaProfileItemId || h.category === OPENING_HARDWARE.GOLA.hardwareCategory)) issues.push({ code: 'NO_GOLA_ITEM', severity: 'warning', message: `Cabinet "${name}": Gola channels but no "Gola & Handle Profiles" item in stock — profile not priced` });
+  // Mechanism limits (rules/kinematics.ts): one warning per code, however many fronts break it.
+  const limitCodes = new Set<string>();
+  model.plan.facades.forEach((f) => {
+    const spec = f.kinematic ? KINEMATICS[f.kinematic] : undefined;
+    spec?.constraints?.({ frontWidthMm: f.widthMm, cabinetDepthMm: cab.depth, sideBySide: f.kind === 'DOOR' ? f.count : 1 }).forEach((c) => {
+      if (limitCodes.has(c.code)) return;
+      limitCodes.add(c.code);
+      issues.push({ code: c.code, severity: 'warning', message: `Cabinet "${name}": ${c.message}` });
+    });
+  });
   if (!hdfMat) issues.push({ code: 'BACK_PRICED_AS_CARCASE', severity: 'warning', message: 'No "HDF 3 mm" sheet in stock — back panels are priced with the carcase sheet' });
 
   const carcaseRoll = cab.carcaseEdgeRollId ? edgeRolls.find((r) => r.id === cab.carcaseEdgeRollId) : undefined;
@@ -337,8 +359,8 @@ export function priceCabinet(
   usage('front', frontRoll);
 
   const requirements = hardwareRequirements(cab, hardwareItems, model.plan, { carcaseTh, frontTh });
-  if (cab.category === 'BASE_UNIT' && !requirements.some((r) => r.group === 'Base Fixing System')) issues.push({ code: 'NO_LEGS_IN_STOCK', severity: 'warning', message: `No "${HARDWARE_RULES.LEGS_KEYWORD}" item in stock — legs are not priced` });
-  if (cab.category === 'WALL_UNIT' && !requirements.some((r) => r.group === 'Wall Fixing System')) issues.push({ code: 'NO_HANGERS_IN_STOCK', severity: 'warning', message: `No "${HARDWARE_RULES.HANGERS_KEYWORD}" item in stock — hangers are not priced` });
+  const fixing = constructionOf(cab.category).fixing;
+  if (!requirements.some((r) => r.group === fixing.group)) issues.push({ code: fixing.missingCode, severity: 'warning', message: `No "${fixing.keyword}" item in stock — ${fixing.noun} are not priced` });
   const hardware: PricedHardware[] = requirements.map((r) => ({ ...r, totalCostDA: Math.round(r.quantity * r.item.pricePerUnitDA) }));
 
   const appliances: ApplianceNote[] = zones.flatMap((z) => {
