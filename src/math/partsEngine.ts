@@ -16,9 +16,10 @@ import {
 } from '../types/flatma';
 import { EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
-import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, hardwareKindOfZone, kinematicOfHardware, openingModeOf } from '../rules';
+import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
 import { bandPricePerMeterDA } from './edgeBand';
+import { frontHardwareNeeds, shelfSpansOf } from './columns';
 import { hingesPerDoor } from './hinges';
 import { assemblyGeometry } from './assemblyGeometry';
 import { buildFasteners, fastenerCounts } from './fasteners';
@@ -63,7 +64,11 @@ export interface CabinetIssue {
     | 'DRAWER_BOX_TOO_LOW'
     | 'APPLIANCE_TOO_NARROW'
     | 'APPLIANCE_TOO_SHALLOW'
-    | 'APPLIANCE_ZONE_TOO_SHORT';
+    | 'APPLIANCE_ZONE_TOO_SHORT'
+    | 'APPLIANCE_ZONE_WIDE'
+    | 'SPLIT_NO_ROOM'
+    | 'SHELVES_TOO_CLOSE'
+    | 'GOLA_ZONE_TOO_SHORT';
   severity: 'error' | 'warning';
   message: string;
 }
@@ -116,6 +121,10 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
   parts.push(carcase('Side Panel (Left/Right)', cab.depth, cab.height, 2, 'vertical', 'FRONT'));
   if (!open) parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
   if (!open && zones.length > 1) parts.push(carcase('Zone Divider Panel', cab.depth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
+  // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
+  layout.bands.forEach((band) => {
+    if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
+  });
 
   if (constructionOf(cab.category).top === 'RAILS') {
     parts.push(carcase('Top Stretcher Rail (Traverse)', PANEL.TRAVERSE_DEPTH_MM, inner, 2, 'horizontal', 'NONE'));
@@ -127,26 +136,35 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
     parts.push({ partType: 'Backwall Panel (MDF/HDF)', role: 'back', thicknessMm: PANEL.BACK_THICKNESS_MM, widthMm: cab.width, lengthMm: cab.height, quantity: 1, grain: 'vertical', edge: 'NONE' });
   }
 
-  // A zone with pull-out frames carries baskets (its "shelves" are the basket levels), not fixed shelves.
-  const basketZones = new Set(plan.facades.filter((f) => f.kinematic === 'PULL_OUT_FRAME').map((f) => f.zoneIndex));
-  const shelves = zones.reduce((sum, z, i) => sum + ((z.kind === 'DOORS' || z.kind === 'OPEN') && !basketZones.has(i) ? Math.max(0, Math.round(z.shelves ?? 0)) : 0), 0);
-  if (shelves > 0) {
-    parts.push(carcase('Adjustable Internal Shelf', cab.depth - PANEL.SHELF_DEPTH_INSET_MM, inner - PANEL.SHELF_WIDTH_CLEARANCE_MM, shelves, 'horizontal', 'FRONT'));
-  }
+  // A column with pull-out frames carries baskets (its "shelves" are the basket levels), not fixed shelves. One row per shelf
+  // width: a split zone has a narrower run in each column (math/columns.ts), an unsplit cabinet has a single row as always.
+  const shelfRows = new Map<number, number>();
+  layout.bands.forEach((band) => {
+    const n = Math.max(0, Math.round(band.zone.shelves ?? 0));
+    if (n === 0) return;
+    const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
+    shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets).forEach((s) => {
+      const w = s.hiMm - s.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM;
+      shelfRows.set(w, (shelfRows.get(w) ?? 0) + n);
+    });
+  });
+  shelfRows.forEach((qty, w) => parts.push(carcase('Adjustable Internal Shelf', cab.depth - PANEL.SHELF_DEPTH_INSET_MM, w, qty, 'horizontal', 'FRONT')));
 
-  // Facades: one row per zone (equal facades inside a zone share the row).
-  const byZone = new Map<number, Facade[]>();
-  plan.facades.forEach((f) => byZone.set(f.zoneIndex, [...(byZone.get(f.zoneIndex) ?? []), f]));
+  // Facades: one row per zone, or per column of a split zone (equal facades inside it share the row).
+  const byZone = new Map<string, Facade[]>();
+  plan.facades.forEach((f) => { const k = `${f.zoneIndex}:${f.column ?? ''}`; byZone.set(k, [...(byZone.get(k) ?? []), f]); });
   const multi = zones.length > 1;
-  byZone.forEach((list, zoneIndex) => {
+  byZone.forEach((list) => {
     const f = list[0];
-    const tag = multi ? ` [zone ${zoneIndex + 1}]` : '';
+    const zoneIndex = f.zoneIndex;
+    const colTag = f.column === 'FILL' ? ' filler' : f.column === 'MAIN' ? ' main' : '';
+    const tag = multi || f.column ? ` [zone ${zoneIndex + 1}${colTag}]` : '';
     let partType: string;
     let grain: GrainDirection = 'vertical';
     if (f.kind === 'DOOR') partType = `${opts.glass ? 'Glass Door Panel' : opts.lift ? 'Lift Facade Panel' : 'Door Facade Panel'} (1 of ${f.count})${tag}`;
     else if (f.kind === 'DRAWER') { partType = `Drawer Front Facade (1 of ${f.count})${tag}`; grain = 'horizontal'; }
     else if (f.kind === 'APRON') { partType = `Fixed Apron Panel${tag}`; grain = 'horizontal'; }
-    else partType = `Appliance Front Panel${tag}`;
+    else partType = f.column === 'FILL' ? `Fixed Filler Panel${tag}` : `Appliance Front Panel${tag}`;
     parts.push({ partType, role: 'front', thicknessMm: frontTh, widthMm: f.widthMm, lengthMm: f.heightMm, quantity: list.length, grain, edge: 'ALL' });
   });
 
@@ -319,9 +337,11 @@ export function priceCabinet(
   model.layout.issues.forEach((i) => issues.push({ code: i.code, severity: i.code === 'ZONES_TOO_TALL' ? 'error' : 'warning', message: `Cabinet "${name}": ${i.message}` }));
   if (!carcaseMat) issues.push({ code: 'NO_CARCASE_MATERIAL', severity: 'error', message: `Cabinet "${name}": carcase material is not in stock — carcase not priced` });
   if (hasFacades && !frontMat) issues.push({ code: 'NO_FRONT_MATERIAL', severity: 'error', message: `Cabinet "${name}": front material is not in stock — fronts not priced` });
-  if (zones.some((z) => hardwareKindOfZone(z) === 'DOOR') && !doorHw) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no hinge / lift selected for the doors — not priced` });
-  if (zones.some((z) => hardwareKindOfZone(z) === 'DRAWER') && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
+  const needs = frontHardwareNeeds(zones, cab, carcaseTh, isOpenCarcase(zones));
+  if (needs.doors && !doorHw) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no hinge / lift selected for the doors — not priced` });
+  if (needs.drawers && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
   if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
+  if (model.plan.golaSkipped?.length) issues.push({ code: 'GOLA_ZONE_TOO_SHORT', severity: 'warning', message: `Cabinet "${name}": zone ${model.plan.golaSkipped.map((i) => i + 1).join(', ')} too short for a Gola channel plus fronts of at least ${PANEL.GOLA_MIN_FRONT_MM} mm: no channel there` });
   if (model.plan.channels.length > 0 && !hardwareItems.some((h) => h.id === cab.frontConfig.golaProfileItemId || h.category === OPENING_HARDWARE.GOLA.hardwareCategory)) issues.push({ code: 'NO_GOLA_ITEM', severity: 'warning', message: `Cabinet "${name}": Gola channels but no "Gola & Handle Profiles" item in stock — profile not priced` });
   if (model.plan.facades.some((f) => f.kind === 'DRAWER' && f.kinematic !== 'PULL_OUT_FRAME' && f.heightMm < minDrawerFrontMm())) {
     issues.push({ code: 'DRAWER_BOX_TOO_LOW', severity: 'warning', message: `Cabinet "${name}": a drawer front is lower than ${minDrawerFrontMm()} mm, too low for a drawer box: use fewer drawers or a taller cabinet` });

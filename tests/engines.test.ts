@@ -205,11 +205,13 @@ test('gola: a channel per chosen drawer gap; heights add up; profile priced per 
   assert.ok(missing.issues.some((i) => i.code === 'NO_GOLA_ITEM'));
 });
 
-test('gola: only on a base unit with ONE doors/drawers zone (a mixed stack falls back to handles)', () => {
+test('gola: allowed on towers and wall units; a stack with no doors / drawers zone still falls back to handles', () => {
   const tower = P.resolveDraft({ ...P.draftFromPreset('Built_In_Appliance'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
-  assert.equal(tower.openingMode, 'HANDLE');
+  assert.equal(tower.openingMode, 'GOLA');
   const wall = P.resolveDraft({ ...P.draftFromPreset('Standard_Wall'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
-  assert.equal(wall.openingMode, 'HANDLE');
+  assert.equal(wall.openingMode, 'GOLA');
+  const open = P.resolveDraft({ ...P.draftFromPreset('Open_Shelving'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
+  assert.equal(open.openingMode, 'HANDLE');
 });
 
 test('push-open: one mechanism per opening facade; missing item is reported', () => {

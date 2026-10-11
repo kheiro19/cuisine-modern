@@ -10,6 +10,8 @@ export const PANEL = {
   /** Shelves stop this far short of the cabinet front. */
   SHELF_DEPTH_INSET_MM: 20,
   /** Total side clearance for an adjustable shelf. */
+  /** Least clear space between two shelves (or a shelf and a divider / the top): below this the shelves are too close to be useful. */
+  SHELF_MIN_GAP_MM: 50,
   SHELF_WIDTH_CLEARANCE_MM: 2,
   /** Reveal at the two outer edges of a front that is alone in its row (one door, or the width of a drawer): half on each side. */
   FRONT_GAP_TOTAL_MM: 1,
@@ -26,6 +28,13 @@ export const PANEL = {
   FRONT_REVEAL_MM: 1,
   /** Height removed from the facade stack when a Gola channel is embedded. */
   GOLA_OFFSET_MM: 45,
+  /** A zone gets its Gola channel only if every front left after the channel is at least this tall; otherwise the channel is skipped (and said so). */
+  GOLA_MIN_FRONT_MM: 50,
+  /**
+   * Doors whose top edge is higher than this (measured from the cabinet's bottom) get their Gola channel along the BOTTOM edge,
+   * like a wall unit: a channel at the top of a 2.2 m tower cannot be reached. Lower doors keep it at the top.
+   */
+  GOLA_REACH_MM: 1500,
   /** Used only when a cabinet references a material that is not in stock. */
   DEFAULT_THICKNESS_MM: 18,
   /**
@@ -65,6 +74,23 @@ export const HARDWARE_RULES = {
   GOLA_PROFILES_PER_CHANNEL: 1,
   /** Push-to-open latch / Tip-On unit per opening facade (doors and drawers, not fixed aprons or panels). */
   PUSH_LATCHES_PER_FACADE: 1,
+} as const;
+
+/**
+ * A vertical board inside a zone makes two columns (math/columns.ts): the main one (an appliance niche, or the zone's own doors)
+ * and the leftover one. These numbers are typical: use your supplier's.
+ */
+export const SPLIT = {
+  /** Added to an appliance niche width for its column (half on each side), so the appliance really gets its niche. */
+  NICHE_CLEARANCE_MM: 4,
+  /** Leftover column suggested a pull-out spice rack from this inside width (the narrowest pull-out front is PULL_OUT.MIN_FRONT_WIDTH_MM)... */
+  PULL_OUT_MIN_MM: 150,
+  /** ...a small door from this width, and a fixed filler panel below it. */
+  DOOR_MIN_MM: 100,
+  /** The narrowest column the engine builds: below this the split is dropped, with a warning. */
+  MIN_COLUMN_MM: 20,
+  /** An appliance zone with at least this much free width beside the niche, and no board, gets a hint to add one. */
+  WIDE_WARNING_MM: 30,
 } as const;
 
 /**

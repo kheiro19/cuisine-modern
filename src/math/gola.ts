@@ -8,6 +8,23 @@
 // A DOORS cabinet can only have the single channel at the top (same as before).
 import { CabinetFrontConfiguration } from '../types/flatma';
 
+/**
+ * Slots of ONE doors / drawers zone. A cabinet with a single zone keeps the user's choice (golaSlots, drawers); in a stack
+ * (tower, two-storey wall unit) every doors / drawers zone gets one channel, slot 0.
+ */
+export function golaSlotsOfZone(
+  fc: Pick<CabinetFrontConfiguration, 'hasGolaProfile' | 'golaSlots'>,
+  zone: { kind: string; count?: number },
+  zoneCount: number,
+): number[] {
+  if (!fc.hasGolaProfile) return [];
+  if (zone.kind === 'DOORS') return [0];
+  if (zone.kind !== 'DRAWERS') return [];
+  const count = Math.max(1, Math.round(zone.count ?? 1));
+  if (zoneCount > 1) return [0];
+  return golaSlotsOf({ openingType: 'DRAWERS', elementCount: count, hasGolaProfile: true, golaSlots: fc.golaSlots });
+}
+
 /** Valid, sorted, de-duplicated slots for the given front configuration (empty when there is no Gola). */
 export function golaSlotsOf(fc: Pick<CabinetFrontConfiguration, 'openingType' | 'elementCount' | 'hasGolaProfile' | 'golaSlots'>): number[] {
   if (!fc.hasGolaProfile || fc.openingType === 'NONE') return [];

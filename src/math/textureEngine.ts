@@ -1,6 +1,7 @@
 // src/math/textureEngine.ts
 
 import * as THREE from 'three';
+import { canAttachTexture } from './materialLifecycle';
 import { InjectedWoodMaterial } from '../types/flatma';
 import { resolveConventionTexture } from '../data/textureCatalog';
 
@@ -90,6 +91,7 @@ export class TextureEngine {
   ): void {
     this.loadBaseTexture(urlPath).then((base) => {
       if (!base) return; // file missing: keep the flat colour
+      if (!canAttachTexture(material)) return; // the material was released while the file loaded: a clone now would never be freed
       const texture = base.clone();
       texture.needsUpdate = true; // a clone starts at version 0, so it must be flagged for GPU upload
       texture.wrapS = THREE.RepeatWrapping;

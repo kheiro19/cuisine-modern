@@ -9,10 +9,11 @@ import { PANEL, PULL_OUT } from './constants';
 import { FacadeMotion, constructionOf, dividerBoardsOf, motionOf } from '../rules';
 import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
 import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
+import { frontStripOf, shelfSpansOf } from './columns';
 
 export interface BoxGeo {
   key: string;
-  kind: 'side' | 'bottom' | 'divider' | 'rail' | 'roof' | 'back' | 'shelf';
+  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'shelf';
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
 }
@@ -44,6 +45,11 @@ export interface ApplianceGeo {
   appliance: ApplianceKind;
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
+  /**
+   * The appliance's front frame: wider / taller than the niche so it overlaps the cabinet edges, standing out in front of the
+   * carcase face (its back face is on the front plane). Absent when the appliance has no trim or sits behind a decor panel.
+   */
+  trim?: { sizeMm: [number, number, number]; centerMm: [number, number, number] };
 }
 
 export interface AssemblyGeometry {
@@ -53,7 +59,8 @@ export interface AssemblyGeometry {
   appliances: ApplianceGeo[];
 }
 
-export const facadeKey = (f: Pick<Facade, 'zoneIndex' | 'kind' | 'index'>): string => `facade-${f.zoneIndex}-${f.kind}-${f.index}`;
+export const facadeKey = (f: Pick<Facade, 'zoneIndex' | 'kind' | 'index' | 'column'>): string =>
+  f.column === 'FILL' ? `facade-${f.zoneIndex}-${f.kind}-f${f.index}` : `facade-${f.zoneIndex}-${f.kind}-${f.index}`;
 export const applianceKey = (zoneIndex: number): string => `appliance-${zoneIndex}`;
 
 export interface AssemblyOptions {
@@ -86,6 +93,14 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     });
   }
 
+  // A vertical board inside a zone (math/columns.ts): as tall as the zone's opening, as deep as the cabinet.
+  if (!open) {
+    layout.bands.forEach((band) => {
+      if (!band.split) return;
+      boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+    });
+  }
+
   if (constructionOf(cab.category).top === 'RAILS') {
     // Two stretcher rails flush with the front and the back (the front one used to float in the middle of the depth).
     const railZ = D / 2 - PANEL.TRAVERSE_DEPTH_MM / 2;
@@ -98,32 +113,35 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   // The back is an overlay glued on the rear face (the BOM cuts it width x height), not inside the carcase.
   if (!open) boxes.push({ key: 'back', kind: 'back', sizeMm: [W, H, PANEL.BACK_THICKNESS_MM], centerMm: [W / 2, H / 2, -D / 2 - PANEL.BACK_THICKNESS_MM / 2] });
 
-  // Zones with pull-out frames carry baskets, not fixed shelves (the BOM skips them too).
-  const pullOutZones = new Set(plan.facades.filter((f) => f.kinematic === 'PULL_OUT_FRAME').map((f) => f.zoneIndex));
+  // Columns with pull-out frames carry baskets, not fixed shelves (the BOM skips them too: math/columns.ts shelfSpansOf).
   layout.bands.forEach((band) => {
-    const z = band.zone;
-    if (z.kind !== 'DOORS' && z.kind !== 'OPEN') return;
-    if (pullOutZones.has(band.index)) return;
-    const count = Math.max(0, Math.round(z.shelves ?? 0));
-    for (let k = 0; k < count; k++) {
-      const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
-      boxes.push({ key: `shelf-${band.index}-${k}`, kind: 'shelf', sizeMm: [inner - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM], centerMm: [W / 2, y, -PANEL.SHELF_DEPTH_INSET_MM / 2] });
-    }
+    const count = Math.max(0, Math.round(band.zone.shelves ?? 0));
+    if (count === 0) return;
+    const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
+    shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets).forEach((span) => {
+      for (let k = 0; k < count; k++) {
+        const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
+        const key = span.column === 'ALL' ? `shelf-${band.index}-${k}` : `shelf-${band.index}-${span.column === 'FILL' ? 'f' : 'm'}-${k}`;
+        boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM], centerMm: [(span.loMm + span.hiMm) / 2, y, -PANEL.SHELF_DEPTH_INSET_MM / 2] });
+      }
+    });
   });
 
   const frontZ = o.inset ? D / 2 - frontTh / 2 : D / 2 + frontTh / 2;
   const facades: FacadeGeo[] = plan.facades.map((f) => {
     const motion: FacadeMotion = motionOf(f.kind, { lift: o.lift, kinematic: f.kinematic });
-    const geo: FacadeGeo = { ...f, motion, hinge: motion === 'SWING' ? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT') : null, zMm: frontZ };
+    const geo: FacadeGeo = { ...f, motion, hinge: motion === 'SWING' ? (f.hingeSide ?? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT')) : null, zMm: frontZ };
     if (motion === 'SLIDE') geo.box = drawerBoxBoards(f, cab, { carcaseTh: th, frontBackZMm: frontZ - frontTh / 2 });
     if (motion === 'PULL_OUT') {
       // One frame per front, between the runners: a door zone shares the inner width among its fronts, drawers use all of it.
+      // In a split zone the frame sits in its own column (between the side board and the vertical board).
       const columns = f.kind === 'DOOR' ? Math.max(1, f.count) : 1;
-      const column = inner / columns;
+      const lo = f.innerLoMm ?? th, hi = f.innerHiMm ?? W - th;
+      const column = (hi - lo) / columns;
       const w = Math.max(50, column - 2 * PULL_OUT.RUNNER_SPACE_MM);
       const h = Math.max(100, f.heightMm - 2 * PULL_OUT.VERTICAL_MARGIN_MM);
       const d = runnerLengthMm(D);
-      const cx = f.kind === 'DOOR' ? th + (f.index + 0.5) * column : W / 2;
+      const cx = f.kind === 'DOOR' ? lo + (f.index + 0.5) * column : (lo + hi) / 2;
       const zRear = frontZ - frontTh / 2; // back face of the front
       geo.frame = { sizeMm: [w, h, d], centerMm: [cx, f.yMm + f.heightMm / 2, zRear - PULL_OUT.FRONT_GAP_MM - d / 2], levels: f.levels ?? PULL_OUT.DEFAULT_LEVELS };
     }
@@ -134,10 +152,30 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   layout.bands.forEach((band) => {
     if (band.zone.kind !== 'APPLIANCE' || !band.zone.appliance) return;
     const spec = APPLIANCES[band.zone.appliance];
-    const w = Math.min(inner - 4, spec.nicheWidthMm);
+    // With a vertical board the appliance sits in its own column; otherwise it is centred across the whole interior.
+    const col = band.split?.main;
+    const cx = col ? (col.innerLoMm + col.innerHiMm) / 2 : W / 2;
+    const w = Math.min((col ? col.innerHiMm - col.innerLoMm : inner) - 4, spec.nicheWidthMm);
     const h = Math.min(band.openingHeightMm - 4, spec.nicheHeightMm);
     const d = Math.min(D - 30, spec.nicheDepthMm);
-    appliances.push({ zoneIndex: band.index, appliance: band.zone.appliance, sizeMm: [w, h, d], centerMm: [W / 2, band.openingBottomMm + 2 + h / 2, D / 2 - 2 - d / 2] });
+    const cy = band.openingBottomMm + 2 + h / 2;
+    const geo: ApplianceGeo = { zoneIndex: band.index, appliance: band.zone.appliance, sizeMm: [w, h, d], centerMm: [cx, cy, D / 2 - 2 - d / 2] };
+    const t = spec.frontTrim;
+    if (t && !band.zone.panelFront) {
+      // The frame stays inside the zone's own front space, so it never touches the fronts of the zones above and below.
+      const lastZone = band.index === layout.bands.length - 1;
+      const frontLo = band.bandBottomMm + (band.index === 0 ? PANEL.FRONT_HEIGHT_CLEARANCE_MM / 2 : PANEL.FRONT_REVEAL_MM / 2);
+      const frontHi = band.bandTopMm - (lastZone ? PANEL.FRONT_HEIGHT_CLEARANCE_MM / 2 : PANEL.FRONT_REVEAL_MM / 2);
+      const lo = Math.max(cy - h / 2 - t.rimYMm, frontLo);
+      const hi = Math.min(cy + h / 2 + t.rimYMm, frontHi);
+      // Across the zone the frame is at most as wide as the cabinet; in a column, at most as wide as the column's front strip.
+      const strip = col ? frontStripOf(col, W) : { loMm: 0, hiMm: W };
+      const xLo = Math.max(cx - w / 2 - t.rimXMm, strip.loMm);
+      const xHi = Math.min(cx + w / 2 + t.rimXMm, strip.hiMm);
+      const tw = xHi - xLo;
+      if (hi > lo && tw > w) geo.trim = { sizeMm: [tw, hi - lo, t.depthMm], centerMm: [(xLo + xHi) / 2, (lo + hi) / 2, D / 2 + t.depthMm / 2] };
+    }
+    appliances.push(geo);
   });
 
   return { boxes, facades, channels: plan.channels, appliances };

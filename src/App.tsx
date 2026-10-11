@@ -17,16 +17,18 @@ import {
   draftToCabinetPatch,
   draftToNewCabinet,
   draftToPreviewCabinet,
+  frontHardwareNeedsOf,
   resolveDraft,
 } from './math/cabinetPresets';
 import { nextPositionX } from './math/layout';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { uid } from './math/utils';
-import { ApplianceKind, CabinetObject, CabinetZone, OpeningMode, ZoneKind } from './types/flatma';
-import { APPLIANCES, ZONE_LABELS, zonesOf } from './math/zones';
+import { ApplianceKind, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, ZoneKind } from './types/flatma';
+import { APPLIANCES, ZONE_LABELS, isOpenCarcase, zonesOf } from './math/zones';
+import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
 import { priceCabinet } from './math/partsEngine';
-import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, hardwareKindOfZone, kinematicOfHardware, templatesOf } from './rules';
+import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, templatesOf } from './rules';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
@@ -101,8 +103,9 @@ export default function App() {
   const preset = SUBTYPE_PRESETS[resolved.subtype];
 
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
-  const hasDoorZone = resolved.zones.some((z) => hardwareKindOfZone(z) === 'DOOR');
-  const hasDrawerZone = resolved.zones.some((z) => hardwareKindOfZone(z) === 'DRAWER');
+  const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
+  const hasDoorZone = needs.doors;
+  const hasDrawerZone = needs.drawers;
   const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category));
   const drawerOptions = hardwareItems.filter((h) => drawerHardwareCategories().includes(h.category));
   const isLift = kinematicOfHardware(hardwareItems.find((h) => h.id === resolved.hardwareItemId))?.id === 'LIFT';
@@ -110,7 +113,7 @@ export default function App() {
 
   // The preview is priced by the very function the BOM sums, so this figure is the BOM figure.
   const previewPricing = useMemo(() => priceCabinet(previewCabinet, woods, hardwareItems, edgeRolls), [previewCabinet, woods, hardwareItems, edgeRolls]);
-  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
+  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
   const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
 
   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));
@@ -426,6 +429,41 @@ export default function App() {
                       {z.kinematic && <span className={KINEMATICS[z.kinematic].status === 'PLANNED' ? 'text-amber-700' : 'text-slate-500'}>الحركة: {KINEMATICS[z.kinematic].label}{KINEMATICS[z.kinematic].status === 'PLANNED' ? ' (غير مجسَّدة بعد)' : ''}</span>}
                       {z.kind === 'APPLIANCE' && z.appliance && <span className="text-slate-500">الجهاز يوفره الزبون · {APPLIANCES[z.appliance].note}</span>}
                     </div>
+                    {canSplitZone(z) && !isOpenCarcase(resolved.zones) && (() => {
+                      const sp = band?.split;
+                      const fillW = sp ? Math.round(sp.fill.innerHiMm - sp.fill.innerLoMm) : undefined;
+                      return (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] border-t pt-0.5">
+                          <label className="flex items-center gap-1 font-bold">
+                            <input type="checkbox" checked={!!z.split} onChange={(e) => updateZone(i, { split: e.target.checked ? { mainSide: 'LEFT', fill: 'AUTO' } : undefined })} />
+                            لوح عمودي (عمودان)
+                          </label>
+                          {z.split && (
+                            <>
+                              <select value={z.split.mainSide} onChange={(e) => updateZone(i, { split: { ...z.split!, mainSide: e.target.value === 'RIGHT' ? 'RIGHT' : 'LEFT' } })} className="border bg-white rounded p-0.5 text-[10px]">
+                                <option value="LEFT">{z.kind === 'APPLIANCE' ? 'الجهاز يسارًا' : 'الأبواب يسارًا'}</option>
+                                <option value="RIGHT">{z.kind === 'APPLIANCE' ? 'الجهاز يمينًا' : 'الأبواب يمينًا'}</option>
+                              </select>
+                              {z.kind === 'DOORS' && (
+                                <label className="flex items-center gap-1 font-bold">
+                                  عرض عمود الأبواب
+                                  <input type="number" min={20} placeholder="تلقائي" value={z.split.mainWidthMm ?? ''} onChange={(e) => updateZone(i, { split: { ...z.split!, mainWidthMm: e.target.value === '' ? undefined : Number(e.target.value) } })} onBlur={normalizeDraft} className="w-14 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
+                                </label>
+                              )}
+                              <label className="flex items-center gap-1 font-bold">
+                                العمود الآخر
+                                <select value={z.split.fill ?? 'AUTO'} onChange={(e) => updateZone(i, { split: { ...z.split!, fill: e.target.value as ColumnFillChoice } })} className="border bg-white rounded p-0.5 text-[10px] font-normal">
+                                  <option value="AUTO">{`تلقائي${fillW !== undefined ? ` (${FILL_LABELS[suggestFill(fillW)]})` : ''}`}</option>
+                                  {COLUMN_FILLS.map((f) => (<option key={f} value={f}>{FILL_LABELS[f]}</option>))}
+                                </select>
+                              </label>
+                              {sp && <span className="text-slate-500">عمود {z.kind === 'APPLIANCE' ? 'الجهاز' : 'الأبواب'} {Math.round(sp.main.innerHiMm - sp.main.innerLoMm)} مم · الباقي {fillW} مم ← {FILL_LABELS[sp.fill.fill ?? 'PANEL']}</span>}
+                              {!sp && <span className="text-red-600 font-bold">لا مكان للوح: وسّع الخزانة أو قلّل عرض عمود الأبواب</span>}
+                            </>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -444,7 +482,7 @@ export default function App() {
                 <span className="font-bold text-[10px] whitespace-nowrap">نمط الفتح:</span>
                 <select value={resolved.openingMode} onChange={(e) => patchDraft({ openingMode: e.target.value as OpeningMode, golaSlots: [] })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
                   <option value="HANDLE">مقبض</option>
-                  <option value="GOLA" disabled={!golaAllowed}>Gola (قناة){golaAllowed ? '' : ' — سفلية بقسم واحد فقط'}</option>
+                  <option value="GOLA" disabled={!golaAllowed}>Gola (قناة){golaAllowed ? '' : ' — يلزم قسم أبواب أو أدراج'}</option>
                   <option value="PUSH" disabled={!hasDoorZone && !hasDrawerZone}>فتح بالضغط (Push)</option>
                 </select>
               </div>
@@ -479,8 +517,14 @@ export default function App() {
                 <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا توجد سكك أدراج في المخزن: لن تُسعَّر.</span>
               ))}
 
+              {resolved.openingMode === 'GOLA' && !(resolved.zones.length === 1 && resolved.zones[0].kind === 'DRAWERS') && (
+                <p className="text-[10px] text-slate-500 leading-snug">
+                  قناة Gola واحدة لكل قسم أبواب أو أدراج: فوق الأبواب في السفلية، وتحتها في العلوية وفي الأبواب التي يعلو حافتها {PANEL.GOLA_REACH_MM / 1000} م. تنقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع واجهات القسم.
+                </p>
+              )}
+
               {/* Gola placement: for drawers the user decides exactly where each channel goes */}
-              {resolved.openingMode === 'GOLA' && resolved.zones[0].kind === 'DRAWERS' && (() => {
+              {resolved.openingMode === 'GOLA' && resolved.zones.length === 1 && resolved.zones[0].kind === 'DRAWERS' && (() => {
                 const n = resolved.zones[0].count ?? 1;
                 return (
                   <div className="bg-white border rounded p-1.5 space-y-1">

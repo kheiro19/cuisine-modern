@@ -79,6 +79,19 @@ export interface CabinetZone {
   panelFront?: boolean;
   /** How this zone's facades move (see rules/kinematics.ts). Missing = the default of the zone kind (doors swing, drawers slide). */
   kinematic?: KinematicId;
+  /** DOORS / APPLIANCE only: one vertical board splits the zone into two columns (see math/columns.ts). Missing = one column, the whole width. */
+  split?: ZoneSplit;
+}
+
+/** What fills the second column of a split zone. AUTO (or missing) = suggested from its width (math/columns.ts). */
+export type ColumnFillChoice = 'AUTO' | 'PULL_OUT' | 'DOOR' | 'OPEN' | 'PANEL';
+
+export interface ZoneSplit {
+  /** The side the MAIN column sits on: the appliance niche, or the zone's own doors. The other column takes what is left. */
+  mainSide: 'LEFT' | 'RIGHT';
+  /** Width (mm) between the carcase and the vertical board for the main column. Missing: the niche + clearance for an appliance, half the free width for doors. */
+  mainWidthMm?: number;
+  fill?: ColumnFillChoice;
 }
 
 /** How the fronts open: a handle (not priced), Gola channels, or a push-to-open mechanism (priced per facade). */

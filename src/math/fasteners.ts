@@ -6,7 +6,7 @@
 // Cabinet-local coordinates in millimetres, same as assemblyGeometry.ts.
 import { CabinetObject } from '../types/flatma';
 import { AssemblyGeometry, BoxGeo, FacadeGeo, applianceKey, facadeKey, runnerLengthMm } from './assemblyGeometry';
-import { FASTENER } from './constants';
+import { FASTENER, PANEL } from './constants';
 import { hingesPerDoor } from './hinges';
 
 export type FastenerKind =
@@ -71,12 +71,34 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     });
   });
 
-  // ---- shelf pins: four under every shelf, set in the sides
+  // ---- vertical boards (a split zone): cam bolts + housings + dowels at both ends, into the horizontal boards above and below
+  const horizontals = geo.boxes.filter((o) => o.kind === 'bottom' || o.kind === 'divider' || o.kind === 'roof' || o.kind === 'rail');
+  geo.boxes.filter((b) => b.kind === 'vdivider').forEach((b) => {
+    const [xc, cy, cz] = b.centerMm;
+    const zLo = cz - b.sizeMm[2] / 2, zHi = cz + b.sizeMm[2] / 2;
+    const ends = [{ y: cy - b.sizeMm[1] / 2, dir: 1, below: true }, { y: cy + b.sizeMm[1] / 2, dir: -1, below: false }];
+    ends.forEach((e) => jointZs(zLo, zHi).forEach((z) => {
+      // the board that touches this end of the vertical board at this depth (a rail only exists near the front and the back)
+      const carrier = horizontals.find((o) => Math.abs(o.centerMm[1] + (e.below ? 1 : -1) * (o.sizeMm[1] / 2) - e.y) < 0.6 && Math.abs(o.centerMm[2] - z) <= o.sizeMm[2] / 2 + 0.5);
+      if (!carrier) return;
+      out.push(cyl('CAM_BOLT', 'y', [xc, e.y + e.dir * (FASTENER.BOLT_LEN_MM / 2 - 5), z], FASTENER.BOLT_DIA_MM, FASTENER.BOLT_LEN_MM, carrier.key));
+      out.push(cyl('CAM', 'x', [xc + b.sizeMm[0] / 2 - FASTENER.CAM_DEPTH_MM / 2, e.y + e.dir * FASTENER.BOLT_LEN_MM, z], FASTENER.CAM_DIA_MM, FASTENER.CAM_DEPTH_MM, b.key));
+      const zd = z > (zLo + zHi) / 2 ? z - FASTENER.DOWEL_OFFSET_MM : z + FASTENER.DOWEL_OFFSET_MM;
+      out.push(cyl('DOWEL', 'y', [xc, e.y, zd], FASTENER.DOWEL_DIA_MM, FASTENER.DOWEL_LEN_MM, b.key));
+    }));
+  });
+
+  // ---- shelf pins: four under every shelf, set in the board at each end of the shelf (a side, or a vertical board)
   geo.boxes.filter((b) => b.kind === 'shelf').forEach((b) => {
-    const [, cy, cz] = b.centerMm;
+    const [cx, cy, cz] = b.centerMm;
     const y = cy - b.sizeMm[1] / 2 - FASTENER.SHELF_PIN_DIA_MM / 2;
     const zs = [cz + b.sizeMm[2] / 2 - FASTENER.SHELF_PIN_SETBACK_MM, cz - b.sizeMm[2] / 2 + FASTENER.SHELF_PIN_SETBACK_MM];
-    sides.forEach((s) => zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [s.xFace + s.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, s.key))));
+    const vdiv = `vdiv-${/^shelf-(\d+)/.exec(b.key)?.[1] ?? 0}`;
+    const reach = (b.sizeMm[0] + PANEL.SHELF_WIDTH_CLEARANCE_MM) / 2; // the shelf plus its clearance: up to the board it rests against
+    [{ xFace: cx - reach, dir: 1 as const, side: 'side-left' }, { xFace: cx + reach, dir: -1 as const, side: 'side-right' }].forEach((e) => {
+      const onSide = Math.abs(e.xFace - (e.dir === 1 ? th : W - th)) < 0.6;
+      zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, onSide ? e.side : vdiv)));
+    });
   });
 
   // ---- back panel: screws round the perimeter, into the rear edges of the sides, bottom and top
@@ -96,7 +118,10 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     if (f.motion === 'SWING' && f.hinge) {
       const left = f.hinge === 'LEFT';
       const xCup = left ? f.xMm + FASTENER.HINGE_CUP_EDGE_MM : f.xMm + f.widthMm - FASTENER.HINGE_CUP_EDGE_MM;
-      const xPlate = left ? th + 4 : W - th - 4;
+      // In a split zone the plate sits on the board at the outer edge of the door's column (a side or the vertical board).
+      const colLo = f.innerLoMm ?? th, colHi = f.innerHiMm ?? W - th;
+      const xPlate = left ? colLo + 4 : colHi - 4;
+      const plateParent = left ? (colLo <= th + 0.5 ? 'side-left' : `vdiv-${f.zoneIndex}`) : (colHi >= W - th - 0.5 ? 'side-right' : `vdiv-${f.zoneIndex}`);
       const n = hingesPerDoor(f.heightMm);
       const lo = f.yMm + Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
       const hi = f.yMm + f.heightMm - Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
@@ -104,7 +129,7 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
       ys.forEach((y) => {
         out.push(cyl('HINGE_CUP', 'z', [xCup, y, zRear + FASTENER.HINGE_CUP_DEPTH_MM / 2], FASTENER.HINGE_CUP_DIA_MM, FASTENER.HINGE_CUP_DEPTH_MM, key));
         out.push(box('HINGE_ARM', [(xCup + xPlate) / 2, y, zRear - 8], [Math.abs(xCup - xPlate) + 10, 10, 26], key));
-        out.push(box('HINGE_PLATE', [xPlate, y, zRear - 22], [8, 40, 35], left ? 'side-left' : 'side-right'));
+        out.push(box('HINGE_PLATE', [xPlate, y, zRear - 22], [8, 40, 35], plateParent));
       });
     } else if (f.motion === 'LIFT') {
       const parent = geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
@@ -125,8 +150,11 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
       const z = zRear - 20 - len / 2;
       const first = f.kind !== 'DOOR' || f.index === 0;
       const last = f.kind !== 'DOOR' || f.index === f.count - 1;
-      out.push(box('RUNNER', [cx - fw / 2 - 6, y, z], [12, 40, len], first ? 'side-left' : 'bottom'));
-      out.push(box('RUNNER', [cx + fw / 2 + 6, y, z], [12, 40, len], last ? 'side-right' : 'bottom'));
+      const colLo = f.innerLoMm ?? th, colHi = f.innerHiMm ?? W - th;
+      const outerLeft = colLo <= th + 0.5 ? 'side-left' : `vdiv-${f.zoneIndex}`;     // the board at the column's edge: a side, or the vertical board
+      const outerRight = colHi >= W - th - 0.5 ? 'side-right' : `vdiv-${f.zoneIndex}`;
+      out.push(box('RUNNER', [cx - fw / 2 - 6, y, z], [12, 40, len], first ? outerLeft : 'bottom'));
+      out.push(box('RUNNER', [cx + fw / 2 + 6, y, z], [12, 40, len], last ? outerRight : 'bottom'));
     }
   });
 
@@ -168,7 +196,7 @@ export function explodeOffsets(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     else if (b.key === 'rail-front') o = [0, v, 0.35 * u];
     else if (b.key === 'rail-rear') o = [0, v, -0.35 * u];
     else if (b.kind === 'back') o = [0, 0, -1.4 * u];
-    else if (b.kind === 'divider' || b.kind === 'shelf') o = [0, rel(y) * v * 0.9, 0];
+    else if (b.kind === 'divider' || b.kind === 'vdivider' || b.kind === 'shelf') o = [0, rel(y) * v * 0.9, 0];
     out[b.key] = clean(o);
   });
   geo.facades.forEach((f) => { out[facadeKey(f)] = clean([0, rel(f.yMm + f.heightMm / 2) * v * 0.6, 1.6 * u]); });

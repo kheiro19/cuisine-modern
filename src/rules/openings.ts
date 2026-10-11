@@ -1,11 +1,11 @@
 // src/rules/openings.ts
 // طرق الفتح: مقبض / Gola / ضغط. أين يُسمح بكل منها، وما العتاد الذي تستهلكه.
-// لفتح Gola للعلوية أو الطولية: عدّل GOLA_CATEGORIES هنا (وفعّل رسمه في math/zones.ts عند الحاجة).
+// Gola مسموحة للسفلية والعلوية، ولكل قسم أبواب/أدراج في أي مكدّس (مدمجة وطولية). أين تقع القناة: math/zones.ts (planFronts).
 import type { CabinetCategory, CabinetObject, HardwareCategory, OpeningMode, ZoneKind } from '../types/flatma';
 import { HARDWARE_RULES } from '../math/constants';
 
 /** فئات الخزائن التي تقبل قنوات Gola. */
-export const GOLA_CATEGORIES: CabinetCategory[] = ['BASE_UNIT'];
+export const GOLA_CATEGORIES: CabinetCategory[] = ['BASE_UNIT', 'WALL_UNIT'];
 
 export const OPENING_HARDWARE = {
   PUSH: { hardwareCategory: 'Push-Open Systems' as HardwareCategory, perFacade: HARDWARE_RULES.PUSH_LATCHES_PER_FACADE },
@@ -14,9 +14,9 @@ export const OPENING_HARDWARE = {
 
 const isFrontZone = (z: { kind: ZoneKind }) => z.kind === 'DOORS' || z.kind === 'DRAWERS';
 
-/** Gola: خزانة من فئة مسموحة، وقسم واحد فقط، وهو أبواب أو أدراج (لا مكدّسات مختلطة). */
+/** Gola: خزانة من فئة مسموحة فيها قسم أبواب أو أدراج واحد على الأقل (أقسام الأجهزة والرفوف المفتوحة لا قناة لها). */
 export function canUseGola(category: CabinetCategory, zones: ReadonlyArray<{ kind: ZoneKind }>): boolean {
-  return GOLA_CATEGORIES.includes(category) && zones.length === 1 && isFrontZone(zones[0]);
+  return GOLA_CATEGORIES.includes(category) && zones.some(isFrontZone);
 }
 
 /** طريقة الفتح الصالحة: لا شيء يُفتح بلا واجهات (مقبض)، وGola غير الممكنة تعود إلى مقبض. */

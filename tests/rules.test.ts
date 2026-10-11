@@ -74,15 +74,19 @@ test('kinematics: quantity rules (hinges by door height, one lift kit per door, 
   assert.equal(R.motionOf('APRON'), 'FIXED');
 });
 
-test('openings: Gola only on an allowed category with ONE doors / drawers zone; no fronts = handle', () => {
+test('openings: Gola on base and wall units, in any stack that has a doors / drawers zone; no fronts = handle', () => {
   const one = (kind) => [{ kind }];
   assert.equal(R.canUseGola('BASE_UNIT', one('DRAWERS')), true);
   assert.equal(R.canUseGola('BASE_UNIT', one('DOORS')), true);
   assert.equal(R.canUseGola('BASE_UNIT', one('OPEN')), false);
-  assert.equal(R.canUseGola('BASE_UNIT', [{ kind: 'DOORS' }, { kind: 'DRAWERS' }]), false);
-  assert.equal(R.canUseGola('WALL_UNIT', one('DOORS')), false);
+  assert.equal(R.canUseGola('BASE_UNIT', [{ kind: 'DOORS' }, { kind: 'DRAWERS' }]), true);
+  assert.equal(R.canUseGola('BASE_UNIT', [{ kind: 'DRAWERS' }, { kind: 'APPLIANCE' }, { kind: 'DOORS' }]), true);
+  assert.equal(R.canUseGola('BASE_UNIT', [{ kind: 'APPLIANCE' }, { kind: 'OPEN' }]), false);
+  assert.equal(R.canUseGola('WALL_UNIT', one('DOORS')), true);
+  assert.equal(R.canUseGola('WALL_UNIT', one('OPEN')), false);
   assert.equal(R.canUseGola('BASE_UNIT', []), false);
-  assert.equal(R.resolveOpeningMode('GOLA', 'WALL_UNIT', one('DOORS')), 'HANDLE');
+  assert.equal(R.resolveOpeningMode('GOLA', 'WALL_UNIT', one('DOORS')), 'GOLA');
+  assert.equal(R.resolveOpeningMode('GOLA', 'WALL_UNIT', one('OPEN')), 'HANDLE');
   assert.equal(R.resolveOpeningMode('GOLA', 'BASE_UNIT', one('DRAWERS')), 'GOLA');
   assert.equal(R.resolveOpeningMode('PUSH', 'BASE_UNIT', one('OPEN')), 'HANDLE');
   assert.equal(R.resolveOpeningMode(undefined, 'BASE_UNIT', one('DOORS')), 'HANDLE');

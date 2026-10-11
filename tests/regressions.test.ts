@@ -6,7 +6,10 @@ import * as P from '../src/math/cabinetPresets';
 import * as E from '../src/math/partsEngine';
 import * as Z from '../src/math/zones';
 import { SUBTYPES } from '../src/rules/templates';
+import { GOLA_CATEGORIES } from '../src/rules/openings';
 import { applyConsumptionDelta, registerHardwareItem, hardwareConsumption } from '../src/math/stockDelta';
+import { assemblyGeometry, facadeKey, applianceKey } from '../src/math/assemblyGeometry';
+import { buildFasteners } from '../src/math/fasteners';
 import { generateFactoryBOMReport } from '../src/math/bomEngine';
 import { generateCustomerInvoice } from '../src/math/invoiceEngine';
 
@@ -32,6 +35,7 @@ function randomDraft() {
     const z = { kind, count: int(1, 6), shelves: int(0, 4) };
     if (R() < 0.5) z.heightMm = int(60, 700);
     if (kind === 'APPLIANCE') { z.appliance = pick(['OVEN', 'MICROWAVE', 'COFFEE', 'DISHWASHER', 'FRIDGE']); z.panelFront = R() < 0.5; }
+    if ((kind === 'DOORS' || kind === 'APPLIANCE') && R() < 0.45) z.split = { mainSide: pick(['LEFT', 'RIGHT']), mainWidthMm: R() < 0.4 ? int(40, 700) : undefined, fill: pick(['AUTO', 'PULL_OUT', 'DOOR', 'OPEN', 'PANEL']) };
     return z;
   });
   d.openingMode = pick(['HANDLE', 'GOLA', 'PUSH']);
@@ -46,7 +50,7 @@ const overlaps = (a, b) => Math.min(a.xMm + a.widthMm, b.xMm + b.widthMm) - Math
 test('fuzz: engine invariants on random cabinets', () => {
   const fails = {};
   const note = (k, info) => { (fails[k] ??= []).push(info); };
-  let tooTall = 0, total = 0;
+  let tooTall = 0, total = 0, splits = 0;
   for (let it = 0; it < 1500; it++) {
     const d = P.resolveDraft(randomDraft(), WOODS, HW, ROLLS);
     const cab = { ...P.draftToNewCabinet(d, { id: 'c' + it, name: 'c' + it, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
@@ -78,17 +82,46 @@ test('fuzz: engine invariants on random cabinets', () => {
     // Gola channels vs facades
     pr.model.plan.channels.forEach((c) => fs.forEach((f) => { if (Math.min(f.yMm + f.heightMm, c.yMm + c.heightMm) - Math.max(f.yMm, c.yMm) > EPS) note('GOLA_OVERLAPS_FACADE', { it, c, f }); }));
     // Gola only when allowed
-    if (pr.model.plan.channels.length > 0 && (cab.zones.length !== 1 || cab.category !== 'BASE_UNIT')) note('GOLA_WHERE_NOT_ALLOWED', { it });
+    if (pr.model.plan.channels.length > 0 && !GOLA_CATEGORIES.includes(cab.category)) note('GOLA_WHERE_NOT_ALLOWED', { it });
+    pr.model.plan.channels.forEach((c) => { const b = bands[c.zoneIndex]; if (c.yMm < b.bandBottomMm - EPS || c.yMm + c.heightMm > b.bandTopMm + EPS) note('GOLA_OUTSIDE_BAND', { it, c, b: [b.bandBottomMm, b.bandTopMm] }); });
     // Divider count vs parts
     const divRow = pr.parts.find((p) => p.partType === 'Zone Divider Panel');
     const open = Z.isOpenCarcase(Z.zonesOf(cab));
     const expectDiv = open ? 0 : (cab.zones.length - 1) * (cab.dividerBoards === 2 ? 2 : 1);
     if ((divRow?.quantity ?? 0) !== expectDiv) note('DIVIDER_COUNT', { it, got: divRow?.quantity, expectDiv });
+    // Geometry: nothing solid collides with anything else, every connector has a parent, columns tile the width
+    const th18 = th;
+    const geo = assemblyGeometry(cab, { carcaseTh: th18, frontTh: th18, lift: false, inset: false });
+    const solids = [
+      ...geo.boxes.filter((b) => b.kind !== 'back').map((b) => ({ n: b.key, x0: b.centerMm[0] - b.sizeMm[0] / 2, x1: b.centerMm[0] + b.sizeMm[0] / 2, y0: b.centerMm[1] - b.sizeMm[1] / 2, y1: b.centerMm[1] + b.sizeMm[1] / 2, z0: b.centerMm[2] - b.sizeMm[2] / 2, z1: b.centerMm[2] + b.sizeMm[2] / 2 })),
+      ...geo.facades.map((f) => ({ n: facadeKey(f), x0: f.xMm, x1: f.xMm + f.widthMm, y0: f.yMm, y1: f.yMm + f.heightMm, z0: f.zMm - th18 / 2, z1: f.zMm + th18 / 2 })),
+      ...geo.appliances.flatMap((a) => [{ n: applianceKey(a.zoneIndex), c: a.centerMm, s: a.sizeMm }, ...(a.trim ? [{ n: applianceKey(a.zoneIndex) + '-trim', c: a.trim.centerMm, s: a.trim.sizeMm }] : [])].map((o) => ({ n: o.n, x0: o.c[0] - o.s[0] / 2, x1: o.c[0] + o.s[0] / 2, y0: o.c[1] - o.s[1] / 2, y1: o.c[1] + o.s[1] / 2, z0: o.c[2] - o.s[2] / 2, z1: o.c[2] + o.s[2] / 2 }))),
+    ];
+    for (let a = 0; a < solids.length; a++) for (let b = a + 1; b < solids.length; b++) {
+      const A = solids[a], B = solids[b];
+      const shelfOnly = (A.n.startsWith('shelf') || B.n.startsWith('shelf')) && ![A.n, B.n].some((n) => /facade|oven|vdiv|side|appliance/.test(n));
+      if (Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) > 1e-4 && Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) > 1e-4 && Math.min(A.z1, B.z1) - Math.max(A.z0, B.z0) > 1e-4) {
+        // shelves too close to each other or to a divider are a design mistake the engine must WARN about (SHELVES_TOO_CLOSE)
+        if (shelfOnly && pr.issues.some((i) => i.code === 'SHELVES_TOO_CLOSE')) continue;
+        note('SOLIDS_COLLIDE', { it, a: A.n, b: B.n, zones: d.zones });
+      }
+    }
+    geo.boxes.filter((b) => b.kind === 'vdivider').forEach((b) => { if (b.centerMm[0] - b.sizeMm[0] / 2 < th18 - EPS || b.centerMm[0] + b.sizeMm[0] / 2 > cab.width - th18 + EPS) note('VDIV_OUTSIDE', { it }); });
+    const keys = new Set([...geo.boxes.map((b) => b.key), ...geo.facades.map(facadeKey)]);
+    buildFasteners(geo, cab, { carcaseTh: th18, frontTh: th18 }).forEach((f) => { if (!keys.has(f.parent) || f.centerMm.some((n) => !Number.isFinite(n))) note('FASTENER_BAD', { it, parent: f.parent, kind: f.kind }); });
+    const splitBands = bands.filter((b) => b.split);
+    splitBands.forEach((b) => {
+      const sp = b.split;
+      const cols = [sp.main, sp.fill].sort((p, q) => p.innerLoMm - q.innerLoMm);
+      if (Math.abs(cols[0].innerLoMm - th18) > EPS || Math.abs(cols[1].innerHiMm - (cab.width - th18)) > EPS || Math.abs(cols[1].innerLoMm - cols[0].innerHiMm - th18) > EPS) note('COLUMNS_DO_NOT_TILE', { it });
+    });
+    splits += splitBands.length;
     // Sum of sheets sanity
     if (pr.parts.some((p) => p.cutWidthMm > p.widthMm + EPS || p.cutLengthMm > p.lengthMm + EPS)) note('CUT_LARGER_THAN_FINISHED', { it });
   }
   for (const [k, v] of Object.entries(fails)) console.log(k, v.length, JSON.stringify(v[0]).slice(0, 900));
   assert.ok(total - tooTall > 500, 'the fuzz must exercise enough valid cabinets');
+  assert.ok(splits > 150, 'the fuzz must exercise enough split zones, got ' + splits);
   assert.equal(Object.keys(fails).length, 0, 'invariant failures: ' + Object.keys(fails).join(', '));
 });
 
@@ -145,4 +178,32 @@ test('invoice: a line with a zero quantity does not produce NaN / Infinity', () 
   const inv = generateCustomerInvoice(report);
   assert.ok(inv.itemizedSummary.every((l) => Number.isFinite(l.unitPriceDA)));
   assert.equal(inv.itemizedSummary.reduce((s, l) => s + l.totalPriceDA, 0), inv.grandTotalCustomerPriceDA);
+});
+
+// ------------------------------------------------------------------------------------------------ degenerate zones (found by the fuzz)
+const cabOf = (zones, over = {}) => {
+  const d0 = { ...P.draftFromPreset('Deep_Drawers'), height: 720, ...over, zones };
+  const d = P.resolveDraft(d0, WOODS, HW, ROLLS);
+  const cab = { ...P.draftToNewCabinet(d, { id: 'z', name: 'z', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
+  return { cab, pr: E.priceCabinet(cab, WOODS, HW, ROLLS) };
+};
+
+test('zones: every flexible zone needs its minimum height, not just the total', () => {
+  const { pr } = cabOf([{ kind: 'DRAWERS', count: 5, heightMm: 443 }, ...Array.from({ length: 4 }, () => ({ kind: 'DRAWERS', count: 3 }))], { height: 669 });
+  assert.ok(pr.issues.some((i) => i.code === 'ZONES_TOO_TALL' && i.severity === 'error'), '118 mm shared by 4 zones is 29 mm each');
+  assert.ok(!cabOf([{ kind: 'DRAWERS', count: 3 }, { kind: 'DOORS', count: 2 }]).pr.issues.some((i) => i.code === 'ZONES_TOO_TALL'));
+});
+
+test('gola: a zone too short for a channel plus usable fronts gets no channel, and the engine says so', () => {
+  const { pr } = cabOf([{ kind: 'DRAWERS', count: 3, heightMm: 60 }, { kind: 'DOORS', count: 2 }], { openingMode: 'GOLA' });
+  const { facades, channels } = pr.model.plan;
+  assert.deepEqual(pr.model.plan.golaSkipped, [0]);
+  assert.ok(pr.issues.some((i) => i.code === 'GOLA_ZONE_TOO_SHORT'));
+  assert.deepEqual(channels.map((c) => c.zoneIndex), [1], 'the tall zone keeps its channel');
+  assert.ok(facades.every((f) => f.heightMm > 0), 'no collapsed front');
+});
+
+test('shelves: too many shelves for the opening are flagged instead of overlapping silently', () => {
+  assert.ok(cabOf([{ kind: 'OPEN', shelves: 4, heightMm: 120 }, { kind: 'DOORS', count: 2 }]).pr.issues.some((i) => i.code === 'SHELVES_TOO_CLOSE'));
+  assert.ok(!cabOf([{ kind: 'DOORS', count: 2, shelves: 3 }]).pr.issues.some((i) => i.code === 'SHELVES_TOO_CLOSE'));
 });

@@ -8,6 +8,8 @@ import React, { useMemo } from 'react';
 import { Edges } from '@react-three/drei';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';
+import { facadeMaterialSignature, materialKeyOf, parseMaterialKey } from '../math/materialLifecycle';
+import { useDisposeMaterials } from './useDisposeMaterials';
 import { ApplianceGeo, FacadeGeo, applianceKey, assemblyGeometry, facadeKey } from '../math/assemblyGeometry';
 import { FastenerKind, buildFasteners, explodeOffsets } from '../math/fasteners';
 import { isGlassFront, isLiftItem, pickFrontHardware } from '../math/partsEngine';
@@ -74,15 +76,21 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   // One front material per distinct facade size, so the grain / texture scale follows each facade.
   const overridePath = cabinet.frontTextureOverride?.path;
   const overrideFinish = cabinet.frontTextureOverride?.finishType;
+  // Keyed by the SIZES the fronts need (not by `geo`, which is a new object after every cabinet edit): a cabinet that only moves,
+  // or whose fronts keep their size, keeps its materials instead of uploading new texture clones to the GPU.
+  const facadeSig = facadeMaterialSignature(geo.facades);
   const frontMaterials = useMemo(() => {
     const out: Record<string, ReturnType<typeof TextureEngine.compileProceduralMaterial>> = {};
-    geo.facades.forEach((f) => {
-      const grain = f.kind === 'DRAWER' || f.kind === 'APRON' ? 'horizontal' : 'vertical';
-      const key = `${f.widthMm}x${f.heightMm}x${grain}`;
-      if (!out[key]) out[key] = TextureEngine.compileProceduralMaterial(frontMat, f.widthMm, f.heightMm, ghost, '#FAFAFA', grain, cabinet.frontTextureOverride);
+    (facadeSig ? facadeSig.split('|') : []).forEach((key) => {
+      const { widthMm, heightMm, grain } = parseMaterialKey(key);
+      out[key] = TextureEngine.compileProceduralMaterial(frontMat, widthMm, heightMm, ghost, '#FAFAFA', grain, cabinet.frontTextureOverride);
     });
     return out;
-  }, [geo, frontMat, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [facadeSig, frontMat, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // These materials own GPU memory (one texture clone each) that nothing frees by itself: release the old ones when they are replaced.
+  const ownedMaterials = useMemo(() => [sideMaterial, boardMaterial, ...Object.values(frontMaterials)], [sideMaterial, boardMaterial, frontMaterials]);
+  useDisposeMaterials(ownedMaterials);
 
   const W = cabinet.width, D = cabinet.depth;
   const swing = openProgress * (Math.PI / 2);
@@ -91,8 +99,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
 
   const facadeBody = (f: FacadeGeo) => {
     const w = m(f.widthMm), h = m(f.heightMm), t = m(fTh);
-    const grain = f.kind === 'DRAWER' || f.kind === 'APRON' ? 'horizontal' : 'vertical';
-    const material = frontMaterials[`${f.widthMm}x${f.heightMm}x${grain}`];
+    const material = frontMaterials[materialKeyOf(f)];
     if (glass && f.kind === 'DOOR') {
       const fr = GLASS_FRAME_M;
       return (
@@ -198,29 +205,40 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
 
   const renderAppliance = (a: ApplianceGeo) => {
     const [aw, ah, ad] = [m(a.sizeMm[0]), m(a.sizeMm[1]), m(a.sizeMm[2])];
-    const frontZ = ad / 2 + 0.0006;
     const body = a.appliance === 'DISHWASHER' || a.appliance === 'FRIDGE' ? '#CBD5E1' : '#2B2F36';
+    // The trim (front frame) stands OVER the cabinet edges in front of the carcase; the glass and the handle sit on its face.
+    const trim = a.trim;
+    const [fw, fh] = trim ? [m(trim.sizeMm[0]), m(trim.sizeMm[1])] : [aw, ah];
+    const fy = trim ? m(trim.centerMm[1] - a.centerMm[1]) : 0;
+    const frontZ = (trim ? m(trim.centerMm[2] - a.centerMm[2]) + m(trim.sizeMm[2]) / 2 : ad / 2) + 0.0006;
     return (
       <group key={applianceKey(a.zoneIndex)} position={[m(a.centerMm[0]) + off(applianceKey(a.zoneIndex))[0], m(a.centerMm[1]) + off(applianceKey(a.zoneIndex))[1], m(a.centerMm[2]) + off(applianceKey(a.zoneIndex))[2]]}>
         <mesh castShadow receiveShadow>
           <boxGeometry args={[aw, ah, ad]} />
           <meshStandardMaterial color={body} roughness={0.35} metalness={0.4} transparent={ghost} opacity={ghost ? 0.5 : 1} />
         </mesh>
+        {trim && (
+          <mesh position={[0, fy, m(trim.centerMm[2] - a.centerMm[2])]} castShadow receiveShadow>
+            <boxGeometry args={[fw, fh, m(trim.sizeMm[2])]} />
+            <meshStandardMaterial color="#3A3F47" roughness={0.3} metalness={0.6} transparent={ghost} opacity={ghost ? 0.5 : 1} />
+            {ghost && <Edges threshold={15} color="#475569" />}
+          </mesh>
+        )}
         {(a.appliance === 'OVEN' || a.appliance === 'MICROWAVE' || a.appliance === 'COFFEE') && (
           <>
-            <mesh position={[a.appliance === 'MICROWAVE' ? -aw * 0.12 : 0, a.appliance === 'OVEN' ? -ah * 0.06 : 0, frontZ]}>
-              <boxGeometry args={[aw * (a.appliance === 'MICROWAVE' ? 0.62 : 0.74), ah * (a.appliance === 'OVEN' ? 0.5 : 0.66), 0.002]} />
+            <mesh position={[a.appliance === 'MICROWAVE' ? -fw * 0.12 : 0, fy + (a.appliance === 'OVEN' ? -fh * 0.06 : 0), frontZ]}>
+              <boxGeometry args={[fw * (a.appliance === 'MICROWAVE' ? 0.62 : 0.74), fh * (a.appliance === 'OVEN' ? 0.5 : 0.66), 0.002]} />
               <meshStandardMaterial color="#0B1220" roughness={0.1} metalness={0.2} />
             </mesh>
             {a.appliance === 'MICROWAVE' && (
-              <mesh position={[aw * 0.34, 0, frontZ]}>
-                <boxGeometry args={[aw * 0.18, ah * 0.66, 0.002]} />
+              <mesh position={[fw * 0.34, fy, frontZ]}>
+                <boxGeometry args={[fw * 0.18, fh * 0.66, 0.002]} />
                 <meshStandardMaterial color="#475569" roughness={0.3} metalness={0.3} />
               </mesh>
             )}
             {a.appliance === 'OVEN' && (
-              <mesh position={[0, ah * 0.36, frontZ + 0.007]}>
-                <boxGeometry args={[aw * 0.8, 0.01, 0.014]} />
+              <mesh position={[0, fy + fh * 0.36, frontZ + 0.007]}>
+                <boxGeometry args={[fw * 0.8, 0.01, 0.014]} />
                 <meshStandardMaterial color="#9CA3AF" roughness={0.3} metalness={0.8} />
               </mesh>
             )}
@@ -258,7 +276,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
       {showFronts && geo.facades.map(renderFacade)}
 
       {showFronts && geo.channels.map((c) => (
-        <mesh key={`gola-${c.slot}`} position={[m(W) / 2, m(c.yMm + c.heightMm / 2), m(D) / 2 + 0.002]}>
+        <mesh key={`gola-${c.zoneIndex}-${c.slot}`} position={[m(W) / 2, m(c.yMm + c.heightMm / 2), m(D) / 2 + 0.002]}>
           <boxGeometry args={[m(W - 4), m(c.heightMm) * 0.55, 0.012]} />
           <meshStandardMaterial color="#374151" metalness={0.6} roughness={0.4} />
         </mesh>

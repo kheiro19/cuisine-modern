@@ -13,11 +13,13 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
   OpeningMode,
+  ZoneSplit,
 } from '../types/flatma';
-import { LIMITS } from './constants';
+import { LIMITS, PANEL, SPLIT } from './constants';
 import { clampInt } from './utils';
 import { golaSlotsOf } from './gola';
-import { APPLIANCES, zonesOf } from './zones';
+import { APPLIANCES, isOpenCarcase, zonesOf } from './zones';
+import { COLUMN_FILLS, canSplitZone, frontHardwareNeeds } from './columns';
 import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templates';
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
 import { openingModeOf, resolveOpeningMode } from '../rules/openings';
@@ -97,7 +99,23 @@ const APPLIANCE_KINDS = Object.keys(APPLIANCES) as ApplianceKind[];
 function normalizeZone(z: CabinetZone, category: CabinetCategory): CabinetZone {
   const n = normalizeZoneShape(z, category);
   const kinematic = validKinematic(z.kinematic, n.kind, category);
-  return kinematic ? { ...n, kinematic } : n;
+  const split = normalizeSplit(z, n);
+  return kinematic || split ? { ...n, ...(kinematic ? { kinematic } : {}), ...(split ? { split } : {}) } : n;
+}
+
+/** A vertical board only splits a doors / appliance zone; a bad side, width or fill falls back to the default. */
+function normalizeSplit(z: CabinetZone, n: CabinetZone): ZoneSplit | undefined {
+  if (!z.split || !canSplitZone(n)) return undefined;
+  const w = z.split.mainWidthMm;
+  const mainWidthMm = typeof w === 'number' && Number.isFinite(w) && w > 0 ? clampInt(w, SPLIT.MIN_COLUMN_MM, LIMITS.WIDTH_MM[1], SPLIT.MIN_COLUMN_MM) : undefined;
+  const fill = z.split.fill && (z.split.fill === 'AUTO' || COLUMN_FILLS.includes(z.split.fill as never)) ? z.split.fill : 'AUTO';
+  return { mainSide: z.split.mainSide === 'RIGHT' ? 'RIGHT' : 'LEFT', ...(mainWidthMm !== undefined ? { mainWidthMm } : {}), fill };
+}
+
+/** Which hinge / runner pickers a draft needs, a split's small door or spice rack included. `d` must be resolved. */
+export function frontHardwareNeedsOf(d: Pick<CabinetDraft, 'zones' | 'width'>, woods: InjectedWoodMaterial[], carcaseMaterialId?: string) {
+  const sheet = woods.find((m) => m.id === carcaseMaterialId) ?? defaultSheet(woods);
+  return frontHardwareNeeds(d.zones, { width: d.width }, sheet?.thickness ?? PANEL.DEFAULT_THICKNESS_MM, isOpenCarcase(d.zones));
 }
 
 function normalizeZoneShape(z: CabinetZone, category: CabinetCategory): CabinetZone {
@@ -138,13 +156,12 @@ export function resolveDraft(
 
   // Which hardware pickers the cabinet needs follows each zone's mechanism: hinged / lifting doors want hinges or a lift,
   // drawers and pull-out frames (doors or drawers) want runners.
-  const doorZones = zones.filter((z) => hardwareKindOfZone(z) === 'DOOR');
-  const drawerZones = zones.filter((z) => hardwareKindOfZone(z) === 'DRAWER');
+  const needs = frontHardwareNeedsOf({ zones, width: d.width }, woods, d.carcaseMaterialId);
 
   // Opening mode: the rules live in rules/openings.ts (Gola only where canUseGola; no fronts = nothing to open).
   d.openingMode = resolveOpeningMode(d.openingMode, d.category, zones);
   d.dividerBoards = zones.length > 1 && d.dividerBoards === 2 ? 2 : 1; // a divider needs two zones
-  d.golaSlots = d.openingMode === 'GOLA'
+  d.golaSlots = d.openingMode === 'GOLA' && zones.length === 1 // slots are chosen on a single drawers zone; a stack gets one channel per zone
     ? golaSlotsOf({ openingType: zones[0].kind as FrontOpeningType, elementCount: zones[0].count ?? 1, hasGolaProfile: true, golaSlots: raw.golaSlots })
     : [];
 
@@ -152,12 +169,12 @@ export function resolveDraft(
   const preferLift = !!SUBTYPE_PRESETS[d.subtype]?.preferLift;
   const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category));
   const drawerOptions = hardware.filter((h) => drawerHardwareCategories().includes(h.category));
-  d.hardwareItemId = doorZones.length === 0 ? ''
+  d.hardwareItemId = !needs.doors ? ''
     : (doorOptions.find((h) => h.id === d.hardwareItemId)
       ?? (preferLift ? doorOptions.find((h) => h.category === 'Overhead Lift Systems') : undefined)
       ?? doorOptions[0])?.id ?? '';
-  d.drawerHardwareItemId = drawerZones.length === 0 ? '' : (drawerOptions.find((h) => h.id === d.drawerHardwareItemId) ?? drawerOptions[0])?.id ?? '';
-  d.frontStyle = doorZones.length > 0 && d.frontStyle === 'GLASS' ? 'GLASS' : 'SOLID';
+  d.drawerHardwareItemId = !needs.drawers ? '' : (drawerOptions.find((h) => h.id === d.drawerHardwareItemId) ?? drawerOptions[0])?.id ?? '';
+  d.frontStyle = needs.doors && d.frontStyle === 'GLASS' ? 'GLASS' : 'SOLID';
 
   const fallback = defaultSheet(woods)?.id ?? '';
   d.carcaseMaterialId = woods.some((m) => m.id === d.carcaseMaterialId) ? d.carcaseMaterialId : fallback;
@@ -183,7 +200,8 @@ export const totalShelves = (zones: CabinetZone[]): number =>
 
 function frontConfigOf(d: CabinetDraft): CabinetObject['frontConfig'] {
   const { openingType, elementCount } = primaryFront(d.zones);
-  const drawersOnly = !d.zones.some((z) => hardwareKindOfZone(z) === 'DOOR');
+  // Hinges are stored first when the cabinet has door fronts; a small door beside an appliance counts (its hinge id is set).
+  const drawersOnly = !d.zones.some((z) => hardwareKindOfZone(z) === 'DOOR') && !d.hardwareItemId;
   return {
     openingType,
     elementCount,
@@ -191,7 +209,7 @@ function frontConfigOf(d: CabinetDraft): CabinetObject['frontConfig'] {
     hardwareItemId: drawersOnly ? d.drawerHardwareItemId : d.hardwareItemId,
     drawerHardwareItemId: d.drawerHardwareItemId || undefined,
     hasGolaProfile: d.openingMode === 'GOLA',
-    golaSlots: d.openingMode === 'GOLA' && openingType === 'DRAWERS' ? d.golaSlots : undefined,
+    golaSlots: d.openingMode === 'GOLA' && openingType === 'DRAWERS' && d.zones.length === 1 ? d.golaSlots : undefined,
   };
 }
 
@@ -214,7 +232,7 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     carcaseEdgeRollId: d.carcaseEdgeRollId || undefined,
     frontEdgeRollId: d.frontEdgeRollId || undefined,
     frontConfig: frontConfigOf(d),
-    zones: d.zones.map((z) => ({ ...z })),
+    zones: d.zones.map((z) => (z.split ? { ...z, split: { ...z.split } } : { ...z })),
     openingMode: d.openingMode,
     dividerBoards: d.dividerBoards === 2 ? 2 : undefined,
     frontStyle: d.frontStyle,
@@ -230,9 +248,10 @@ export function draftToCabinetPatch(d: CabinetDraft): Partial<CabinetObject> {
 
 export function cabinetToDraft(c: CabinetObject): CabinetDraft {
   const known = c.subtype && c.subtype in SUBTYPE_PRESETS ? (c.subtype as CabinetSubtype) : undefined;
-  const zones = zonesOf(c).map((z) => ({ ...z }));
-  const hasDoors = zones.some((z) => z.kind === 'DOORS');
-  const hasDrawers = zones.some((z) => z.kind === 'DRAWERS');
+  const zones = zonesOf(c).map((z) => (z.split ? { ...z, split: { ...z.split } } : { ...z }));
+  const needs = frontHardwareNeeds(zones, c, c.carcaseThickness > 0 ? c.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM, isOpenCarcase(zones));
+  const hasDoors = zones.some((z) => z.kind === 'DOORS') || needs.doors;
+  const hasDrawers = zones.some((z) => z.kind === 'DRAWERS') || needs.drawers;
   return {
     subtype: known ?? (c.category === 'WALL_UNIT' ? 'Standard_Wall' : 'Deep_Drawers'),
     category: c.category,
