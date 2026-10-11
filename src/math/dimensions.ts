@@ -1,12 +1,13 @@
 // src/math/dimensions.ts
 // The dimension lines of the 3D atomic workspace, drawn like the reference screenshots: a vertical chain on the left (every opening,
 // then the total), the inner and the outer width one under the other at the bottom, the depth along the top edge, and a small bracket
-// across every front gap (the 1 mm between two doors). Pure numbers in millimetres (x right, y up, z towards the viewer, the cabinet's
+// across every front gap (the 1 mm between two doors), and the width and the height of every FRONT (door, drawer, panel) drawn on its
+// own face, because the carcase measures alone do not tell the size of the fronts. Pure numbers in millimetres (x right, y up, z towards the viewer, the cabinet's
 // left edge at x = 0, its bottom at y = 0, its middle at z = 0); components/MeasureOverlay.tsx draws them.
 import { AssemblyGeometry, facadeKey } from './assemblyGeometry';
 import { PartBox, Vec3, gapsBetween } from './audit';
 
-export type DimensionKind = 'OPENING' | 'BOARD' | 'TOTAL' | 'WIDTH_INNER' | 'WIDTH_OUTER' | 'DEPTH' | 'GAP';
+export type DimensionKind = 'OPENING' | 'BOARD' | 'TOTAL' | 'WIDTH_INNER' | 'WIDTH_OUTER' | 'DEPTH' | 'GAP' | 'FRONT_W' | 'FRONT_H';
 
 export interface DimensionLine {
   id: string;
@@ -83,6 +84,18 @@ export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height
     a[k] = g.at[k] - g.gapMm / 2; b[k] = g.at[k] + g.gapMm / 2;
     a[2] = b[2] = faceZ;
     out.push({ id: `gap-${i}`, kind: 'GAP', a, b, offset: [0, 0, 30], valueMm: g.gapMm, label: formatMm(g.gapMm), minor: true });
+  });
+
+  // The size of every front, as it is cut: its width near its top edge and its height near its left edge, floating just in front of
+  // the face (the offset keeps the extension lines non-zero and the brackets clear of the gap brackets above).
+  geo.facades.forEach((f) => {
+    if (f.widthMm <= 0 || f.heightMm <= 0) return;
+    const key = facadeKey(f);
+    const z = f.zMm + frontThicknessMm / 2; // the outer face of the front
+    const yW = f.yMm + f.heightMm - Math.min(60, f.heightMm * 0.2);
+    const xH = f.xMm + Math.min(60, f.widthMm * 0.2);
+    out.push({ id: `front-w-${key}`, kind: 'FRONT_W', a: [f.xMm, yW, z], b: [f.xMm + f.widthMm, yW, z], offset: [0, 0, 20], valueMm: f.widthMm, label: formatMm(f.widthMm) });
+    out.push({ id: `front-h-${key}`, kind: 'FRONT_H', a: [xH, f.yMm, z], b: [xH, f.yMm + f.heightMm, z], offset: [0, 0, 20], valueMm: f.heightMm, label: formatMm(f.heightMm) });
   });
   return out;
 }

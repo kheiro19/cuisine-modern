@@ -16,7 +16,7 @@ interface MeasureOverlayProps {
   depthMm: number;
 }
 
-const COLORS = { main: '#1f2937', minor: '#9ca3af', gap: '#d97706' };
+const COLORS = { main: '#1f2937', minor: '#9ca3af', gap: '#d97706', front: '#2563eb' };
 
 export default function MeasureOverlay({ dims, showDetails, depthMm }: MeasureOverlayProps) {
   return (
@@ -25,7 +25,8 @@ export default function MeasureOverlay({ dims, showDetails, depthMm }: MeasureOv
       <axesHelper args={[m(250)]} position={[0, 0, -m(depthMm) / 2]} />
       {dims.map((d) => {
         const g = dimensionGraphics(d);
-        const color = d.kind === 'GAP' ? COLORS.gap : d.minor ? COLORS.minor : COLORS.main;
+        const isFront = d.kind === 'FRONT_W' || d.kind === 'FRONT_H';
+        const color = d.kind === 'GAP' ? COLORS.gap : isFront ? COLORS.front : d.minor ? COLORS.minor : COLORS.main;
         const labelled = !d.minor || showDetails;
         return (
           <group key={d.id}>

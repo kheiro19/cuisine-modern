@@ -27,11 +27,16 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
   // Measuring tools: the dimension lines, and the audit that compares the DRAWING with the model.
   const [measure, setMeasure] = useState<boolean>(false);
   const [details, setDetails] = useState<boolean>(false);
+  const [frontDims, setFrontDims] = useState<boolean>(true);
   const [drawn, setDrawn] = useState<DrawnGeometry | null>(null);
   const [auditRun, setAuditRun] = useState<number>(0);
   const [report, setReport] = useState<AuditReport | null>(null);
   const moved = explode > 0 || openProgress > 0;
-  const dims = useMemo(() => (drawn ? dimensionsOf(drawn.geo, cabinet, drawn.thicknessMm, drawn.frontThicknessMm) : []), [drawn, cabinet]);
+  const frontsDrawn = showFronts && !!drawn && !drawn.glass; // the front sizes are measured only when the fronts are really drawn
+  const dims = useMemo(
+    () => (drawn ? dimensionsOf(drawn.geo, cabinet, drawn.thicknessMm, drawn.frontThicknessMm).filter((d) => (d.kind !== 'FRONT_W' && d.kind !== 'FRONT_H') || (frontsDrawn && frontDims)) : []),
+    [drawn, cabinet, frontsDrawn, frontDims],
+  );
   const expected = useMemo(
     () => (drawn ? expectedParts(drawn.geo, { facades: showFronts && !drawn.glass, frontThicknessMm: drawn.frontThicknessMm }) : []),
     [drawn, showFronts],
@@ -108,6 +113,12 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
             <label className="flex items-center gap-1 text-[9px] font-bold text-slate-200 whitespace-nowrap cursor-pointer">
               <input type="checkbox" checked={details} onChange={(e) => setDetails(e.target.checked)} />
               الألواح والفراغات
+            </label>
+          )}
+          {measure && frontsDrawn && (
+            <label className="flex items-center gap-1 text-[9px] font-bold text-blue-300 whitespace-nowrap cursor-pointer">
+              <input type="checkbox" checked={frontDims} onChange={(e) => setFrontDims(e.target.checked)} />
+              أبعاد الواجهات
             </label>
           )}
           <button

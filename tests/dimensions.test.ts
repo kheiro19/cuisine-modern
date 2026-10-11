@@ -68,3 +68,18 @@ test('dimensions: the drawn line is exactly as long as the value it carries', ()
     g.segments.flat(2).forEach((n) => assert.ok(Number.isFinite(n)));
   });
 });
+
+test('dimensions: every front carries its own width and height, equal to the cut size', () => {
+  SUBTYPES.forEach((sub) => {
+    const { geo, dims } = dimsOf(sub);
+    const w = dims.filter((d) => d.kind === 'FRONT_W'), h = dims.filter((d) => d.kind === 'FRONT_H');
+    assert.equal(w.length, geo.facades.length, sub);
+    assert.equal(h.length, geo.facades.length, sub);
+    geo.facades.forEach((f) => {
+      const fw = w.find((d) => d.valueMm === f.widthMm && d.a[0] === f.xMm), fh = h.find((d) => d.valueMm === f.heightMm && d.a[1] === f.yMm);
+      assert.ok(fw && fh, `${sub}: front ${f.zoneIndex}/${f.kind}/${f.index} has no dimension`);
+      assert.equal(fw.label, formatMm(f.widthMm));
+      assert.equal(fw.a[2], f.zMm + 9, 'drawn on the outer face of the front (18 mm thick)');
+    });
+  });
+});
