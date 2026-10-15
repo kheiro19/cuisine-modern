@@ -4,6 +4,8 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Grid, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import CabinetAssembly3D from './CabinetAssembly3D';
+import AccessoryLayer from './AccessoryLayer';
+import type { PlacedAccessory } from '../math/accessoryPlacement';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { textureCatalog } from '../data/textureCatalog';
@@ -20,6 +22,8 @@ interface Kitchen3DCanvasProps {
   countertopPath: { x: number; zOffset: number }[];
   woodPanels: InjectedWoodMaterial[];
   hardwareItems: InjectedHardwareItem[];
+  /** Pieces added from the accessories library (sockets, sinks, hobs, organisers...). */
+  accessories?: PlacedAccessory[];
   /** An empty texturePath means "back to the stock material". */
   onApplyTextureOverride: (cabinetId: string, texturePath: string, finishType: string, applyToAll: boolean) => void;
   onDeleteCabinet: (cabinetId: string) => void;
@@ -33,6 +37,7 @@ export default function Kitchen3DCanvas({
   countertopPath,
   woodPanels,
   hardwareItems,
+  accessories = [],
   onApplyTextureOverride,
   onDeleteCabinet
 }: Kitchen3DCanvasProps) {
@@ -174,6 +179,9 @@ export default function Kitchen3DCanvas({
                   <meshStandardMaterial color="#FFFFFF" roughness={0.2} metalness={0.0} transparent={isXRayMode} opacity={isXRayMode ? 0.35 : 1.0} />
                 </mesh>
               )}
+
+              {/* Accessories library: sockets, sinks, hobs, hoods, lighting, organisers */}
+              <AccessoryLayer accessories={accessories} cabinets={cabinets} wallSplashHeightMm={hardware.wallSplashHeight} isXRayMode={isXRayMode} />
             </group>
           </Center>
 

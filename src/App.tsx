@@ -3,6 +3,8 @@ import React, { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
 import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
+import AccessoryLibrary from './components/AccessoryLibrary';
+import { useAccessories } from './components/useAccessories';
 import CabinetPreview3D from './components/CabinetPreview3D';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -82,6 +84,8 @@ export default function App() {
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
   const [countertopPath] = useState([{ x: 0, zOffset: 0 }, { x: 2400, zOffset: 0 }]);
+
+  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, hardwareSettings.wallSplashHeight);
 
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
@@ -333,6 +337,7 @@ export default function App() {
                 countertopPath={countertopPath}
                 woodPanels={woods}
                 hardwareItems={hardwareItems}
+                accessories={accessories}
                 onApplyTextureOverride={handleApplyTexture}
                 onDeleteCabinet={(id) => {
                   deleteCabinet(id);
@@ -340,6 +345,8 @@ export default function App() {
                 }}
               />
             </div>
+
+            <AccessoryLibrary cabinets={cabinets} accessories={accessories} onAdd={addAccessory} onNudge={nudgeAccessory} onRemove={removeAccessory} onFinish={changeAccessoryFinish} onClear={clearAccessories} />
           </div>
         )}
 
