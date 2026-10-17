@@ -14,6 +14,7 @@ import {
   polyHavenListUrl,
 } from '../data/onlineSources';
 import { SourceStatus, checkSources, loadTextureBlobUrl } from '../data/onlineTextureLoader';
+import { makeRewrite } from '../data/onlineConfig';
 import type { TextureEntry } from '../data/textureCatalog';
 
 interface OnlineTextureBrowserProps {
@@ -25,6 +26,9 @@ const PAGE = 48;
 let polyHavenCache: OnlineTexture[] | null = null; // the Poly Haven list is one answer of about 700 textures: asked once per session
 
 const reason = (e: unknown) => (e instanceof Error ? e.message : String(e));
+// ambientCG is reached through a same-origin proxy (vite.config.ts in development), see src/data/onlineConfig.ts
+const rewrite = makeRewrite(import.meta.env);
+const PROXY_HINT = 'ambientCG لا يسمح للمتصفح بقراءة ملفاته مباشرة، لذلك يمرّ عبر وسيط في vite.config.ts: أعد تشغيل `npm run dev` بعد هذا التحديث. وعلى استضافة ثابتة اضبط VITE_AMBIENTCG_PROXY.';
 
 export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserProps) {
   const [source, setSource] = useState<OnlineSource>('polyhaven');
@@ -50,6 +54,8 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
     const mine = ++ticket.current;
     setError('');
     setShown(PAGE);
+    setItems([]);
+    setTotal(0);
     if (source === 'polyhaven' && polyHavenCache) {
       setItems(polyHavenCache);
       setTotal(polyHavenCache.length);
@@ -58,7 +64,7 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
     setLoading(true);
     (async () => {
       try {
-        const url = source === 'polyhaven' ? polyHavenListUrl() : ambientListUrl({ q: debounced, limit: PAGE });
+        const url = source === 'polyhaven' ? polyHavenListUrl() : rewrite(ambientListUrl({ q: debounced, limit: PAGE }));
         const res = await fetch(url, { referrerPolicy: 'no-referrer' });
         if (!res.ok) throw new Error(`ردّ الموقع بالحالة ${res.status}.`);
         const json: unknown = await res.json();
@@ -77,7 +83,8 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
       } catch (e) {
         if (mine !== ticket.current) return;
         setItems([]);
-        setError(`تعذّر تحميل قائمة ${SOURCE_LABEL[source]}: ${reason(e)} إن كان السبب منع الموقع لتطبيقك (CORS) فاضغط «فحص الاتصال» وأرسل لي النتيجة.`);
+        setTotal(0);
+        setError(`تعذّر تحميل قائمة ${SOURCE_LABEL[source]}: ${reason(e)} ${source === 'ambientcg' ? PROXY_HINT : 'اضغط «فحص الاتصال» وأرسل لي النتيجة.'}`);
       } finally {
         if (mine === ticket.current) setLoading(false);
       }
@@ -91,7 +98,7 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
     setError('');
     setNote('');
     try {
-      const path = await loadTextureBlobUrl(tex);
+      const path = await loadTextureBlobUrl(tex, { rewrite });
       onPick({ id: `online_${tex.key}`, name: `${tex.name} · ${SOURCE_LABEL[tex.source]}`, path, finish: 'MDF Melamine Matt' });
       setNote(`طُبّقت «${tex.name}».`);
     } catch (e) {
@@ -103,7 +110,7 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
 
   const runDiag = async () => {
     setDiag(null);
-    setDiag(await checkSources());
+    setDiag(await checkSources({ rewrite }));
   };
 
   const sizeNote = (t: OnlineTexture) => (t.sizeBytes ? ` · ${(t.sizeBytes / 1048576).toFixed(1)} م.ب` : '');
@@ -177,7 +184,7 @@ export default function OnlineTextureBrowser({ onPick }: OnlineTextureBrowserPro
         {source === 'polyhaven' ? (
           <>الخامات من <a href="https://polyhaven.com" target="_blank" rel="noreferrer" className="underline font-bold">Powered by Poly Haven</a> (CC0). {total > 0 ? `${total} خامة.` : ''}</>
         ) : (
-          <>الخامات من <a href="https://ambientcg.com" target="_blank" rel="noreferrer" className="underline font-bold">ambientCG</a> (CC0). كل خامة تُنزَّل حزمة مضغوطة (حوالي 5 إلى 15 ميغابايت) ثم تُستخرج صورة اللون وحدها. {total > 0 ? `${total} خامة.` : ''}</>
+          <>الخامات من <a href="https://ambientcg.com" target="_blank" rel="noreferrer" className="underline font-bold">ambientCG</a> (CC0). تُطبَّق صورة اللون المعاينة (نحو 1 ميغابايت)، وإن غابت تُنزَّل الحزمة المضغوطة (5 إلى 15 ميغابايت) وتُستخرج صورة اللون وحدها. {total > 0 ? `${total} خامة.` : ''}</>
         )}
       </p>
     </div>

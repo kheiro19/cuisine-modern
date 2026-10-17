@@ -21,7 +21,9 @@ export interface OnlineTexture {
   thumbUrl: string;
   pageUrl: string;
   author?: string;
-  /** ambientCG: the zip pack to download (about 5 to 15 MB). */
+  /** ambientCG: the square colour preview of the material (about 1 MB, tileable): used first, no zip needed. */
+  colorUrl?: string;
+  /** ambientCG: the zip pack to download (about 5 to 15 MB): the fallback when the colour preview is missing. */
   zipUrl?: string;
   sizeBytes?: number;
 }
@@ -86,6 +88,8 @@ export function ambientListUrl(opts: { q?: string; offset?: number; limit?: numb
 
 export const ambientCategoriesUrl = (base = AMBIENTCG_API) => `${base}/categories_json`;
 export const ambientZipFallbackUrl = (id: string) => `https://ambientcg.com/get?file=${encodeURIComponent(id)}_1K-JPG.zip`;
+/** The square colour map ambientCG shows in its own tiling viewer (every material has one; Backblaze serves it). */
+export const ambientColorPreviewUrl = (id: string) => `https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/${encodeURIComponent(id)}/${encodeURIComponent(id)}_SQ_Color.jpg`;
 const ambientThumbFallback = (id: string) => `https://acg-media.struffelproductions.com/file/ambientCG-Web/media/thumbnail/256-JPG-FFFFFF/${encodeURIComponent(id)}.jpg`;
 
 /** The "1K-JPG" download of an asset, searched anywhere in its downloadFolders tree. */
@@ -115,8 +119,13 @@ function ambientThumb(a: Record<string, unknown>, id: string): string {
   if (typeof p === 'string' && p.startsWith('https://')) return p;
   if (isObj(p)) {
     const entries = Object.entries(p).filter(([, v]) => typeof v === 'string' && (v as string).startsWith('https://')) as Array<[string, string]>;
-    const small = entries.find(([k]) => k.includes('256')) ?? entries.find(([k]) => k.includes('128')) ?? entries[0];
-    if (small) return small[1];
+    // The API lists the same thumbnail as PNG, JPG and WEBP: the WEBP one is the lightest.
+    for (const wanted of ['256-WEBP', '256-JPG-FFFFFF', '128-WEBP', '128-JPG-FFFFFF']) {
+      const hit = entries.find(([k]) => k === wanted);
+      if (hit) return hit[1];
+    }
+    const any = entries.find(([k]) => k.includes('256')) ?? entries.find(([k]) => k.includes('128')) ?? entries[0];
+    if (any) return any[1];
   }
   return ambientThumbFallback(id);
 }
@@ -136,6 +145,7 @@ export function parseAmbientList(raw: unknown): { items: OnlineTexture[]; total:
       categories: [str(a.category), str(a.displayCategory)].filter((x): x is string => !!x).map((x) => x.toLowerCase()),
       thumbUrl: ambientThumb(a, id),
       pageUrl: str(a.shortLink) ?? `https://ambientcg.com/view?id=${encodeURIComponent(id)}`,
+      colorUrl: ambientColorPreviewUrl(id),
       zipUrl: zip?.url ?? ambientZipFallbackUrl(id),
       ...(zip?.size ? { sizeBytes: zip.size } : {}),
     });

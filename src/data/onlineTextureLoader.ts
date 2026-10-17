@@ -30,9 +30,13 @@ export interface LoaderDeps {
   fetcher?: Fetcher;
   makeUrl?: (blob: Blob) => string;
   polyHavenBase?: string;
+  /** Maps an ambientCG address to the one the page can call (the same-origin proxy). Identity by default. */
+  rewrite?: (url: string) => string;
   /** Called with the downloaded fraction (0..1) when known. Only for the big ambientCG zips. */
   onProgress?: (fraction: number) => void;
 }
+
+const same = (u: string) => u;
 
 const defaultFetcher: Fetcher = (u) => fetch(u, { referrerPolicy: 'no-referrer' });
 
@@ -67,6 +71,7 @@ export async function loadTextureBlobUrl(tex: OnlineTexture, deps: LoaderDeps = 
   if (hit) return hit;
   const f = deps.fetcher ?? defaultFetcher;
   const makeUrl = deps.makeUrl ?? ((b: Blob) => URL.createObjectURL(b));
+  const rewrite = deps.rewrite ?? same;
   let bytes: Uint8Array;
 
   if (tex.source === 'polyhaven') {
@@ -75,17 +80,33 @@ export async function loadTextureBlobUrl(tex: OnlineTexture, deps: LoaderDeps = 
     if (!url) throw new OnlineLoadError('notfound', 'لم أجد صورة اللون (Diffuse) لهذه الخامة عند Poly Haven.');
     bytes = new Uint8Array(await (await get(url, f)).arrayBuffer());
   } else {
-    if (!tex.zipUrl) throw new OnlineLoadError('notfound', 'لا يوجد رابط تنزيل لهذه الخامة.');
-    const res = await get(tex.zipUrl, f);
-    deps.onProgress?.(0.5);
-    const zipBytes = new Uint8Array(await res.arrayBuffer());
-    try {
-      const entry = await extractZipEntry(zipBytes, (n) => /_Color\.(jpe?g|png)$/i.test(n));
-      if (!entry) throw new OnlineLoadError('zip', 'حزمة ambientCG لا تحوي صورة اللون (Color).');
-      bytes = entry.data;
-    } catch (e) {
-      if (e instanceof OnlineLoadError) throw e;
-      throw new OnlineLoadError('zip', e instanceof ZipError ? e.message : 'تعذّر فتح الحزمة المضغوطة.');
+    // 1) the square colour preview (a small image, no zip); 2) the zip pack, from which only the colour map is kept.
+    let previewError: unknown = null;
+    let got: Uint8Array | null = null;
+    if (tex.colorUrl) {
+      try {
+        const b = new Uint8Array(await (await get(rewrite(tex.colorUrl), f)).arrayBuffer());
+        if (imageKind(b)) got = b;
+        else previewError = new OnlineLoadError('format', 'صورة اللون المعاينة ليست صورة.');
+      } catch (e) {
+        previewError = e;
+      }
+    }
+    if (got) {
+      bytes = got;
+    } else {
+      if (!tex.zipUrl) throw previewError instanceof OnlineLoadError ? previewError : new OnlineLoadError('notfound', 'لا يوجد رابط تنزيل لهذه الخامة.');
+      const res = await get(rewrite(tex.zipUrl), f);
+      deps.onProgress?.(0.5);
+      const zipBytes = new Uint8Array(await res.arrayBuffer());
+      try {
+        const entry = await extractZipEntry(zipBytes, (n) => /_Color\.(jpe?g|png)$/i.test(n));
+        if (!entry) throw new OnlineLoadError('zip', 'حزمة ambientCG لا تحوي صورة اللون (Color).');
+        bytes = entry.data;
+      } catch (e) {
+        if (e instanceof OnlineLoadError) throw e;
+        throw new OnlineLoadError('zip', e instanceof ZipError ? e.message : 'تعذّر فتح الحزمة المضغوطة.');
+      }
     }
   }
 
@@ -115,12 +136,20 @@ export async function checkSources(deps: LoaderDeps = {}): Promise<Record<'polyh
       return `${n} خامة`;
     }),
     ambientcg: await one(async () => {
-      const list = parseAmbientList(await (await get(ambientListUrl({ limit: 1 }, AMBIENTCG_API), f)).json());
+      const rewrite = deps.rewrite ?? same;
+      const list = parseAmbientList(await (await get(rewrite(ambientListUrl({ limit: 1 }, AMBIENTCG_API)), f)).json());
       if (list.items.length === 0) {
-        await (await get(ambientCategoriesUrl(AMBIENTCG_API), f)).json();
+        await (await get(rewrite(ambientCategoriesUrl(AMBIENTCG_API)), f)).json();
         throw new OnlineLoadError('format', 'الردّ وصل لكن بلا خامات (شكل غير متوقع).');
       }
-      return `${list.total} خامة`;
+      const first = list.items[0];
+      try {
+        const b = new Uint8Array(await (await get(rewrite(first.colorUrl ?? ''), f)).arrayBuffer());
+        if (!imageKind(b)) throw new OnlineLoadError('format', 'ليست صورة.');
+      } catch (e) {
+        throw new OnlineLoadError('network', `القائمة تعمل (${list.total} خامة) لكن صورة اللون ممنوعة: ${e instanceof Error ? e.message : String(e)}`);
+      }
+      return `${list.total} خامة، وصورة اللون متاحة`;
     }),
   };
 }

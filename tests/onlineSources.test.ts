@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 import { deflateRawSync } from 'node:zlib';
 import { extractZipEntry, ZipError } from '../src/data/zipRead';
 import {
-  ambientListUrl, ambientZipFallbackUrl, filterTextures, parseAmbientList, parsePolyHavenList, pickPolyHavenColor, polyHavenFilesUrl, polyHavenListUrl,
+  ambientColorPreviewUrl, ambientListUrl, ambientZipFallbackUrl, filterTextures, parseAmbientList, parsePolyHavenList, pickPolyHavenColor, polyHavenFilesUrl, polyHavenListUrl,
 } from '../src/data/onlineSources';
 import { OnlineLoadError, checkSources, clearTextureCache, loadTextureBlobUrl } from '../src/data/onlineTextureLoader';
+import { makeRewrite } from '../src/data/onlineConfig';
 
 /** A real zip file built by hand: entries are { name, data, stored? }. */
 function makeZip(entries, { extra = false } = {}) {
@@ -182,8 +183,10 @@ test('loader: each way it can fail has its own kind and an Arabic sentence', asy
   assert.equal(notZip.kind, 'zip');
   const zipNoColor = await kind(amb, async () => ok(new Uint8Array(makeZip([{ name: 'Bad001_1K-JPG_Normal.jpg', data: JPEG(50) }]))));
   assert.equal(zipNoColor.kind, 'zip'); assert.match(zipNoColor.message, /Color/);
-  const noLink = await kind({ ...amb, zipUrl: undefined }, async () => ok({}));
+  const noLink = await kind({ ...amb, zipUrl: undefined, colorUrl: undefined }, async () => ok({}));
   assert.equal(noLink.kind, 'notfound');
+  const previewOnly = await kind({ ...amb, zipUrl: undefined }, async () => ok({}));
+  assert.equal(previewOnly.kind, 'format', 'no zip to fall back on: the reason of the preview failure is the one reported');
 });
 
 test('connection test: reports each site on its own, with the reason', async () => {
@@ -199,4 +202,73 @@ test('connection test: reports each site on its own, with the reason', async () 
   const empty = await checkSources({ fetcher: async () => ok({}) });
   assert.equal(empty.polyhaven.ok, false);
   assert.match(empty.polyhaven.message, /غير متوقع/);
+});
+
+test('ambient thumbnails prefer the light WEBP, then JPG; the colour preview URL is the one of the site viewer', () => {
+  const previewImage = { '256-PNG': 'https://x/256.png', '256-JPG-FFFFFF': 'https://x/256.jpg', '256-WEBP': 'https://x/256.webp', '128-WEBP': 'https://x/128.webp' };
+  assert.equal(parseAmbientList({ foundAssets: [{ assetId: 'A1', previewImage }] }).items[0].thumbUrl, 'https://x/256.webp');
+  assert.equal(parseAmbientList({ foundAssets: [{ assetId: 'A1', previewImage: { '256-PNG': 'https://x/256.png', '256-JPG-FFFFFF': 'https://x/256.jpg' } }] }).items[0].thumbUrl, 'https://x/256.jpg');
+  assert.equal(ambientColorPreviewUrl('PavingStones151'), 'https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/PavingStones151/PavingStones151_SQ_Color.jpg');
+  assert.equal(parseAmbientList({ foundAssets: [{ assetId: 'Wood001' }] }).items[0].colorUrl, ambientColorPreviewUrl('Wood001'));
+});
+
+test('proxy: in development ambientCG goes through the same-origin paths, elsewhere only when a proxy is configured', () => {
+  const dev = makeRewrite({ DEV: true });
+  assert.equal(dev('https://ambientcg.com/api/v2/full_json?type=Material'), '/proxy/ambientcg/api/v2/full_json?type=Material');
+  assert.equal(dev('https://ambientcg.com/get?file=Wood001_1K-JPG.zip'), '/proxy/ambientcg/get?file=Wood001_1K-JPG.zip');
+  assert.equal(dev('https://f003.backblazeb2.com/file/ambientCG-Web/media/surface-preview/A/A_SQ_Color.jpg'), '/proxy/acgmedia/file/ambientCG-Web/media/surface-preview/A/A_SQ_Color.jpg');
+  assert.equal(dev('https://api.polyhaven.com/assets?type=textures'), 'https://api.polyhaven.com/assets?type=textures', 'Poly Haven is never proxied');
+  assert.equal(dev('https://acg-media.struffelproductions.com/x.webp'), 'https://acg-media.struffelproductions.com/x.webp', 'thumbnails are plain images, no CORS needed');
+  assert.ok(!'/proxy/acgmedia/x'.startsWith('/proxy/ambientcg'), 'the two proxy prefixes do not overlap (Vite matches by the start of the address)');
+  const direct = makeRewrite({});
+  assert.equal(direct('https://ambientcg.com/api/v2/x'), 'https://ambientcg.com/api/v2/x');
+  const worker = makeRewrite({ VITE_AMBIENTCG_PROXY: 'https://my-proxy.example.workers.dev/' });
+  assert.equal(worker('https://ambientcg.com/get?file=a.zip'), 'https://my-proxy.example.workers.dev/proxy/ambientcg/get?file=a.zip');
+  assert.equal(worker('https://f003.backblazeb2.com/file/x.jpg'), 'https://my-proxy.example.workers.dev/proxy/acgmedia/file/x.jpg');
+  assert.equal(makeRewrite({ DEV: true, VITE_AMBIENTCG_PROXY: 'https://w.dev' })('https://ambientcg.com/a'), '/proxy/ambientcg/a', 'development wins');
+});
+
+test('loader: an ambientCG texture uses the small colour preview first and the zip only when the preview fails', async () => {
+  clearTextureCache();
+  const calls = [];
+  const tex = parseAmbientList({ foundAssets: [{ assetId: 'Wood001' }] }).items[0];
+  const fetcher = async (url) => {
+    calls.push(url);
+    if (url.includes('_SQ_Color.jpg')) return ok(new Uint8Array(JPEG(1200)));
+    throw new Error('the zip must not be asked for');
+  };
+  const rewritten = [];
+  const url = await loadTextureBlobUrl(tex, { fetcher, makeUrl: () => 'blob:sq', rewrite: (u) => { rewritten.push(u); return u; } });
+  assert.equal(url, 'blob:sq');
+  assert.equal(calls.length, 1, 'one small image, no zip');
+  assert.equal(rewritten.length, 1, 'the address went through the proxy rewrite');
+
+  clearTextureCache();
+  const zip = new Uint8Array(makeZip([{ name: 'Wood001_1K-JPG_Color.jpg', data: JPEG(3000) }]));
+  const seen = [];
+  const fb = await loadTextureBlobUrl(tex, {
+    fetcher: async (u) => { seen.push(u); return u.includes('_SQ_Color') ? { ok: false, status: 403, arrayBuffer: async () => new ArrayBuffer(0), json: async () => ({}) } : ok(zip); },
+    makeUrl: () => 'blob:zip',
+  });
+  assert.equal(fb, 'blob:zip', 'the preview was refused: the zip pack is the fallback');
+  assert.equal(seen.length, 2);
+  assert.match(seen[1], /Wood001_1K-JPG\.zip$/);
+
+  clearTextureCache();
+  await assert.rejects(() => loadTextureBlobUrl({ ...tex, zipUrl: undefined }, { fetcher: async () => ({ ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0), json: async () => ({}) }), makeUrl: () => 'x' }), (e) => e.kind === 'http' && e.status === 404, 'preview refused and no zip: the real reason is reported');
+});
+
+test('connection test: ambientCG list fine but colour images blocked is reported as such', async () => {
+  const fetcher = async (url) => {
+    if (url.includes('polyhaven')) return ok({ a: { name: 'A' } });
+    if (url.includes('full_json')) return ok({ numberOfResults: 3000, foundAssets: [{ assetId: 'Wood001' }] });
+    throw new TypeError('Failed to fetch');
+  };
+  const r = await checkSources({ fetcher });
+  assert.equal(r.ambientcg.ok, false);
+  assert.match(r.ambientcg.message, /3000/);
+  assert.match(r.ambientcg.message, /صورة اللون ممنوعة/);
+  const all = await checkSources({ fetcher: async (url) => (url.includes('full_json') ? ok({ numberOfResults: 5, foundAssets: [{ assetId: 'W1' }] }) : url.includes('polyhaven') ? ok({ a: { name: 'A' } }) : ok(new Uint8Array(JPEG(100)))) });
+  assert.equal(all.ambientcg.ok, true);
+  assert.match(all.ambientcg.message, /متاحة/);
 });
