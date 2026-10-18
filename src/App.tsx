@@ -28,6 +28,7 @@ import { bandPricePerMeterDA } from './math/edgeBand';
 import { uid } from './math/utils';
 import { ApplianceKind, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, ZoneKind } from './types/flatma';
 import { APPLIANCES, ZONE_LABELS, isOpenCarcase, zonesOf } from './math/zones';
+import { OPEN_BAY_APPLIANCES } from './rules/appliances';
 import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
 import { priceCabinet } from './math/partsEngine';
 import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, templatesOf } from './rules';
@@ -436,7 +437,7 @@ export default function App() {
                           <input type="number" min={LIMITS.SHELVES[0]} max={LIMITS.SHELVES[1]} value={raw?.shelves ?? 0} onChange={(e) => updateZone(i, { shelves: Number(e.target.value) })} onBlur={normalizeDraft} className="w-10 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
                         </label>
                       )}
-                      {z.kind === 'APPLIANCE' && (z.appliance === 'DISHWASHER' || z.appliance === 'FRIDGE') && (
+                      {z.kind === 'APPLIANCE' && !!z.appliance && OPEN_BAY_APPLIANCES.includes(z.appliance) && (
                         <label className="flex items-center gap-1 font-bold">
                           <input type="checkbox" checked={!!z.panelFront} onChange={(e) => updateZone(i, { panelFront: e.target.checked })} />
                           واجهة لوح

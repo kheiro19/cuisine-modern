@@ -13,6 +13,10 @@ import { useDisposeMaterials } from './useDisposeMaterials';
 import { ApplianceGeo, AssemblyGeometry, FacadeGeo, applianceKey, assemblyGeometry, facadeKey } from '../math/assemblyGeometry';
 import { FastenerKind, buildFasteners, explodeOffsets } from '../math/fasteners';
 import { isGlassFront, isLiftItem, pickFrontHardware } from '../math/partsEngine';
+import { applianceLookOf } from '../math/applianceModels';
+import { modelPrims } from '../math/accessoryModels';
+import { FINISHES } from '../data/accessoryCatalog';
+import { Shapes } from './PrimShapes';
 
 interface CabinetAssembly3DProps {
   cabinet: CabinetObject;
@@ -218,6 +222,20 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
 
   const renderAppliance = (a: ApplianceGeo) => {
     const [aw, ah, ad] = [m(a.sizeMm[0]), m(a.sizeMm[1]), m(a.sizeMm[2])];
+    // A washer, a dryer, a dishwasher or a fridge standing in an open bay with nothing in front of it: it is drawn with the shapes of the
+    // accessories library (round glass door, controls, handles) stretched to its niche, not as a grey box.
+    const look = a.frontVisible ? applianceLookOf(a.appliance) : undefined;
+    if (look) {
+      const prims = modelPrims(look.model, a.sizeMm[0], a.sizeMm[1], a.sizeMm[2], look.opts, FINISHES[look.finish]);
+      const o = off(applianceKey(a.zoneIndex));
+      return (
+        <group key={applianceKey(a.zoneIndex)} position={[m(a.centerMm[0]) + o[0], m(a.centerMm[1]) + o[1], m(a.centerMm[2]) + o[2]]}>
+          <group position={[0, -ah / 2, 0]} userData={{ partKey: applianceKey(a.zoneIndex) }}>
+            <Shapes prims={prims} xray={ghost} />
+          </group>
+        </group>
+      );
+    }
     const body = a.appliance === 'DISHWASHER' || a.appliance === 'FRIDGE' ? '#CBD5E1' : '#2B2F36';
     // The trim (front frame) stands OVER the cabinet edges in front of the carcase; the glass and the handle sit on its face.
     const trim = a.trim;

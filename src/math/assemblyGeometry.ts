@@ -43,6 +43,8 @@ export interface FacadeGeo extends Facade {
 export interface ApplianceGeo {
   zoneIndex: number;
   appliance: ApplianceKind;
+  /** True when nothing hides the appliance (no decor panel in front of it): its own front is what the client sees. */
+  frontVisible: boolean;
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
   /**
@@ -159,7 +161,7 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     const h = Math.min(band.openingHeightMm - 4, spec.nicheHeightMm);
     const d = Math.min(D - 30, spec.nicheDepthMm);
     const cy = band.openingBottomMm + 2 + h / 2;
-    const geo: ApplianceGeo = { zoneIndex: band.index, appliance: band.zone.appliance, sizeMm: [w, h, d], centerMm: [cx, cy, D / 2 - 2 - d / 2] };
+    const geo: ApplianceGeo = { zoneIndex: band.index, appliance: band.zone.appliance, frontVisible: !band.zone.panelFront, sizeMm: [w, h, d], centerMm: [cx, cy, D / 2 - 2 - d / 2] };
     const t = spec.frontTrim;
     if (t && !band.zone.panelFront) {
       // The frame stays inside the zone's own front space, so it never touches the fronts of the zones above and below.

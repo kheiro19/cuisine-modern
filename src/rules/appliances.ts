@@ -19,10 +19,21 @@ export interface ApplianceSpec {
   frontTrim?: { rimXMm: number; rimYMm: number; depthMm: number };
 }
 
+/**
+ * Appliances that stand on the floor between the two sides of their cabinet, under the worktop: the cabinet is a "half cabinet"
+ * (two sides and the two top rails the worktop rests on, no bottom, no back). Their front stays visible unless the zone asks for a
+ * decor panel (`panelFront`).
+ */
+export const OPEN_BAY_APPLIANCES: readonly ApplianceKind[] = ['DISHWASHER', 'FRIDGE', 'WASHER', 'DRYER', 'UNDER_FRIDGE'];
+
 export const APPLIANCES: Record<ApplianceKind, ApplianceSpec> = {
   OVEN: { label: 'فرن مدمج', nicheHeightMm: 595, nicheWidthMm: 560, nicheDepthMm: 550, note: 'يلزم فتحة تهوية في الظهر', frontTrim: { rimXMm: 17.5, rimYMm: 5, depthMm: 35 } },
   MICROWAVE: { label: 'ميكروويف مدمج', nicheHeightMm: 380, nicheWidthMm: 560, nicheDepthMm: 550, note: 'ارتفاع 380 للمدمج الصغير، 450 للكبير', frontTrim: { rimXMm: 17.5, rimYMm: 5, depthMm: 30 } },
   COFFEE: { label: 'آلة قهوة / بخار', nicheHeightMm: 450, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تحتاج توصيل ماء وكهرباء', frontTrim: { rimXMm: 17.5, rimYMm: 5, depthMm: 30 } },
   DISHWASHER: { label: 'غسالة صحون', nicheHeightMm: 820, nicheWidthMm: 598, nicheDepthMm: 580, note: 'تتطلب فتحات الماء والصرف' },
   FRIDGE: { label: 'ثلاجة مدمجة', nicheHeightMm: 1780, nicheWidthMm: 560, nicheDepthMm: 550, note: 'تهوية علوية وسفلية' },
+  // Under-counter appliances that stand on the floor between two sides and under the worktop (see OPEN_BAY_APPLIANCES).
+  WASHER: { label: 'غسالة ملابس (تحت الرخامة)', nicheHeightMm: 820, nicheWidthMm: 596, nicheDepthMm: 580, note: 'تتطلب فتحات الماء والصرف والكهرباء، وتُثبَّت بإحكام لتحمّل الاهتزاز. اترك 5 سم خلفها للخراطيم' },
+  DRYER: { label: 'مجفف ملابس (تحت الرخامة)', nicheHeightMm: 820, nicheWidthMm: 596, nicheDepthMm: 580, note: 'يحتاج مخرج هواء أو مكثّفًا، وتهوية أمامية' },
+  UNDER_FRIDGE: { label: 'ثلاجة صغيرة (تحت الرخامة)', nicheHeightMm: 820, nicheWidthMm: 596, nicheDepthMm: 550, note: 'تهوية أمامية وخلفية' },
 };

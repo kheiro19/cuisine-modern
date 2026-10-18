@@ -24,6 +24,7 @@ import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templ
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
 import { openingModeOf, resolveOpeningMode } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
+import { OPEN_BAY_APPLIANCES } from '../rules/appliances';
 
 // القوالب نفسها (البيانات) في src/rules/templates/<family>.ts، ولكل عائلة ملفها. هنا فقط المسودة (draft) والتحويلات.
 export { SUBTYPES };
@@ -129,7 +130,7 @@ function normalizeZoneShape(z: CabinetZone, category: CabinetCategory): CabinetZ
   if (kind === 'OPEN') return { kind, heightMm: height, shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0) };
   if (kind === 'APRON') return { kind, heightMm: height };
   const appliance = z.appliance && APPLIANCE_KINDS.includes(z.appliance) ? z.appliance : 'OVEN';
-  return { kind: 'APPLIANCE', heightMm: height, appliance, panelFront: !!z.panelFront && (appliance === 'DISHWASHER' || appliance === 'FRIDGE') };
+  return { kind: 'APPLIANCE', heightMm: height, appliance, panelFront: !!z.panelFront && OPEN_BAY_APPLIANCES.includes(appliance) };
 }
 
 /**

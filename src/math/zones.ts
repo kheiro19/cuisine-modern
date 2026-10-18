@@ -12,7 +12,7 @@ import { ApplianceKind, CabinetObject, CabinetZone } from '../types/flatma';
 import { LIMITS, PANEL, PULL_OUT, SPLIT } from './constants';
 import { SplitLayout, ZoneColumn, frontStripOf, splitLayoutOf } from './columns';
 import { golaSlotsOfZone } from './gola';
-import { APPLIANCES } from '../rules/appliances';
+import { APPLIANCES, OPEN_BAY_APPLIANCES } from '../rules/appliances';
 import { canUseGola } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
 import { KinematicId, validKinematic } from '../rules/kinematics';
@@ -38,9 +38,10 @@ export function zonesOf(cab: ZonedCabinet): CabinetZone[] {
   return [{ kind: openingType, count: elementCount, shelves: cab.shelvesCount }];
 }
 
-/** A dishwasher / fridge alone in the cabinet: the appliance IS the bottom and the back, so those boards are not cut. */
+/** A dishwasher / fridge / washer / dryer alone in the cabinet: the appliance IS the bottom and the back, so those boards are not cut. */
 export function isOpenCarcase(zones: CabinetZone[]): boolean {
-  return zones.length === 1 && zones[0].kind === 'APPLIANCE' && (zones[0].appliance === 'DISHWASHER' || zones[0].appliance === 'FRIDGE');
+  const a = zones.length === 1 && zones[0].kind === 'APPLIANCE' ? zones[0].appliance : undefined;
+  return a !== undefined && OPEN_BAY_APPLIANCES.includes(a);
 }
 
 export interface ZoneIssue {
@@ -81,7 +82,8 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout 
   let flex = fixed.map((h, i) => (h === undefined ? i : -1)).filter((i) => i >= 0);
   if (flex.length === 0) flex = [n - 1];
 
-  const available = cab.height - 2 * th - (n - 1) * divTh;
+  const openBay = isOpenCarcase(zones); // no bottom board: the appliance stands on the floor under the top rails
+  const available = cab.height - (openBay ? th : 2 * th) - (n - 1) * divTh;
   const fixedSum = fixed.reduce<number>((sum, h, i) => sum + (flex.includes(i) ? 0 : (h as number)), 0);
   const left = available - fixedSum;
   if (left < LIMITS.ZONE_HEIGHT_MM[0] * flex.length) { // every flexible zone needs its minimum, not only the total
@@ -95,7 +97,7 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout 
 
   const bands: ZoneBand[] = [];
   const dividerBottomsMm: number[] = [];
-  let cursor = th; // top of the bottom board
+  let cursor = openBay ? 0 : th; // top of the bottom board (the floor when there is none)
   for (let i = 0; i < n; i++) {
     const openingBottom = cursor;
     const openingTop = openingBottom + openings[i];

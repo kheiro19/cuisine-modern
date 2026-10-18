@@ -63,7 +63,7 @@ export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
  * Cabinets saved without `zones` are read as ONE zone made from frontConfig + shelvesCount (see math/zones.ts).
  */
 export type ZoneKind = 'DOORS' | 'DRAWERS' | 'OPEN' | 'APPLIANCE' | 'APRON';
-export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE';
+export type ApplianceKind = 'OVEN' | 'MICROWAVE' | 'COFFEE' | 'DISHWASHER' | 'FRIDGE' | 'WASHER' | 'DRYER' | 'UNDER_FRIDGE';
 
 export interface CabinetZone {
   kind: ZoneKind;
