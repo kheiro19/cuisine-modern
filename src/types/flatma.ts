@@ -75,8 +75,12 @@ export interface CabinetZone {
   shelves?: number;
   /** APPLIANCE only. The appliance is supplied by the customer: it adds a niche, never a price. */
   appliance?: ApplianceKind;
-  /** APPLIANCE only (dishwasher, fridge): a decor panel in the fronts material hides the appliance. */
+  /** APPLIANCE only (dishwasher, fridge, washer...): a decor panel in the fronts material hides the appliance. */
   panelFront?: boolean;
+  /** APPLIANCE only: the real size (mm) of the appliance, when it is not the standard niche of its kind. Each side missing = the standard. */
+  applianceSizeMm?: { w?: number; h?: number; d?: number };
+  /** APPLIANCE only: the piece of the accessories library that is drawn in the niche (src/data/accessoryCatalog.ts). */
+  libraryApplianceId?: string;
   /** How this zone's facades move (see rules/kinematics.ts). Missing = the default of the zone kind (doors swing, drawers slide). */
   kinematic?: KinematicId;
   /** DOORS / APPLIANCE only: one vertical board splits the zone into two columns (see math/columns.ts). Missing = one column, the whole width. */

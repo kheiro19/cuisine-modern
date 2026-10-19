@@ -16,8 +16,8 @@ import {
 } from '../types/flatma';
 import { EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
-import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, openingModeOf } from '../rules';
-import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
+import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, openingModeOf } from '../rules';
+import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { bandPricePerMeterDA } from './edgeBand';
 import { frontHardwareNeeds, shelfSpansOf } from './columns';
 import { hingesPerDoor } from './hinges';
@@ -126,7 +126,7 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
     if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
   });
 
-  if (constructionOf(cab.category).top === 'RAILS') {
+  if (topOf(cab) === 'RAILS') {
     parts.push(carcase('Top Stretcher Rail (Traverse)', PANEL.TRAVERSE_DEPTH_MM, inner, 2, 'horizontal', 'NONE'));
   } else {
     parts.push(carcase('Top Roof Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
@@ -405,7 +405,8 @@ export function priceCabinet(
   const appliances: ApplianceNote[] = zones.flatMap((z) => {
     if (z.kind !== 'APPLIANCE' || !z.appliance) return [];
     const s = APPLIANCES[z.appliance];
-    return [{ cabinetName: name, label: s.label, nicheWidthMm: s.nicheWidthMm, nicheHeightMm: s.nicheHeightMm, nicheDepthMm: s.nicheDepthMm, note: s.note }];
+    const n = nicheOf(z)!;
+    return [{ cabinetName: name, label: s.label, nicheWidthMm: n.w, nicheHeightMm: n.h, nicheDepthMm: n.d, note: s.note }];
   });
 
   const woodCostDA = parts.reduce((s, p) => s + p.boardCostDA, 0);

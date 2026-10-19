@@ -224,7 +224,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
     const [aw, ah, ad] = [m(a.sizeMm[0]), m(a.sizeMm[1]), m(a.sizeMm[2])];
     // A washer, a dryer, a dishwasher or a fridge standing in an open bay with nothing in front of it: it is drawn with the shapes of the
     // accessories library (round glass door, controls, handles) stretched to its niche, not as a grey box.
-    const look = a.frontVisible ? applianceLookOf(a.appliance) : undefined;
+    const look = a.frontVisible ? applianceLookOf(a.appliance, a.libraryId) : undefined;
     if (look) {
       const prims = modelPrims(look.model, a.sizeMm[0], a.sizeMm[1], a.sizeMm[2], look.opts, FINISHES[look.finish]);
       const o = off(applianceKey(a.zoneIndex));

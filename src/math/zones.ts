@@ -12,12 +12,12 @@ import { ApplianceKind, CabinetObject, CabinetZone } from '../types/flatma';
 import { LIMITS, PANEL, PULL_OUT, SPLIT } from './constants';
 import { SplitLayout, ZoneColumn, frontStripOf, splitLayoutOf } from './columns';
 import { golaSlotsOfZone } from './gola';
-import { APPLIANCES, OPEN_BAY_APPLIANCES } from '../rules/appliances';
+import { APPLIANCES, OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
 import { canUseGola } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
 import { KinematicId, validKinematic } from '../rules/kinematics';
 
-export { APPLIANCES } from '../rules/appliances';
+export { APPLIANCES, nicheOf } from '../rules/appliances';
 export type { ApplianceSpec } from '../rules/appliances';
 
 export const ZONE_LABELS: Record<CabinetZone['kind'], string> = {
@@ -130,11 +130,12 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout 
   bands.forEach((b) => {
     if (b.zone.kind !== 'APPLIANCE' || !b.zone.appliance) return;
     const spec = APPLIANCES[b.zone.appliance];
+    const n = nicheOf(b.zone)!;
     const room = b.split ? b.split.main.innerHiMm - b.split.main.innerLoMm : inner; // the appliance's own column when there is a board
-    if (room < spec.nicheWidthMm) issues.push({ code: 'APPLIANCE_TOO_NARROW', message: `${spec.label}: الفتحة تحتاج ${spec.nicheWidthMm} مم والعرض الداخلي ${Math.round(room)} مم (اجعل عرض الخزانة ${spec.nicheWidthMm + 2 * th} مم على الأقل).` });
-    if (!b.split && !open && inner - spec.nicheWidthMm >= SPLIT.WIDE_WARNING_MM) issues.push({ code: 'APPLIANCE_ZONE_WIDE', message: `${spec.label}: يبقى ${Math.round(inner - spec.nicheWidthMm)} مم بجانب الجهاز بلا ما يملؤه. أضف لوحًا عمودياً لتقسيم القسم إلى عمودين.` });
-    if (cab.depth < spec.nicheDepthMm) issues.push({ code: 'APPLIANCE_TOO_SHALLOW', message: `${spec.label}: العمق ${cab.depth} مم أقل من المطلوب ${spec.nicheDepthMm} مم.` });
-    if (b.openingHeightMm < spec.nicheHeightMm) issues.push({ code: 'APPLIANCE_ZONE_TOO_SHORT', message: `${spec.label}: ارتفاع القسم ${Math.round(b.openingHeightMm)} مم أقل من الفتحة المطلوبة ${spec.nicheHeightMm} مم.` });
+    if (room < n.w) issues.push({ code: 'APPLIANCE_TOO_NARROW', message: `${spec.label}: الفتحة تحتاج ${n.w} مم والعرض الداخلي ${Math.round(room)} مم (اجعل عرض الخزانة ${n.w + 2 * th} مم على الأقل).` });
+    if (!b.split && !open && inner - n.w >= SPLIT.WIDE_WARNING_MM) issues.push({ code: 'APPLIANCE_ZONE_WIDE', message: `${spec.label}: يبقى ${Math.round(inner - n.w)} مم بجانب الجهاز بلا ما يملؤه. أضف لوحًا عمودياً لتقسيم القسم إلى عمودين.` });
+    if (cab.depth < n.d) issues.push({ code: 'APPLIANCE_TOO_SHALLOW', message: `${spec.label}: العمق ${cab.depth} مم أقل من المطلوب ${n.d} مم.` });
+    if (b.openingHeightMm < n.h) issues.push({ code: 'APPLIANCE_ZONE_TOO_SHORT', message: `${spec.label}: ارتفاع القسم ${Math.round(b.openingHeightMm)} مم أقل من الفتحة المطلوبة ${n.h} مم.` });
   });
 
   return { bands, dividerBottomsMm, issues };

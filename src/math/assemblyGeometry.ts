@@ -6,9 +6,9 @@
 // (back face at -depth/2, front at +depth/2).
 import { ApplianceKind, CabinetObject } from '../types/flatma';
 import { PANEL, PULL_OUT } from './constants';
-import { FacadeMotion, constructionOf, dividerBoardsOf, motionOf } from '../rules';
+import { FacadeMotion, dividerBoardsOf, motionOf, topOf } from '../rules';
 import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
-import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, planFronts, zonesOf } from './zones';
+import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { frontStripOf, shelfSpansOf } from './columns';
 
 export interface BoxGeo {
@@ -43,6 +43,8 @@ export interface FacadeGeo extends Facade {
 export interface ApplianceGeo {
   zoneIndex: number;
   appliance: ApplianceKind;
+  /** The piece of the accessories library drawn in the niche, when the zone names one. */
+  libraryId?: string;
   /** True when nothing hides the appliance (no decor panel in front of it): its own front is what the client sees. */
   frontVisible: boolean;
   sizeMm: [number, number, number];
@@ -103,7 +105,7 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     });
   }
 
-  if (constructionOf(cab.category).top === 'RAILS') {
+  if (topOf(cab) === 'RAILS') {
     // Two stretcher rails flush with the front and the back (the front one used to float in the middle of the depth).
     const railZ = D / 2 - PANEL.TRAVERSE_DEPTH_MM / 2;
     boxes.push({ key: 'rail-front', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [W / 2, H - th / 2, railZ] });
@@ -154,14 +156,15 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   layout.bands.forEach((band) => {
     if (band.zone.kind !== 'APPLIANCE' || !band.zone.appliance) return;
     const spec = APPLIANCES[band.zone.appliance];
+    const niche = nicheOf(band.zone)!; // the standard of its kind, or the real size the user stated
     // With a vertical board the appliance sits in its own column; otherwise it is centred across the whole interior.
     const col = band.split?.main;
     const cx = col ? (col.innerLoMm + col.innerHiMm) / 2 : W / 2;
-    const w = Math.min((col ? col.innerHiMm - col.innerLoMm : inner) - 4, spec.nicheWidthMm);
-    const h = Math.min(band.openingHeightMm - 4, spec.nicheHeightMm);
-    const d = Math.min(D - 30, spec.nicheDepthMm);
+    const w = Math.min((col ? col.innerHiMm - col.innerLoMm : inner) - 4, niche.w);
+    const h = Math.min(band.openingHeightMm - 4, niche.h);
+    const d = Math.min(D - 30, niche.d);
     const cy = band.openingBottomMm + 2 + h / 2;
-    const geo: ApplianceGeo = { zoneIndex: band.index, appliance: band.zone.appliance, frontVisible: !band.zone.panelFront, sizeMm: [w, h, d], centerMm: [cx, cy, D / 2 - 2 - d / 2] };
+    const geo: ApplianceGeo = { zoneIndex: band.index, appliance: band.zone.appliance, ...(band.zone.libraryApplianceId ? { libraryId: band.zone.libraryApplianceId } : {}), frontVisible: !band.zone.panelFront, sizeMm: [w, h, d], centerMm: [cx, cy, D / 2 - 2 - d / 2] };
     const t = spec.frontTrim;
     if (t && !band.zone.panelFront) {
       // The frame stays inside the zone's own front space, so it never touches the fronts of the zones above and below.

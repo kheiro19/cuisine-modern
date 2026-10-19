@@ -33,7 +33,10 @@ test('explode: 0 = assembled; offsets scale linearly; every part moves in its na
   const one = F.explodeOffsets(geo, cab, 1), half = F.explodeOffsets(geo, cab, 0.5);
   Object.keys(one).forEach((k) => one[k].forEach((v, i) => assert.ok(Math.abs(half[k][i] - v / 2) < 1e-9, `${k} not linear`)));
   assert.ok(one['side-left'][0] < 0 && one['side-right'][0] > 0);
-  assert.ok(one['bottom'][1] < 0 && one['rail-front'][1] > 0 && one['rail-rear'][1] > 0);
+  assert.ok(one['bottom'][1] < 0 && one['roof'][1] > 0, 'a tall unit carries no worktop: its top is a closed roof');
+  assert.ok(!('rail-front' in one), 'no rails on a tall unit');
+  const low = build('Deep_Drawers'), lowOff = F.explodeOffsets(low.geo, low.cab, 1);
+  assert.ok(lowOff['rail-front'][1] > 0 && lowOff['rail-rear'][1] > 0 && !('roof' in lowOff), 'a base unit keeps the two rails the worktop rests on');
   assert.ok(one['back'][2] < 0);
   geo.facades.forEach((f) => assert.ok(one[G.facadeKey(f)][2] > 0, 'facades come forward'));
   const clamp = F.explodeOffsets(geo, cab, 7); assert.deepEqual(clamp, one);

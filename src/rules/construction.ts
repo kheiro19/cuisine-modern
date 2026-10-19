@@ -2,7 +2,7 @@
 // قواعد الهيكل الفيزيائي حسب فئة الخزانة: ما يغلق الأعلى، وما يثبّتها (أرجل أم حوامل تعليق).
 // الأرقام نفسها (عدد الأرجل والحوامل) في math/constants.ts؛ هنا من يطبّقها ومتى.
 import type { CabinetCategory } from '../types/flatma';
-import { HARDWARE_RULES } from '../math/constants';
+import { HARDWARE_RULES, LAYOUT } from '../math/constants';
 
 export interface ConstructionSpec {
   /** RAILS = عارضتان علويتان (سفلية، يعلوها الرخام). ROOF = لوح علوي كامل (معلّقة). */
@@ -26,6 +26,14 @@ export const CONSTRUCTION: Record<CabinetCategory, ConstructionSpec> = {
     fixing: { keyword: HARDWARE_RULES.HANGERS_KEYWORD, perUnit: HARDWARE_RULES.HANGERS_PER_WALL_UNIT, group: 'Wall Fixing System', missingCode: 'NO_HANGERS_IN_STOCK', noun: 'hangers' },
   },
 };
+
+/**
+ * The top board of a unit: two rails when the worktop rests on it (a floor unit not taller than LAYOUT.COUNTERTOP_MAX_UNIT_HEIGHT_MM),
+ * a full roof for everything else: wall units, and floor units too tall to carry the worktop (pantries, fridge and oven columns),
+ * which must be closed from above.
+ */
+export const topOf = (cab: { category: CabinetCategory; height: number }): 'RAILS' | 'ROOF' =>
+  cab.category === 'BASE_UNIT' && cab.height <= LAYOUT.COUNTERTOP_MAX_UNIT_HEIGHT_MM ? 'RAILS' : 'ROOF';
 
 /**
  * Boards between two zones: 1 = one board shared (the top of the lower zone and the bottom of the upper one),

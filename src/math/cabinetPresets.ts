@@ -24,7 +24,9 @@ import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templ
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
 import { openingModeOf, resolveOpeningMode } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
-import { OPEN_BAY_APPLIANCES } from '../rules/appliances';
+import { OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
+import { getAccessory } from '../data/accessoryCatalog';
+import { applianceKindOfItem } from './applianceModels';
 
 // القوالب نفسها (البيانات) في src/rules/templates/<family>.ts، ولكل عائلة ملفها. هنا فقط المسودة (draft) والتحويلات.
 export { SUBTYPES };
@@ -130,7 +132,39 @@ function normalizeZoneShape(z: CabinetZone, category: CabinetCategory): CabinetZ
   if (kind === 'OPEN') return { kind, heightMm: height, shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0) };
   if (kind === 'APRON') return { kind, heightMm: height };
   const appliance = z.appliance && APPLIANCE_KINDS.includes(z.appliance) ? z.appliance : 'OVEN';
-  return { kind: 'APPLIANCE', heightMm: height, appliance, panelFront: !!z.panelFront && OPEN_BAY_APPLIANCES.includes(appliance) };
+  // The real size of the appliance (each side the user left empty stays the standard of its kind) and the piece of the library drawn in the niche.
+  const size: { w?: number; h?: number; d?: number } = {};
+  for (const k of ['w', 'h', 'd'] as const) {
+    const v = z.applianceSizeMm?.[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) size[k] = clampInt(v, 50, 2700, v);
+  }
+  const item = z.libraryApplianceId ? getAccessory(z.libraryApplianceId) : undefined;
+  return {
+    kind: 'APPLIANCE',
+    heightMm: height,
+    appliance,
+    panelFront: !!z.panelFront && OPEN_BAY_APPLIANCES.includes(appliance),
+    ...(Object.keys(size).length > 0 ? { applianceSizeMm: size } : {}),
+    ...(item && applianceKindOfItem(item) === appliance ? { libraryApplianceId: item.id } : {}),
+  };
+}
+
+/**
+ * The cabinet that fits the appliance of its niche: the width of a cabinet holding only the appliance (niche + 4 mm clearance + the two
+ * sides), and the height and the depth when they are too small. Returns only what must change; the user decides to apply it.
+ */
+export function fitCabinetToAppliance(
+  d: Pick<CabinetDraft, 'width' | 'height' | 'depth' | 'zones'>,
+  th: number,
+): Partial<Pick<CabinetDraft, 'width' | 'height' | 'depth'>> {
+  const zone = d.zones.find((z) => z.kind === 'APPLIANCE' && z.appliance);
+  const n = zone ? nicheOf(zone) : undefined;
+  if (!n) return {};
+  const out: Partial<Pick<CabinetDraft, 'width' | 'height' | 'depth'>> = {};
+  if (d.zones.length === 1) out.width = Math.ceil(n.w + SPLIT.NICHE_CLEARANCE_MM + 2 * th);
+  if (isOpenCarcase(d.zones) && n.h + th + 4 > d.height) out.height = Math.ceil(n.h + th + 4); // the opening runs from the floor to the top rails
+  if (n.d + 30 > d.depth) out.depth = Math.ceil(n.d + 30);
+  return out;
 }
 
 /**

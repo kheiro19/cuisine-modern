@@ -1,7 +1,7 @@
 // src/rules/appliances.ts
 // مقاسات فتحات الأجهزة المدمجة (مللم). الجهاز يوفره الزبون: الفتحة فقط بلا سعر.
 // عدّل الأرقام هنا لتناسب مورّديك؛ الأقسام والـBOM والرسم كلها تتبعها.
-import type { ApplianceKind } from '../types/flatma';
+import type { ApplianceKind, CabinetZone } from '../types/flatma';
 
 export interface ApplianceSpec {
   label: string;
@@ -37,3 +37,12 @@ export const APPLIANCES: Record<ApplianceKind, ApplianceSpec> = {
   DRYER: { label: 'مجفف ملابس (تحت الرخامة)', nicheHeightMm: 820, nicheWidthMm: 596, nicheDepthMm: 580, note: 'يحتاج مخرج هواء أو مكثّفًا، وتهوية أمامية' },
   UNDER_FRIDGE: { label: 'ثلاجة صغيرة (تحت الرخامة)', nicheHeightMm: 820, nicheWidthMm: 596, nicheDepthMm: 550, note: 'تهوية أمامية وخلفية' },
 };
+
+/** The niche of an appliance zone: the standard of its kind, with the sizes the user stated (zone.applianceSizeMm) in place of it. */
+export function nicheOf(zone: CabinetZone): { w: number; h: number; d: number } | undefined {
+  if (zone.kind !== 'APPLIANCE' || !zone.appliance) return undefined;
+  const spec = APPLIANCES[zone.appliance];
+  const o = zone.applianceSizeMm ?? {};
+  const pick = (v: number | undefined, std: number) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : std);
+  return { w: pick(o.w, spec.nicheWidthMm), h: pick(o.h, spec.nicheHeightMm), d: pick(o.d, spec.nicheDepthMm) };
+}

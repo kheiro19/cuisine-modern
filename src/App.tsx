@@ -19,9 +19,11 @@ import {
   draftToCabinetPatch,
   draftToNewCabinet,
   draftToPreviewCabinet,
+  fitCabinetToAppliance,
   frontHardwareNeedsOf,
   resolveDraft,
 } from './math/cabinetPresets';
+import { libraryAppliances } from './math/applianceModels';
 import { nextPositionX } from './math/layout';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
@@ -442,6 +444,48 @@ export default function App() {
                           <input type="checkbox" checked={!!z.panelFront} onChange={(e) => updateZone(i, { panelFront: e.target.checked })} />
                           واجهة لوح
                         </label>
+                      )}
+                      {z.kind === 'APPLIANCE' && !!z.appliance && (
+                        <div className="basis-full flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-slate-200 bg-slate-50 p-1">
+                          <span className="font-bold text-slate-600">مقاس الجهاز (مم):</span>
+                          {(['w', 'h', 'd'] as const).map((k) => (
+                            <label key={k} className="flex items-center gap-1 font-bold">
+                              {k === 'w' ? 'عرض' : k === 'h' ? 'ارتفاع' : 'عمق'}
+                              <input
+                                type="number"
+                                min={50}
+                                max={2700}
+                                placeholder={String(APPLIANCES[z.appliance!][k === 'w' ? 'nicheWidthMm' : k === 'h' ? 'nicheHeightMm' : 'nicheDepthMm'])}
+                                value={raw?.applianceSizeMm?.[k] ?? ''}
+                                onChange={(e) => updateZone(i, { applianceSizeMm: { ...raw?.applianceSizeMm, [k]: e.target.value === '' ? undefined : Number(e.target.value) } })}
+                                onBlur={normalizeDraft}
+                                className="w-14 border p-0.5 text-center bg-white rounded"
+                              />
+                            </label>
+                          ))}
+                          <select
+                            value={z.libraryApplianceId ?? ''}
+                            onChange={(e) => {
+                              const entry = libraryAppliances().find((x) => x.item.id === e.target.value);
+                              if (!entry) return updateZone(i, { libraryApplianceId: undefined });
+                              replaceZone(i, { ...(raw ?? z), kind: 'APPLIANCE', appliance: entry.kind, libraryApplianceId: entry.item.id, applianceSizeMm: { w: entry.item.sizeMm.w, h: entry.item.sizeMm.h, d: entry.item.sizeMm.d } });
+                            }}
+                            className="border bg-white rounded p-0.5 max-w-[190px]"
+                            aria-label="جهاز من مكتبة الأجهزة"
+                          >
+                            <option value="">جهاز من المكتبة...</option>
+                            {libraryAppliances().map(({ item }) => (
+                              <option key={item.id} value={item.id}>{item.nameAr} ({item.sizeMm.w}×{item.sizeMm.h}×{item.sizeMm.d})</option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => patchDraft(fitCabinetToAppliance({ width: resolved.width, height: resolved.height, depth: resolved.depth, zones: resolved.zones }, woods.find((w) => w.id === resolved.carcaseMaterialId)?.thickness ?? 18))}
+                            className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
+                          >
+                            ضبط الخزانة على الجهاز
+                          </button>
+                        </div>
                       )}
                       {band && <span className="text-slate-500">الفتحة الفعلية: {Math.round(band.openingHeightMm)} مم</span>}
                       {z.kinematic && <span className={KINEMATICS[z.kinematic].status === 'PLANNED' ? 'text-amber-700' : 'text-slate-500'}>الحركة: {KINEMATICS[z.kinematic].label}{KINEMATICS[z.kinematic].status === 'PLANNED' ? ' (غير مجسَّدة بعد)' : ''}</span>}

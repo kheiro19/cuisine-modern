@@ -5,7 +5,7 @@
 // Swapping the side of the MAIN column moves the appliance left or right. Everything else (fronts, BOM, 3D, connectors) reads the
 // numbers computed here, so they cannot disagree. Thresholds: SPLIT in constants.ts.
 import { CabinetZone, ColumnFillChoice } from '../types/flatma';
-import { APPLIANCES } from '../rules/appliances';
+import { APPLIANCES, nicheOf } from '../rules/appliances';
 import { hardwareKindOfZone } from '../rules/kinematics';
 import { PANEL, SPLIT } from './constants';
 
@@ -63,7 +63,7 @@ export const resolveFill = (choice: ColumnFillChoice | undefined, innerWidthMm: 
 export function mainColumnWidthMm(zone: CabinetZone, innerWidthMm: number, boardMm: number): number {
   const stated = zone.split?.mainWidthMm;
   if (typeof stated === 'number' && Number.isFinite(stated) && stated > 0) return stated;
-  if (zone.kind === 'APPLIANCE' && zone.appliance) return APPLIANCES[zone.appliance].nicheWidthMm + SPLIT.NICHE_CLEARANCE_MM;
+  if (zone.kind === 'APPLIANCE' && zone.appliance) return (nicheOf(zone)?.w ?? APPLIANCES[zone.appliance].nicheWidthMm) + SPLIT.NICHE_CLEARANCE_MM;
   return Math.floor((innerWidthMm - boardMm) / 2);
 }
 
