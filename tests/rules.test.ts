@@ -16,7 +16,7 @@ test('families: four families, each with templates, and every template carries a
   assert.deepEqual(R.FAMILY_ORDER.slice().sort(), ['BASE', 'BUILT_IN', 'CORNER', 'WALL']);
   for (const f of R.FAMILY_ORDER) assert.ok(R.templatesOf(f).length > 0, `${f}: no templates`);
   for (const [key, t] of templates) assert.ok(R.FAMILIES[t.family], `${key}: unknown family`);
-  assert.equal(templates.length, 27, 'the 24 first templates and the 3 open bays (washer, dryer, under-counter fridge) are registered');
+  assert.equal(templates.length, 28, 'the 24 first templates, the 3 open bays (washer, dryer, under-counter fridge) and the wall blind corner are registered');
 });
 
 test('families: every kinematic a family lists exists, and a MODELLED one accepts the family category', () => {
