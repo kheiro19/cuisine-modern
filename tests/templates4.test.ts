@@ -14,17 +14,21 @@ const hw = (id, category, modelType, price = 300) => ({ id, category, brand: 'B'
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
 const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('slide', 'Drawer Slide Systems', 'Tandem'), hw('legs', 'Assembly & Fixing', 'Adjustable Kitchen Legs', 120), hw('hang', 'Assembly & Fixing', 'Cabinet Hanger Plates', 200)];
 
-test('templates: exactly four - floor, wall, and one blind corner of each level', () => {
-  assert.deepEqual(SUBTYPES.slice().sort(), ['Blind_Corner', 'Standard_Base', 'Standard_Wall', 'Wall_Blind_Corner']);
+test('templates: exactly four - floor, wall, and one real L corner of each level', () => {
+  assert.deepEqual(SUBTYPES.slice().sort(), ['L_Corner_Base', 'L_Corner_Wall', 'Standard_Base', 'Standard_Wall']);
   assert.deepEqual(FAMILY_ORDER, ['BASE', 'WALL', 'CORNER']);
   assert.deepEqual(Object.keys(FAMILIES).sort(), ['BASE', 'CORNER', 'WALL']);
   assert.deepEqual(templatesOf('BASE'), ['Standard_Base']);
   assert.deepEqual(templatesOf('WALL'), ['Standard_Wall']);
-  assert.deepEqual(templatesOf('CORNER').slice().sort(), ['Blind_Corner', 'Wall_Blind_Corner']);
+  assert.deepEqual(templatesOf('CORNER').slice().sort(), ['L_Corner_Base', 'L_Corner_Wall']);
   assert.deepEqual(TEMPLATES.Standard_Base.dims, { width: 600, height: 870, depth: 600 });
   assert.deepEqual(TEMPLATES.Standard_Wall.dims, { width: 600, height: 720, depth: 350 });
   assert.equal(TEMPLATES.Standard_Base.category, 'BASE_UNIT');
   assert.equal(TEMPLATES.Standard_Wall.category, 'WALL_UNIT');
+  assert.equal(TEMPLATES.L_Corner_Base.lCorner, true);
+  assert.equal(TEMPLATES.L_Corner_Wall.lCorner, true);
+  assert.equal(TEMPLATES.L_Corner_Wall.category, 'WALL_UNIT');
+  assert.ok(!TEMPLATES.Standard_Base.lCorner && !TEMPLATES.Standard_Wall.lCorner, 'only the two corners are built as an L unit');
 });
 
 test('templates: each of the four builds a real cabinet - priced, no design issue, drawing = cutting list', () => {

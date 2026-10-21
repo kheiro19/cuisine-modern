@@ -138,15 +138,26 @@ export default function App() {
   // The L corner: arm widths (the width of each door) and the level (floor or wall).
   const [armA, setArmA] = useState<number>(450);
   const [armB, setArmB] = useState<number>(450);
-  const [cornerCategory, setCornerCategory] = useState<CabinetCategory>('BASE_UNIT');
+  const [cornerWallRaw, setCornerWall] = useState<'B' | 'C'>('B');
   const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
-  const cornerDepth = (cornerCategory === 'WALL_UNIT' ? FAMILIES.WALL : FAMILIES.BASE).dims.depth;
   const fits = useMemo(() => fitStates(cabinets, layout), [cabinets, layout]);
 
   // The form keeps the raw typed values; this is the consistent version used for the preview and for saving.
   const resolved = useMemo(() => resolveDraft(draft, woods, hardwareItems, edgeRolls), [draft, woods, hardwareItems, edgeRolls]);
-  const previewCabinet = useMemo(() => draftToPreviewCabinet(resolved, woods), [resolved, woods]);
   const preset = SUBTYPE_PRESETS[resolved.subtype];
+  // A real L corner type is built as three boxes on the two walls of a corner (math/lCorner.ts), not from the form's size and zones.
+  const isCornerBuilder = !!preset.lCorner && !editing;
+  const cornerCategory: CabinetCategory = resolved.category;
+  const cornerDepth = (cornerCategory === 'WALL_UNIT' ? FAMILIES.WALL : FAMILIES.BASE).dims.depth;
+  const cornerWallList = cornerWalls(layout);
+  const cornerWall: 'B' | 'C' | undefined = cornerWallList.includes(cornerWallRaw) ? cornerWallRaw : cornerWallList[0];
+  const cornerTaken = (wall: 'B' | 'C') => cabinets.some((c) => !!c.groupId && c.category === cornerCategory && runOf(c) === wall);
+  // The preview of a corner shows ONE arm (the whole L appears in the showroom once it is added).
+  const previewCabinet = useMemo(() => {
+    if (!isCornerBuilder) return draftToPreviewCabinet(resolved, woods);
+    const arm = draftToPreviewCabinet({ ...resolved, width: cornerArm(armA), depth: cornerDepth, zones: resolved.zones.map((z) => (z.kind === 'DOORS' ? { ...z, hingeSide: 'RIGHT' as const } : z)) }, woods);
+    return { ...arm, omitSides: ['LEFT' as const] };
+  }, [resolved, woods, isCornerBuilder, armA, cornerDepth]);
 
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
@@ -202,9 +213,12 @@ export default function App() {
   // A design ERROR (zones taller than the cabinet...) would draw fronts outside the carcase and cut parts that do not fit.
   const blockingIssues = designIssues.filter((i) => i.severity === 'error');
   const canInject = canSave && blockingIssues.length === 0;
+  // A corner needs a wall that forms it (L or U layout) and no corner of this level already on that wall.
+  const canAddNow = canInject && (!isCornerBuilder || (!!cornerWall && !cornerTaken(cornerWall)));
 
   const handleSaveCabinet = () => {
-    if (!canInject) return;
+    if (!canAddNow) return;
+    if (isCornerBuilder) { if (cornerWall) handleAddLCorner(cornerWall); return; }
     if (editing) {
       updateCabinet(editing.id, draftToCabinetPatch(resolved));
       setEditingId(null);
@@ -223,7 +237,6 @@ export default function App() {
   };
 
   /** A real L corner on a side wall: the square and the two arms, as one unit (math/lCorner.ts). */
-  const cornerTaken = (wall: 'B' | 'C') => cabinets.some((c) => !!c.groupId && c.category === cornerCategory && runOf(c) === wall);
   const handleAddLCorner = (wall: 'B' | 'C') => {
     if (!canInject || cornerTaken(wall)) return;
     const groups = new Set(cabinets.map((c) => c.groupId).filter(Boolean)).size;
@@ -377,6 +390,11 @@ export default function App() {
                     ⚠️ {preset.note}
                   </span>
                 )}
+                {isCornerBuilder && (
+                  <span className="text-[9px] leading-snug bg-indigo-100/95 text-indigo-900 border border-indigo-300 rounded px-2 py-1" style={{ direction: 'rtl' }}>
+                    📐 معاينة ذراع واحد من الزاوية L. الزاوية كاملة (المربع والذراعان) تظهر في صالة العرض بعد الإضافة.
+                  </span>
+                )}
                 {!canSave && (
                   <span className="text-[9px] leading-snug bg-slate-100/95 text-slate-800 border border-slate-300 rounded px-2 py-1" style={{ direction: 'rtl' }}>
                     أضف لوحاً خشبياً من المخزن (العمود الأول) لتتمكن من حقن الوحدة.
@@ -499,37 +517,25 @@ export default function App() {
                   </div>
                 </div>
               )}
-              {cornerWalls(layout).length > 0 && (
-                <div className="border-t border-indigo-100 pt-1.5 space-y-1">
-                  <span className="font-bold text-[10px] block">📐 خزانة زاوية L حقيقية (ثلاثة صناديق بداخل واحد)</span>
-                  <div className="grid grid-cols-2 gap-1">
-                    {(['BASE_UNIT', 'WALL_UNIT'] as CabinetCategory[]).map((cat) => (
-                      <button key={cat} type="button" onClick={() => setCornerCategory(cat)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${cornerCategory === cat ? 'bg-indigo-100 border-indigo-400 text-indigo-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{cat === 'BASE_UNIT' ? 'سفلية' : 'علوية'}</button>
-                    ))}
-                  </div>
-                  <div className="grid grid-cols-2 gap-1 text-[10px]">
-                    <label className="flex items-center justify-between gap-1"><span>ذراع الخلفي</span>
-                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armA} onChange={(e) => setArmA(Number(e.target.value))} onBlur={() => setArmA(cornerArm(armA))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                    <label className="flex items-center justify-between gap-1"><span>ذراع الجانبي</span>
-                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armB} onChange={(e) => setArmB(Number(e.target.value))} onBlur={() => setArmB(cornerArm(armB))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                  </div>
-                  <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
-                    {(() => { const s = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${s.alongA} × ${s.alongSide} mm`; })()}
-                  </span>
-                  <div className={`grid gap-1 ${cornerWalls(layout).length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                    {cornerWalls(layout).map((w) => (
-                      <button key={w} type="button" disabled={!canInject || cornerTaken(w)} onClick={() => handleAddLCorner(w)}
-                        title={cornerTaken(w) ? 'توجد زاوية من هذا المستوى على هذا الجدار' : !canSave ? 'أضف لوحاً خشبياً من المخزن أولاً' : undefined}
-                        className={`rounded-md p-1.5 text-[10px] font-bold text-white ${!canInject || cornerTaken(w) ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer'}`}>
-                        ➕ زاوية {w === 'B' ? 'اليسار' : 'اليمين'}
-                      </button>
-                    ))}
-                  </div>
-                  {layout.type === 'U' && layout.widthMm < 2 * lCornerSpan({ depthMm: 600, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }).alongA && (
-                    <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">⚠️ الجدار الخلفي أقصر من زاويتين معاً: ستتداخل الزاويتان.</span>
-                  )}
-                </div>
-              )}
+              {/* مخطط صغير: الجدران المستعملة بلون واضح، والزوايا نقاط برتقالية. لا يبني شيئاً، فقط يوضّح أن هذا مطبخ بزوايا. */}
+              <div className="border-t border-indigo-100 pt-1.5 space-y-0.5">
+                <svg viewBox="0 0 160 96" className="w-full h-20" role="img" aria-label="مخطط المطبخ">
+                  {([['A', 20, 12, 140, 12], ['B', 20, 12, 20, 84], ['C', 140, 12, 140, 84]] as Array<[RunId, number, number, number, number]>).map(([r, x1, y1, x2, y2]) => {
+                    const on = layoutRuns.includes(r);
+                    return <line key={r} x1={x1} y1={y1} x2={x2} y2={y2} stroke={on ? '#4f46e5' : '#cbd5e1'} strokeWidth={on ? 5 : 2} strokeDasharray={on ? undefined : '4 3'} strokeLinecap="round" />;
+                  })}
+                  {layoutRuns.includes('B') && <circle cx={20} cy={12} r={6} fill="#f59e0b" />}
+                  {layoutRuns.includes('C') && <circle cx={140} cy={12} r={6} fill="#f59e0b" />}
+                  <text x={80} y={28} textAnchor="middle" fontSize={9} fill="#64748b">A</text>
+                  <text x={32} y={52} textAnchor="middle" fontSize={9} fill="#64748b">B</text>
+                  <text x={128} y={52} textAnchor="middle" fontSize={9} fill="#64748b">C</text>
+                </svg>
+                <span className="block text-[10px] leading-snug text-slate-600">
+                  {layout.type === 'STRAIGHT' && 'جدار واحد: لا توجد زوايا.'}
+                  {layout.type === 'L' && 'مطبخ L: جداران يلتقيان في زاوية واحدة (●). خزانة الزاوية تُضاف من أنواع الخزائن: «سفلية زاوية L» و«علوية زاوية L».'}
+                  {layout.type === 'U' && 'مطبخ U: ثلاثة جدران وزاويتان (●). خزانتا الزاويتين تُضافان من أنواع الخزائن: «سفلية زاوية L» و«علوية زاوية L».'}
+                </span>
+              </div>
             </div>
 
             {/* العائلة (4 أنواع) ثم قالب جاهز اختياري: القالب يضبط الخزانة الحقيقية فقط، وكل شيء بعده قابل للتعديل */}
@@ -546,14 +552,54 @@ export default function App() {
               </select>
             </div>
 
+            {/* زاوية L: ذراعان على جدارين. الأبعاد والأقسام تُحدَّد هنا لا من الاستمارة */}
+            {isCornerBuilder && (
+              <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-2 space-y-1.5">
+                <span className="font-bold text-[11px] block">📐 زاوية L: ذراعان على جدارين</span>
+                {cornerWallList.length === 0 ? (
+                  <span className="block text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">هذه الزاوية تحتاج مطبخاً بجدارين. اختر «شكل L» أو «شكل U» من لوحة «شكل المطبخ» أعلاه.</span>
+                ) : (
+                  <>
+                    {cornerWallList.length === 2 && (
+                      <div className="grid grid-cols-2 gap-1">
+                        {cornerWallList.map((w) => (
+                          <button key={w} type="button" onClick={() => setCornerWall(w)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${cornerWall === w ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
+                            زاوية {w === 'B' ? 'اليسار' : 'اليمين'}{cornerTaken(w) ? ' ✓' : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-1 text-[10px]">
+                      <label className="flex items-center justify-between gap-1"><span>عرض الذراع الخلفي</span>
+                        <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armA} onChange={(e) => setArmA(Number(e.target.value))} onBlur={() => setArmA(cornerArm(armA))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                      <label className="flex items-center justify-between gap-1"><span>عرض الذراع الجانبي</span>
+                        <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armB} onChange={(e) => setArmB(Number(e.target.value))} onBlur={() => setArmB(cornerArm(armB))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                    </div>
+                    <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
+                      {(() => { const sp = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${sp.alongA} × ${sp.alongSide} mm · ${cornerDepth}`; })()}
+                    </span>
+                    {cornerWall && cornerTaken(cornerWall) && (
+                      <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">توجد زاوية من هذا المستوى على هذا الجدار. احذفها أولاً لتغيير مقاساتها.</span>
+                    )}
+                    {layout.type === 'U' && layout.widthMm < 2 * lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }).alongA && (
+                      <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">⚠️ الجدار الخلفي أقصر من زاويتين معاً: ستتداخل الزاويتان.</span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            <div className={isCornerBuilder ? 'hidden' : 'contents'}>
             <div className="grid grid-cols-3 gap-1 text-[10px] bg-slate-50 p-1.5 rounded border" style={{ direction: 'ltr' }}>
               <div>W:<input type="number" min={LIMITS.WIDTH_MM[0]} max={LIMITS.WIDTH_MM[1]} value={draft.width} onChange={(e) => patchDraft({ width: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
               <div>H:<input type="number" min={LIMITS.HEIGHT_MM[0]} max={LIMITS.HEIGHT_MM[1]} value={draft.height} onChange={(e) => patchDraft({ height: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
               <div>D:<input type="number" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
             </div>
+            </div>
 
             {/* الأقسام: كل خزانة = كومة أقسام من الأسفل للأعلى، تُعرض هنا من الأعلى للأسفل */}
             <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
+              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-[10px]">الأقسام (من الأعلى للأسفل):</span>
                 <button type="button" onClick={addZone} disabled={resolved.zones.length >= LIMITS.ZONES[1]} className="px-2 py-0.5 rounded border border-indigo-300 bg-white text-indigo-700 text-[10px] font-bold hover:bg-indigo-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">➕ قسم</button>
@@ -704,6 +750,7 @@ export default function App() {
                   </div>
                 );
               })}
+              </div>
 
               {resolved.zones.length > 1 && (
                 <div className="flex items-center gap-1.5">
@@ -715,6 +762,7 @@ export default function App() {
                 </div>
               )}
 
+              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-[10px] whitespace-nowrap">نمط الفتح:</span>
                 <select value={resolved.openingMode} onChange={(e) => patchDraft({ openingMode: e.target.value as OpeningMode, golaSlots: [] })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
@@ -730,6 +778,7 @@ export default function App() {
                   أبواب زجاجية (إطار ألمنيوم + زجاج)
                 </label>
               )}
+              </div>
 
               {hasDoorZone && (doorOptions.length > 0 ? (
                 <div className="flex items-center gap-1.5">
@@ -859,8 +908,8 @@ export default function App() {
             </div>
 
             <div className="pt-1 space-y-1.5">
-              <button type="button" disabled={!canInject} title={blockingIssues.length > 0 ? 'أصلح الأخطاء المعلَّمة بـ ⛔ أولاً' : undefined} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canInject ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
-                {editing ? '💾 تحديث الوحدة المحددة' : '➕ حقن وتثبيت الوحدة في المطبخ'}
+              <button type="button" disabled={!canAddNow} title={blockingIssues.length > 0 ? 'أصلح الأخطاء المعلَّمة بـ ⛔ أولاً' : isCornerBuilder && !cornerWall ? 'اختر مطبخ L أو U أولاً' : undefined} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canAddNow ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
+                {editing ? '💾 تحديث الوحدة المحددة' : isCornerBuilder ? '➕ إضافة زاوية L إلى المطبخ' : '➕ حقن وتثبيت الوحدة في المطبخ'}
               </button>
               {editing && (
                 <button type="button" onClick={() => setEditingId(null)} className="w-full bg-white border border-slate-300 text-slate-700 font-bold py-1 rounded-lg text-[11px] hover:bg-slate-50 cursor-pointer">

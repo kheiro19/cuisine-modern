@@ -1,19 +1,21 @@
 // src/rules/templates/corner.ts — قوالب عائلة الزاوية (بيانات فقط).
+// الزاويتان هنا زاوية L حقيقية: عند الإضافة تُبنى وحدة من ثلاثة صناديق (مربع الزاوية وذراعان) داخلها متصل، على الجدارين اللذين يلتقيان
+// في الزاوية (math/lCorner.ts). تحتاج مطبخ L أو U. الأقسام والأبعاد تُحدَّد من عرض الذراعين، لا من الاستمارة.
 import { defineTemplates, doors } from './helpers';
 
 export const CORNER_TEMPLATES = defineTemplates('CORNER', {
-  // The blind corner works in a straight run: one door on the visible part, a fixed panel on the blind part that hides behind the first
-  // cabinet of the perpendicular run. The vertical board between them is the one of math/columns.ts. Turn mainSide to mirror it.
-  Blind_Corner: {
-    label: 'خزانة سفلية زاوية (عمياء)',
-    zones: [{ ...doors(1, 1), split: { mainSide: 'LEFT', mainWidthMm: 500, fill: 'PANEL' } }],
-    note: 'باب واحد على الجزء الظاهر (نحو 53 سم) ولوح سدّ ثابت على الجزء الأعمى، الذي يختفي خلف أول خزانة من الصف المتعامد. لعكس الاتجاه بدّل جهة العمود الرئيسي. للزاوية L الحقيقية (داخل متصل وبابان) اختر مطبخ L أو U وأضفها من لوحة «شكل المطبخ».',
+  L_Corner_Base: {
+    label: 'خزانة سفلية زاوية L',
+    zones: [doors(1, 0)],
+    lCorner: true,
+    note: 'زاوية L حقيقية: مربع 60×60 سم وذراعان لكل منهما باب، والداخل متصل بلا حاجز. تُضاف في مطبخ L أو U على الجدار الذي يشكّل الزاوية.',
   },
-  Wall_Blind_Corner: {
-    label: 'خزانة علوية زاوية (عمياء)',
-    zones: [{ ...doors(1, 1), split: { mainSide: 'LEFT', mainWidthMm: 420, fill: 'PANEL' } }],
+  L_Corner_Wall: {
+    label: 'خزانة علوية زاوية L',
+    zones: [doors(1, 0)],
     category: 'WALL_UNIT',
-    dims: { width: 900, height: 720, depth: 350 },
-    note: 'باب واحد على الجزء الظاهر (نحو 46 سم) ولوح سدّ ثابت على الجزء الأعمى خلف أول خزانة علوية من الصف المتعامد. لعكس الاتجاه بدّل جهة العمود الرئيسي. للزاوية L الحقيقية اختر مطبخ L أو U وأضفها من لوحة «شكل المطبخ».',
+    dims: { width: 800, height: 720, depth: 350 },
+    lCorner: true,
+    note: 'زاوية L علوية: مربع 35×35 سم وذراعان لكل منهما باب، والداخل متصل. تُضاف فوق الزاوية السفلية في مطبخ L أو U.',
   },
 });

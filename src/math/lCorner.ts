@@ -86,7 +86,7 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
       : [{ kind: 'DOORS', count: 1, shelves: 0, ...(box.hingeSide ? { hingeSide: box.hingeSide } : {}) }];
     const resolved = resolveDraft({
       ...b.draft,
-      subtype: p.category === 'WALL_UNIT' ? 'Wall_Blind_Corner' : 'Blind_Corner',
+      subtype: p.category === 'WALL_UNIT' ? 'L_Corner_Wall' : 'L_Corner_Base',
       category: p.category,
       width: box.width,
       height: family.dims.height,

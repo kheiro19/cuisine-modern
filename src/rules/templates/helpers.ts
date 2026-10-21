@@ -23,6 +23,8 @@ export interface TemplateInput {
   preferLift?: boolean;
   /** الآلية التي يعتمد عليها القالب. إن كانت PLANNED وجبت ملاحظة (يفرضها اختبار tests/rules.test.ts). */
   kinematic?: KinematicId;
+  /** زاوية L حقيقية: تُبنى كوحدة من ثلاثة صناديق في مطبخ L أو U (math/lCorner.ts) بدل خزانة واحدة. */
+  lCorner?: boolean;
   /** ما لا يجسّده المحرّك (3D / BOM / تكلفة) لهذا القالب. يُعرض للمستخدم ولا يُخفى. */
   note?: string;
 }

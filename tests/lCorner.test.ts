@@ -21,7 +21,7 @@ const BASE = { category: 'BASE_UNIT', depthMm: 600, armAMm: 450, armBMm: 450, ro
 const build = (over = {}) => {
   let n = 0;
   const p = { ...BASE, wall: 'B', ...over };
-  const list = lCornerCabinets(p, { draft: P.draftFromPreset('Blind_Corner'), woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g1', newId: () => `c${++n}`, name: 'L' });
+  const list = lCornerCabinets(p, { draft: P.draftFromPreset('L_Corner_Base'), woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g1', newId: () => `c${++n}`, name: 'L' });
   return { p, boxes: lCornerBoxes(p), cabs: list.map((c) => ({ ...c, carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 })) };
 };
 const geoOf = (cab) => G.assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: false, inset: false });
