@@ -10,6 +10,7 @@ import { FacadeMotion, dividerBoardsOf, motionOf, topOf } from '../rules';
 import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
 import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { frontStripOf, shelfSpansOf } from './columns';
+import { carcaseSidesOf } from './carcaseSides';
 
 export interface BoxGeo {
   key: string;
@@ -79,21 +80,23 @@ export interface AssemblyOptions {
 export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): AssemblyGeometry {
   const { carcaseTh: th, frontTh } = o;
   const W = cab.width, H = cab.height, D = cab.depth;
-  const inner = Math.max(0, W - 2 * th);
+  const sides = carcaseSidesOf(cab, th);
+  const inner = sides.innerMm;
+  const cx = sides.centerMm; // middle of the boards between the sides
   const zones = zonesOf(cab);
   const open = isOpenCarcase(zones);
   const layout = layoutZones(cab, th);
   const plan = planFronts(cab, layout);
   const boxes: BoxGeo[] = [];
 
-  boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
-  boxes.push({ key: 'side-right', kind: 'side', sizeMm: [th, H, D], centerMm: [W - th / 2, H / 2, 0] });
-  if (!open) boxes.push({ key: 'bottom', kind: 'bottom', sizeMm: [inner, th, D], centerMm: [W / 2, th / 2, 0] });
+  if (sides.left) boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
+  if (sides.right) boxes.push({ key: 'side-right', kind: 'side', sizeMm: [th, H, D], centerMm: [W - th / 2, H / 2, 0] });
+  if (!open) boxes.push({ key: 'bottom', kind: 'bottom', sizeMm: [inner, th, D], centerMm: [cx, th / 2, 0] });
   if (!open) {
     // One shared board per divider, or two glued face to face (rules/construction.ts).
     const boards = dividerBoardsOf(cab);
     layout.dividerBottomsMm.forEach((y, i) => {
-      for (let b = 0; b < boards; b++) boxes.push({ key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider', sizeMm: [inner, th, D], centerMm: [W / 2, y + b * th + th / 2, 0] });
+      for (let b = 0; b < boards; b++) boxes.push({ key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider', sizeMm: [inner, th, D], centerMm: [cx, y + b * th + th / 2, 0] });
     });
   }
 
@@ -108,10 +111,10 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   if (topOf(cab) === 'RAILS') {
     // Two stretcher rails flush with the front and the back (the front one used to float in the middle of the depth).
     const railZ = D / 2 - PANEL.TRAVERSE_DEPTH_MM / 2;
-    boxes.push({ key: 'rail-front', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [W / 2, H - th / 2, railZ] });
-    boxes.push({ key: 'rail-rear', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [W / 2, H - th / 2, -railZ] });
+    boxes.push({ key: 'rail-front', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [cx, H - th / 2, railZ] });
+    boxes.push({ key: 'rail-rear', kind: 'rail', sizeMm: [inner, th, PANEL.TRAVERSE_DEPTH_MM], centerMm: [cx, H - th / 2, -railZ] });
   } else {
-    boxes.push({ key: 'roof', kind: 'roof', sizeMm: [inner, th, D], centerMm: [W / 2, H - th / 2, 0] });
+    boxes.push({ key: 'roof', kind: 'roof', sizeMm: [inner, th, D], centerMm: [cx, H - th / 2, 0] });
   }
 
   // The back is an overlay glued on the rear face (the BOM cuts it width x height), not inside the carcase.

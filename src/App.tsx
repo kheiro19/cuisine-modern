@@ -24,11 +24,15 @@ import {
   resolveDraft,
 } from './math/cabinetPresets';
 import { libraryAppliances } from './math/applianceModels';
-import { nextPositionX } from './math/layout';
+import {
+  DEFAULT_LAYOUT, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WIDTH_LIMITS_MM,
+  cornerClearanceMm, cornerWalls, fitStates, nextFreeX, runOf, runsOf,
+} from './math/kitchenLayout';
+import { L_CORNER_LIMITS, lCornerCabinets, lCornerSpan } from './math/lCorner';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
-import { uid } from './math/utils';
-import { ApplianceKind, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, ZoneKind } from './types/flatma';
+import { clampInt, uid } from './math/utils';
+import { ApplianceKind, CabinetCategory, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, RunId, ZoneKind } from './types/flatma';
 import { APPLIANCES, ZONE_LABELS, isOpenCarcase, zonesOf } from './math/zones';
 import { OPEN_BAY_APPLIANCES } from './rules/appliances';
 import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
@@ -74,9 +78,10 @@ export default function App() {
     activeCabinetId,
     setActiveCabinetId,
     addCabinet,
+    addCabinets,
+    deleteCabinets,
     updateCabinet,
     updateManyCabinets,
-    deleteCabinet,
     triggerUndo,
     canUndo,
   } = useFurniture();
@@ -103,6 +108,22 @@ export default function App() {
   const [draft, setDraft] = useState<CabinetDraft>(() => draftFromPreset('Deep_Drawers'));
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = editingId ? cabinets.find((c) => c.id === editingId) ?? null : null;
+
+  // ---- the shape of the kitchen: straight, L or U (math/kitchenLayout.ts) ---------------------------------------
+  const [rawLayout, setRawLayout] = useState<KitchenLayout>(DEFAULT_LAYOUT);
+  const layout = useMemo<KitchenLayout>(() => ({ ...rawLayout, widthMm: clampInt(rawLayout.widthMm, WIDTH_LIMITS_MM[0], WIDTH_LIMITS_MM[1], DEFAULT_LAYOUT.widthMm) }), [rawLayout]);
+  const layoutRuns = runsOf(layout);
+  const [activeRunRaw, setActiveRun] = useState<RunId>('A');
+  const activeRun: RunId = layoutRuns.includes(activeRunRaw) ? activeRunRaw : 'A'; // the wall a new cabinet is added on
+  const handleLayoutChange = (fields: Partial<KitchenLayout>) => setRawLayout((prev) => ({ ...prev, ...fields }));
+
+  // The L corner: arm widths (the width of each door) and the level (floor or wall).
+  const [armA, setArmA] = useState<number>(450);
+  const [armB, setArmB] = useState<number>(450);
+  const [cornerCategory, setCornerCategory] = useState<CabinetCategory>('BASE_UNIT');
+  const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
+  const cornerDepth = (cornerCategory === 'WALL_UNIT' ? FAMILIES.WALL : FAMILIES.BASE).dims.depth;
+  const fits = useMemo(() => fitStates(cabinets, layout), [cabinets, layout]);
 
   // The form keeps the raw typed values; this is the consistent version used for the preview and for saving.
   const resolved = useMemo(() => resolveDraft(draft, woods, hardwareItems, edgeRolls), [draft, woods, hardwareItems, edgeRolls]);
@@ -171,13 +192,27 @@ export default function App() {
       setEditingId(null);
       return;
     }
-    addCabinet(
-      draftToNewCabinet(resolved, {
+    // A side wall starts after whatever stands in its corner on the back wall; a straight kitchen starts at 0 as it always did.
+    const from = cornerClearanceMm(cabinets, layout, activeRun, resolved.category);
+    addCabinet({
+      ...draftToNewCabinet(resolved, {
         id: uid('cab'),
         name: `${preset.label} #${cabinets.length + 1}`,
-        positionX: nextPositionX(cabinets, resolved.category),
+        positionX: nextFreeX(cabinets, activeRun, resolved.category, resolved.width, from),
       }),
-    );
+      ...(activeRun !== 'A' ? { run: activeRun } : {}),
+    });
+  };
+
+  /** A real L corner on a side wall: the square and the two arms, as one unit (math/lCorner.ts). */
+  const cornerTaken = (wall: 'B' | 'C') => cabinets.some((c) => !!c.groupId && c.category === cornerCategory && runOf(c) === wall);
+  const handleAddLCorner = (wall: 'B' | 'C') => {
+    if (!canInject || cornerTaken(wall)) return;
+    const groups = new Set(cabinets.map((c) => c.groupId).filter(Boolean)).size;
+    addCabinets(lCornerCabinets(
+      { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) },
+      { draft: resolved, woods, hardware: hardwareItems, edgeRolls, groupId: uid('lc'), newId: () => uid('cab'), name: `خزانة زاوية L ${cornerCategory === 'WALL_UNIT' ? 'علوية' : 'سفلية'} #${groups + 1}` },
+    ));
   };
 
   const handleEditCabinet = (id: string) => {
@@ -191,9 +226,12 @@ export default function App() {
   const handleDeleteFromList = (id: string) => {
     const cab = cabinets.find((c) => c.id === id);
     if (!cab) return;
-    if (!window.confirm(`حذف الخزانة «${cab.name}» نهائياً؟`)) return;
-    deleteCabinet(id);
-    if (editingId === id) setEditingId(null);
+    // The boxes of an L corner are one unit: deleting one deletes the group.
+    const ids = cab.groupId ? cabinets.filter((c) => c.groupId === cab.groupId).map((c) => c.id) : [id];
+    const label = cab.groupId ? cab.name.split(' — ')[0] : cab.name;
+    if (!window.confirm(`حذف الخزانة «${label}» نهائياً؟`)) return;
+    deleteCabinets(ids);
+    if (editingId && ids.includes(editingId)) setEditingId(null);
   };
 
   /** Texture picked in the showcase: look only, stored apart from the stock material. Empty path = back to stock. */
@@ -215,6 +253,27 @@ export default function App() {
     setInvoiceText(formatCustomerInvoiceText(generateCustomerInvoice(report)));
     setBomReportText('');
   };
+
+  // The installed units as the list shows them: an L corner (a group) is one row, everything else one row per cabinet.
+  type ListRow = { kind: 'single'; cab: CabinetObject } | { kind: 'group'; groupId: string; name: string; cabs: CabinetObject[] };
+  const listRows = useMemo<ListRow[]>(() => {
+    const rows: ListRow[] = [];
+    const seen = new Set<string>();
+    cabinets.forEach((c) => {
+      if (!c.groupId) { rows.push({ kind: 'single', cab: c }); return; }
+      if (seen.has(c.groupId)) return;
+      seen.add(c.groupId);
+      const cabs = cabinets.filter((x) => x.groupId === c.groupId);
+      rows.push({ kind: 'group', groupId: c.groupId, name: c.name.split(' — ')[0], cabs });
+    });
+    return rows;
+  }, [cabinets]);
+  // Red = takes the place of another unit; green = flush against its neighbour; the editing / active frame otherwise.
+  const fitClass = (id: string, isEditing: boolean, isActive = false): string =>
+    fits[id] === 'OVERLAP' ? 'border-red-500 bg-red-50'
+    : isEditing ? 'border-indigo-500 bg-indigo-50'
+    : fits[id] === 'TOUCHING' ? 'border-emerald-500 bg-emerald-50'
+    : isActive ? 'border-slate-400 bg-slate-50' : 'border-slate-200';
 
   const gridLayoutClass = useMemo(() => {
     if (isWorkspaceMinimized) return "grid-cols-1 xl:grid-cols-12";
@@ -338,13 +397,16 @@ export default function App() {
                 showFronts={showFronts}
                 isXRayMode={isXRayMode}
                 countertopPath={countertopPath}
+                layout={layout}
                 woodPanels={woods}
                 hardwareItems={hardwareItems}
                 accessories={accessories}
                 onApplyTextureOverride={handleApplyTexture}
                 onDeleteCabinet={(id) => {
-                  deleteCabinet(id);
-                  if (editingId === id) setEditingId(null);
+                  const cab = cabinets.find((c) => c.id === id);
+                  const ids = cab?.groupId ? cabinets.filter((c) => c.groupId === cab.groupId).map((c) => c.id) : [id];
+                  deleteCabinets(ids);
+                  if (editingId && ids.includes(editingId)) setEditingId(null);
                 }}
               />
             </div>
@@ -366,6 +428,75 @@ export default function App() {
         {!isWorkspaceMinimized && (
           <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs animate-fade-in max-h-[750px] overflow-y-auto" style={{ direction: 'rtl' }}>
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
+
+            {/* 🏠 شكل المطبخ: مستقيم أو L أو U، والجدار الذي تُضاف عليه الخزانة، وخزانة الزاوية L الحقيقية */}
+            <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-2 space-y-1.5">
+              <span className="font-bold text-[11px] block">🏠 شكل المطبخ</span>
+              <div className="grid grid-cols-3 gap-1">
+                {(['STRAIGHT', 'L', 'U'] as LayoutType[]).map((t) => (
+                  <button key={t} type="button" onClick={() => handleLayoutChange({ type: t })} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${layout.type === t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{LAYOUT_LABELS[t]}</button>
+                ))}
+              </div>
+              {layout.type !== 'STRAIGHT' && (
+                <label className="flex items-center justify-between gap-2 text-[10px]">
+                  <span>طول الجدار الخلفي (مم)</span>
+                  <input type="number" min={WIDTH_LIMITS_MM[0]} max={WIDTH_LIMITS_MM[1]} step={100} value={rawLayout.widthMm}
+                    onChange={(e) => handleLayoutChange({ widthMm: Number(e.target.value) })}
+                    onBlur={() => handleLayoutChange({ widthMm: layout.widthMm })}
+                    className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
+                </label>
+              )}
+              {layout.type === 'L' && (
+                <div className="grid grid-cols-2 gap-1">
+                  {(['LEFT', 'RIGHT'] as const).map((side) => (
+                    <button key={side} type="button" onClick={() => handleLayoutChange({ lSide: side })} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${layout.lSide === side ? 'bg-indigo-100 border-indigo-400 text-indigo-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
+                      {side === 'LEFT' ? 'الجدار الجانبي على اليسار' : 'الجدار الجانبي على اليمين'}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {layoutRuns.length > 1 && (
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-slate-600 block">الجدار الذي تُضاف عليه الخزانة الجديدة:</span>
+                  <div className={`grid gap-1 ${layoutRuns.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
+                    {layoutRuns.map((r) => (
+                      <button key={r} type="button" onClick={() => setActiveRun(r)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${activeRun === r ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{RUN_LABELS[r]}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {cornerWalls(layout).length > 0 && (
+                <div className="border-t border-indigo-100 pt-1.5 space-y-1">
+                  <span className="font-bold text-[10px] block">📐 خزانة زاوية L حقيقية (ثلاثة صناديق بداخل واحد)</span>
+                  <div className="grid grid-cols-2 gap-1">
+                    {(['BASE_UNIT', 'WALL_UNIT'] as CabinetCategory[]).map((cat) => (
+                      <button key={cat} type="button" onClick={() => setCornerCategory(cat)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${cornerCategory === cat ? 'bg-indigo-100 border-indigo-400 text-indigo-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>{cat === 'BASE_UNIT' ? 'سفلية' : 'علوية'}</button>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-1 text-[10px]">
+                    <label className="flex items-center justify-between gap-1"><span>ذراع الخلفي</span>
+                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armA} onChange={(e) => setArmA(Number(e.target.value))} onBlur={() => setArmA(cornerArm(armA))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                    <label className="flex items-center justify-between gap-1"><span>ذراع الجانبي</span>
+                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armB} onChange={(e) => setArmB(Number(e.target.value))} onBlur={() => setArmB(cornerArm(armB))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                  </div>
+                  <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
+                    {(() => { const s = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${s.alongA} × ${s.alongSide} mm`; })()}
+                  </span>
+                  <div className={`grid gap-1 ${cornerWalls(layout).length === 2 ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                    {cornerWalls(layout).map((w) => (
+                      <button key={w} type="button" disabled={!canInject || cornerTaken(w)} onClick={() => handleAddLCorner(w)}
+                        title={cornerTaken(w) ? 'توجد زاوية من هذا المستوى على هذا الجدار' : !canSave ? 'أضف لوحاً خشبياً من المخزن أولاً' : undefined}
+                        className={`rounded-md p-1.5 text-[10px] font-bold text-white ${!canInject || cornerTaken(w) ? 'bg-slate-300 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer'}`}>
+                        ➕ زاوية {w === 'B' ? 'اليسار' : 'اليمين'}
+                      </button>
+                    ))}
+                  </div>
+                  {layout.type === 'U' && layout.widthMm < 2 * lCornerSpan({ depthMm: 600, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }).alongA && (
+                    <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">⚠️ الجدار الخلفي أقصر من زاويتين معاً: ستتداخل الزاويتان.</span>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* العائلة (4 أنواع) ثم قالب جاهز اختياري: القالب يضبط الخزانة الحقيقية فقط، وكل شيء بعده قابل للتعديل */}
             <div className="space-y-1">
@@ -702,10 +833,27 @@ export default function App() {
             <div className="border-t border-slate-100 pt-2 space-y-1">
               <span className="font-bold text-[11px] block">🗂️ الوحدات المثبّتة ({cabinets.length})</span>
               {cabinets.length === 0 && <span className="text-[10px] text-slate-400 block">لا توجد وحدات بعد.</span>}
-              {cabinets.map((c) => (
-                <div key={c.id} className={`flex items-center justify-between gap-1 border rounded p-1 text-[10px] ${c.id === editing?.id ? 'border-indigo-500 bg-indigo-50' : c.id === activeCabinetId ? 'border-slate-400 bg-slate-50' : 'border-slate-200'}`}>
+              {listRows.map((row) => row.kind === 'group' ? (
+                <div key={row.groupId} className="border border-indigo-200 bg-indigo-50/40 rounded p-1 text-[10px] space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <div className="min-w-0">
+                      <div className="font-bold truncate" title={row.name}>📐 {row.name}</div>
+                      <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{row.cabs.length} boxes · {row.cabs[0].category === 'WALL_UNIT' ? 'wall' : 'base'} · {row.cabs.reduce((s, x) => s + x.calculatedCostDA, 0).toLocaleString('fr-DZ')} دج</div>
+                    </div>
+                    <button type="button" onClick={() => handleDeleteFromList(row.cabs[0].id)} title="حذف الزاوية كلها" className="px-1.5 py-0.5 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer">🗑</button>
+                  </div>
+                  {row.cabs.map((c) => (
+                    <div key={c.id} onClick={() => setActiveCabinetId(c.id)} className={`flex items-center justify-between gap-1 border rounded px-1 py-0.5 cursor-pointer ${fitClass(c.id, c.id === editing?.id)}`}>
+                      <span className="truncate" title={c.name}>{c.name.split(' — ')[1] ?? c.name} <span className="text-slate-400 font-mono">· {RUN_LABELS[runOf(c)]} · {c.width}</span></span>
+                      <button type="button" onClick={(e) => { e.stopPropagation(); handleEditCabinet(c.id); }} title="تعديل" className="px-1 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">✏️</button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                (() => { const c = row.cab; return (
+                <div key={c.id} className={`flex items-center justify-between gap-1 border rounded p-1 text-[10px] ${fitClass(c.id, c.id === editing?.id, c.id === activeCabinetId)}`}>
                   <div className="min-w-0">
-                    <div className="font-bold truncate" title={c.name}>{c.name}</div>
+                    <div className="font-bold truncate" title={c.name}>{c.name}{layoutRuns.length > 1 || runOf(c) !== 'A' ? <span className="text-slate-400 font-normal"> · {RUN_LABELS[runOf(c)]}</span> : null}</div>
                     <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{c.width}×{c.height}×{c.depth} · {frontSummary(c)} · {c.calculatedCostDA.toLocaleString('fr-DZ')} دج</div>
                   </div>
                   <div className="flex gap-1 shrink-0">
@@ -713,6 +861,7 @@ export default function App() {
                     <button type="button" onClick={() => handleDeleteFromList(c.id)} title="حذف" className="px-1.5 py-0.5 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer">🗑</button>
                   </div>
                 </div>
+                ); })()
               ))}
             </div>
           </div>

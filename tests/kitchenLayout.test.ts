@@ -1,0 +1,78 @@
+// @ts-nocheck  (plain node:test file, run with: npm test)
+// L and U kitchens: which walls a layout uses, how a run's frame maps to the floor plan, who overlaps whom.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as K from '../src/math/kitchenLayout';
+
+const L = (over = {}) => ({ type: 'L', widthMm: 3000, lSide: 'LEFT', ...over });
+const U = { type: 'U', widthMm: 3000, lSide: 'LEFT' };
+const cab = (id, run, positionX, width, over = {}) => ({ id, run, positionX, positionZ: 0, width, depth: 600, category: 'BASE_UNIT', ...over });
+
+// What the three.js group does: rotate about y by theta, then translate. x' = x cos + z sin ; z' = -x sin + z cos.
+const world = (layout, run, xFrame, zFrame) => {
+  const f = K.runFrame(layout, run);
+  return { x: f.xMm + xFrame * Math.cos(f.rotY) + zFrame * Math.sin(f.rotY), z: f.zMm - xFrame * Math.sin(f.rotY) + zFrame * Math.cos(f.rotY) };
+};
+const near = (a, b) => Math.abs(a - b) < 1e-6;
+
+test('layout: a straight kitchen has one wall, an L two (left or right), a U three', () => {
+  assert.deepEqual(K.runsOf(K.DEFAULT_LAYOUT), ['A']);
+  assert.deepEqual(K.runsOf(L()), ['A', 'B']);
+  assert.deepEqual(K.runsOf(L({ lSide: 'RIGHT' })), ['A', 'C']);
+  assert.deepEqual(K.runsOf(U), ['A', 'B', 'C']);
+  assert.deepEqual(K.cornerWalls(U), ['B', 'C']);
+  assert.deepEqual(K.cornerWalls(K.DEFAULT_LAYOUT), []);
+  assert.equal(K.runOf({}), 'A', 'older cabinets without a run stand on the back wall');
+});
+
+test('frames: a cabinet at distance p..p+w from the corner lands at z = p..p+w on BOTH side walls, fronts facing the room', () => {
+  const w = 450, p = 600, depth = 600;
+  // left wall (B): the frame is turned +90 degrees, x runs towards the corner
+  const b = K.toFrame({ positionX: p, width: w }, 'B');
+  assert.equal(b.positionX, -(p + w));
+  const bLo = world(U, 'B', b.positionX, 0), bHi = world(U, 'B', b.positionX + w, 0);
+  assert.ok(near(bLo.z, p + w) && near(bHi.z, p), 'B: spans p..p+w from the corner');
+  assert.ok(near(world(U, 'B', 0, depth).x, depth) && near(world(U, 'B', 0, 0).x, 0), 'B: the back is on the wall x = 0, the front towards +x');
+  // right wall (C): turned -90 degrees, x runs away from the corner
+  const c = K.toFrame({ positionX: p, width: w }, 'C');
+  assert.equal(c.positionX, p);
+  assert.ok(near(world(U, 'C', c.positionX, 0).z, p) && near(world(U, 'C', c.positionX + w, 0).z, p + w), 'C: spans p..p+w from the corner');
+  assert.ok(near(world(U, 'C', 0, 0).x, 3000) && near(world(U, 'C', 0, depth).x, 3000 - depth), 'C: the back is on the wall x = 3000, the front towards -x');
+  // the back wall is untouched
+  assert.deepEqual(K.runFrame(U, 'A'), { xMm: 0, zMm: 0, rotY: 0 });
+  assert.equal(K.alongToFrame(700, 'B'), -700);
+  assert.equal(K.alongToFrame(700, 'C'), 700);
+});
+
+test('footprints: the same floor plan whichever way the wall runs', () => {
+  const r = (c) => K.footprintOf(c, U);
+  assert.deepEqual(r(cab('a', 'A', 100, 600)), { x0: 100, x1: 700, z0: 0, z1: 600 });
+  assert.deepEqual(r(cab('b', 'B', 600, 450)), { x0: 0, x1: 600, z0: 600, z1: 1050 });
+  assert.deepEqual(r(cab('c', 'C', 600, 450)), { x0: 2400, x1: 3000, z0: 600, z1: 1050 });
+});
+
+test('fit: overlaps are found along a wall and across the corner; flush neighbours are only touching', () => {
+  const ok = [cab('a1', 'A', 0, 600), cab('a2', 'A', 600, 600), cab('b1', 'B', 600, 600), cab('c1', 'C', 600, 600)];
+  const s = K.fitStates(ok, U);
+  assert.deepEqual(Object.values(s), ['TOUCHING', 'TOUCHING', 'FREE', 'FREE']);
+  const clash = K.fitStates([cab('a1', 'A', 0, 600), cab('a2', 'A', 500, 600)], U);
+  assert.deepEqual(Object.values(clash), ['OVERLAP', 'OVERLAP']);
+  // a left-wall cabinet that starts at the corner sits inside the back-wall cabinet of the corner square
+  const corner = K.fitStates([cab('a', 'A', 0, 600), cab('b', 'B', 0, 600)], U);
+  assert.deepEqual(Object.values(corner), ['OVERLAP', 'OVERLAP']);
+  // a wall unit above a base unit is another level: never a clash
+  assert.deepEqual(Object.values(K.fitStates([cab('f', 'A', 0, 600), cab('w', 'A', 0, 600, { category: 'WALL_UNIT', depth: 350 })], U)), ['FREE', 'FREE']);
+  // units of one group (an L corner) share their faces on purpose
+  const g = K.fitStates([cab('x', 'A', 0, 600, { groupId: 'g' }), cab('y', 'B', 0, 600, { groupId: 'g' })], U);
+  assert.deepEqual(Object.values(g), ['FREE', 'FREE']);
+});
+
+test('next free place: appended after the last one, or into a gap that is big enough', () => {
+  const row = [cab('a', 'A', 0, 600), cab('b', 'A', 1200, 600), cab('c', 'B', 0, 600)];
+  assert.equal(K.nextFreeX(row, 'A', 'BASE_UNIT', 600), 600, 'the gap between the two');
+  assert.equal(K.nextFreeX(row, 'A', 'BASE_UNIT', 700), 1800, 'too wide for the gap: after the last');
+  assert.equal(K.nextFreeX(row, 'B', 'BASE_UNIT', 600), 600);
+  assert.equal(K.nextFreeX(row, 'C', 'BASE_UNIT', 600), 0, 'an empty wall');
+  assert.equal(K.nextFreeX(row, 'A', 'WALL_UNIT', 600), 0, 'wall units are a separate row');
+  assert.equal(K.nextFreeX(row, 'B', 'BASE_UNIT', 450, 600), 600, 'starting after the corner');
+});

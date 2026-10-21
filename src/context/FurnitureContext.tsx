@@ -12,6 +12,9 @@ interface FurnitureContextType {
   activeCabinetId: string;
   setActiveCabinetId: (id: string) => void;
   addCabinet: (cabinet: Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>) => void;
+  /** Several cabinets at once (an L corner is three boxes): ONE undo step. */
+  addCabinets: (cabinets: Array<Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>>) => void;
+  deleteCabinets: (ids: string[]) => void;
   updateCabinet: (id: string, fields: Partial<CabinetObject>) => void;
   /** Same change on several cabinets with ONE undo step. */
   updateManyCabinets: (ids: string[], fields: Partial<CabinetObject>) => void;
@@ -94,6 +97,22 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     setActiveCabinetId(finalCabinet.id);
   };
 
+  const addCabinets = (list: Array<Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>>) => {
+    if (list.length === 0) return;
+    saveToHistory(cabinetsRef.current);
+    const made = list.map(f => refresh({ ...f, carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 }));
+    commit([...cabinetsRef.current, ...made]);
+    setActiveCabinetId(made[0].id);
+  };
+
+  const deleteCabinets = (ids: string[]) => {
+    const gone = new Set(ids);
+    if (!cabinetsRef.current.some(c => gone.has(c.id))) return;
+    saveToHistory(cabinetsRef.current);
+    commit(cabinetsRef.current.filter(cab => !gone.has(cab.id)));
+    if (gone.has(activeCabinetId)) setActiveCabinetId('');
+  };
+
   const updateManyCabinets = (ids: string[], fields: Partial<CabinetObject>) => {
     const targets = new Set(ids);
     if (!cabinetsRef.current.some(c => targets.has(c.id))) return;
@@ -155,6 +174,8 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       activeCabinetId,
       setActiveCabinetId,
       addCabinet,
+      addCabinets,
+      deleteCabinets,
       updateCabinet,
       updateManyCabinets,
       deleteCabinet,

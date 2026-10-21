@@ -127,7 +127,7 @@ function normalizeZoneShape(z: CabinetZone, category: CabinetCategory): CabinetZ
   const height = typeof z.heightMm === 'number' && Number.isFinite(z.heightMm) && z.heightMm > 0
     ? clampInt(z.heightMm, LIMITS.ZONE_HEIGHT_MM[0], LIMITS.ZONE_HEIGHT_MM[1], LIMITS.ZONE_HEIGHT_MM[0])
     : undefined;
-  if (kind === 'DOORS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2), shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0) };
+  if (kind === 'DOORS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2), shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0), ...(z.hingeSide === 'LEFT' || z.hingeSide === 'RIGHT' ? { hingeSide: z.hingeSide } : {}) };
   if (kind === 'DRAWERS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2) };
   if (kind === 'OPEN') return { kind, heightMm: height, shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0) };
   if (kind === 'APRON') return { kind, heightMm: height };

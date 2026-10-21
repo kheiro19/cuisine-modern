@@ -55,6 +55,8 @@ export interface WorkshopInventoryState {
 // ========================================================
 
 export type CabinetCategory = 'BASE_UNIT' | 'WALL_UNIT';
+/** A = back wall, B = left wall, C = right wall. */
+export type RunId = 'A' | 'B' | 'C';
 export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
 
 /**
@@ -85,6 +87,8 @@ export interface CabinetZone {
   kinematic?: KinematicId;
   /** DOORS / APPLIANCE only: one vertical board splits the zone into two columns (see math/columns.ts). Missing = one column, the whole width. */
   split?: ZoneSplit;
+  /** DOORS only, no split: the side the hinges are on, for every door of the zone. Missing = the first door on the left, then alternating. */
+  hingeSide?: 'LEFT' | 'RIGHT';
 }
 
 /** What fills the second column of a split zone. AUTO (or missing) = suggested from its width (math/columns.ts). */
@@ -163,6 +167,13 @@ export interface CabinetObject {
   /** GLASS: aluminium frame + glass pane (also assumed when the front sheet's type says glass). */
   frontStyle?: 'SOLID' | 'GLASS';
   
+  /** The wall the unit stands against: A = back wall (default), B = left wall, C = right wall (L and U kitchens, math/kitchenLayout.ts). */
+  run?: RunId;
+  /** Boxes made together that are ONE unit for the user (an L corner is three boxes, math/lCorner.ts). */
+  groupId?: string;
+  /** Sides that are not cut because the neighbouring box of the same group is open to this one (the interior of an L corner is continuous). */
+  omitSides?: Array<'LEFT' | 'RIGHT'>;
+
   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
   frontTextureOverride?: FrontTextureOverride;
 

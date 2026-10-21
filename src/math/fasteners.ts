@@ -52,10 +52,11 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
   const out: Fastener[] = [];
   const { carcaseTh: th, frontTh } = o;
   const W = cab.width, H = cab.height, D = cab.depth;
-  const sides: Array<{ key: string; xFace: number; dir: 1 | -1 }> = [
+  // A box of an L corner may have no side on the face it shares with its neighbour (carcaseSides.ts): nothing is bolted there.
+  const sides: Array<{ key: string; xFace: number; dir: 1 | -1 }> = ([
     { key: 'side-left', xFace: th, dir: 1 },
     { key: 'side-right', xFace: W - th, dir: -1 },
-  ];
+  ] as Array<{ key: string; xFace: number; dir: 1 | -1 }>).filter((s) => geo.boxes.some((b) => b.key === s.key));
 
   // ---- board-to-side joints: a cam bolt (screwed into the side) + its cam housing (in the board) + a dowel
   geo.boxes.filter((b) => b.kind === 'bottom' || b.kind === 'divider' || b.kind === 'rail' || b.kind === 'roof').forEach((b: BoxGeo) => {
@@ -97,6 +98,7 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     const reach = (b.sizeMm[0] + PANEL.SHELF_WIDTH_CLEARANCE_MM) / 2; // the shelf plus its clearance: up to the board it rests against
     [{ xFace: cx - reach, dir: 1 as const, side: 'side-left' }, { xFace: cx + reach, dir: -1 as const, side: 'side-right' }].forEach((e) => {
       const onSide = Math.abs(e.xFace - (e.dir === 1 ? th : W - th)) < 0.6;
+      if (onSide && !geo.boxes.some((x) => x.key === e.side)) return; // that side is not cut (L corner): no pins in thin air
       zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, onSide ? e.side : vdiv)));
     });
   });

@@ -258,7 +258,7 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
       for (let k = 0; k < count; k++) {
         const lo = cut(k) + (k === 0 ? outer : gapHalf);
         const hi = cut(k + 1) - (k === count - 1 ? outer : gapHalf);
-        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...mark });
+        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(z.hingeSide ? { hingeSide: z.hingeSide } : {}), ...mark });
       }
       if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
     } else if (z.kind === 'DRAWERS') {

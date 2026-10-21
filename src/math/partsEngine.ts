@@ -22,6 +22,7 @@ import { bandPricePerMeterDA } from './edgeBand';
 import { frontHardwareNeeds, shelfSpansOf } from './columns';
 import { hingesPerDoor } from './hinges';
 import { assemblyGeometry } from './assemblyGeometry';
+import { carcaseSidesOf } from './carcaseSides';
 import { buildFasteners, fastenerCounts } from './fasteners';
 
 export type PartRole = 'carcase' | 'back' | 'front';
@@ -111,14 +112,16 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
   const zones = zonesOf(cab);
   const layout = layoutZones(cab, carcaseTh);
   const plan = planFronts(cab, layout);
-  const inner = Math.max(0, cab.width - 2 * carcaseTh);
+  const sides = carcaseSidesOf(cab, carcaseTh);
+  const inner = sides.innerMm;
   const open = isOpenCarcase(zones);
   const parts: CabinetPart[] = [];
 
   const carcase = (partType: string, widthMm: number, lengthMm: number, quantity: number, grain: GrainDirection, edge: EdgeBanding): CabinetPart =>
     ({ partType, role: 'carcase', thicknessMm: carcaseTh, widthMm: Math.max(0, widthMm), lengthMm: Math.max(0, lengthMm), quantity, grain, edge });
 
-  parts.push(carcase('Side Panel (Left/Right)', cab.depth, cab.height, 2, 'vertical', 'FRONT'));
+  const sideCount = Number(sides.left) + Number(sides.right); // 2, unless a neighbouring box of an L corner replaces one
+  if (sideCount > 0) parts.push(carcase('Side Panel (Left/Right)', cab.depth, cab.height, sideCount, 'vertical', 'FRONT'));
   if (!open) parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
   if (!open && zones.length > 1) parts.push(carcase('Zone Divider Panel', cab.depth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
   // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
