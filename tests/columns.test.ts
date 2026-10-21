@@ -1,5 +1,6 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // A vertical board inside a zone: two columns (the appliance niche / the zone's doors, and a filler), math/columns.ts.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -17,7 +18,7 @@ const OPTS = { carcaseTh: 18, frontTh: 18, lift: false, inset: false };
 
 /** Built_In_Appliance (zones: drawer, OVEN, MICROWAVE, doors) of width W with a split on the oven zone. */
 const tower = (width, split = { mainSide: 'LEFT', fill: 'AUTO' }, hwItems = HW) => {
-  const d0 = P.draftFromPreset('Built_In_Appliance');
+  const d0 = LG.draftFromPreset('Built_In_Appliance');
   d0.width = width;
   d0.zones = d0.zones.map((z) => (z.appliance === 'OVEN' && split ? { ...z, split } : z));
   const d = P.resolveDraft(d0, WOODS, hwItems, []);
@@ -143,7 +144,7 @@ test('split: the zone\'s fronts, boards, appliances and trims never collide and 
 });
 
 test('two pull-out baskets side by side: each has its column and the old warning goes away', () => {
-  const d0 = P.draftFromPreset('Tall_Pantry_Cargo');
+  const d0 = LG.draftFromPreset('Tall_Pantry_Cargo');
   d0.zones = d0.zones.map((z) => ({ ...z, split: { mainSide: 'LEFT', mainWidthMm: 280, fill: 'PULL_OUT' } }));
   const d = P.resolveDraft(d0, WOODS, HW, []);
   const cab = { ...P.draftToNewCabinet(d, { id: 'p', name: 'p', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
@@ -167,7 +168,7 @@ test('two pull-out baskets side by side: each has its column and the old warning
 });
 
 test('split: shelves follow their column, with one row per width in the cutting list', () => {
-  const d0 = P.draftFromPreset('Standard_Base' in P.SUBTYPE_PRESETS ? 'Standard_Base' : 'Deep_Drawers');
+  const d0 = LG.draftFromPreset('Deep_Drawers');
   d0.zones = [{ kind: 'DOORS', count: 1, shelves: 2, split: { mainSide: 'LEFT', mainWidthMm: 300, fill: 'DOOR' } }];
   const d = P.resolveDraft(d0, WOODS, HW, []);
   const cab = { ...P.draftToNewCabinet(d, { id: 's', name: 's', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
@@ -199,7 +200,7 @@ test('split: every connector belongs to a part that exists, and the vertical boa
 });
 
 test('split: only a doors or appliance zone can carry a board, and a bad value falls back', () => {
-  const d0 = P.draftFromPreset('Deep_Drawers');
+  const d0 = LG.draftFromPreset('Deep_Drawers');
   d0.zones = [{ kind: 'DRAWERS', count: 3, split: { mainSide: 'LEFT' } }, { kind: 'DOORS', count: 2, split: { mainSide: 'SIDEWAYS', mainWidthMm: -5, fill: 'NONSENSE' } }];
   const d = P.resolveDraft(d0, WOODS, HW, []);
   assert.equal(d.zones[0].split, undefined);
@@ -207,7 +208,7 @@ test('split: only a doors or appliance zone can carry a board, and a bad value f
 });
 
 test('split: a small door or a spice rack beside an appliance asks for its own hardware pickers', () => {
-  const only = { ...P.draftFromPreset('Built_In_Appliance'), width: 800 };
+  const only = { ...LG.draftFromPreset('Built_In_Appliance'), width: 800 };
   only.zones = [{ kind: 'APPLIANCE', appliance: 'OVEN', heightMm: 595, split: { mainSide: 'LEFT', fill: 'DOOR' } }, { kind: 'OPEN', shelves: 1 }];
   const withDoor = P.resolveDraft(only, WOODS, HW, []);
   assert.equal(withDoor.hardwareItemId, 'hinge');

@@ -76,3 +76,20 @@ test('next free place: appended after the last one, or into a gap that is big en
   assert.equal(K.nextFreeX(row, 'A', 'WALL_UNIT', 600), 0, 'wall units are a separate row');
   assert.equal(K.nextFreeX(row, 'B', 'BASE_UNIT', 450, 600), 600, 'starting after the corner');
 });
+
+test('auto arrange: gaps close, order is kept, an L corner stays and the others pack around it', () => {
+  const row = [cab('b', 'A', 900, 600), cab('a', 'A', 100, 450), cab('c', 'A', 2000, 300)];
+  const m = Object.fromEntries(K.autoArrange(row, K.DEFAULT_LAYOUT).map((x) => [x.id, x.positionX]));
+  assert.deepEqual(m, { a: 0, b: 450, c: 1050 }, 'ordered by position, packed from 0');
+  // with the corner on the left wall: square 0..600 and arm 600..1050 on the back wall, arm 600..1050 on the left wall
+  const corner = [
+    cab('sq', 'A', 0, 600, { groupId: 'g' }), cab('ar', 'A', 600, 450, { groupId: 'g' }), cab('br', 'B', 600, 450, { groupId: 'g' }),
+    cab('x', 'A', 1700, 600), cab('y', 'B', 1500, 600),
+  ];
+  const r = Object.fromEntries(K.autoArrange(corner, L()).map((x) => [x.id, x.positionX]));
+  assert.deepEqual(r, { x: 1050, y: 1050 }, 'the free ones start where the corner ends, on each wall');
+  assert.ok(Object.values(K.fitStates([...corner.map((c) => ({ ...c, positionX: r[c.id] ?? c.positionX }))], L())).every((s) => s !== 'OVERLAP'));
+  assert.equal(K.cornerClearanceMm(corner, L(), 'B', 'BASE_UNIT'), 600, 'a side wall starts after the square');
+  assert.equal(K.cornerClearanceMm([], L(), 'B', 'BASE_UNIT'), 0);
+  assert.equal(K.cornerClearanceMm(corner, L(), 'A', 'BASE_UNIT'), 0);
+});

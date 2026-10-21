@@ -1,11 +1,12 @@
 // @ts-nocheck  (tests are plain node:test files, run with: npm test)
 // Regression guards found by reviewing phase 2f: phantom stock, invoice rounding, and a random-cabinet invariant fuzz.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
 import * as E from '../src/math/partsEngine';
 import * as Z from '../src/math/zones';
-import { SUBTYPES } from '../src/rules/templates';
+import { SUBTYPES } from './fixtures/legacy';
 import { GOLA_CATEGORIES } from '../src/rules/openings';
 import { applyConsumptionDelta, registerHardwareItem, hardwareConsumption } from '../src/math/stockDelta';
 import { assemblyGeometry, facadeKey, applianceKey } from '../src/math/assemblyGeometry';
@@ -27,7 +28,7 @@ const pick = (a) => a[Math.floor(R() * a.length)];
 const int = (lo, hi) => lo + Math.floor(R() * (hi - lo + 1));
 
 function randomDraft() {
-  const d = P.draftFromPreset(pick(SUBTYPES));
+  const d = LG.draftFromPreset(pick(SUBTYPES));
   d.carcaseMaterialId = pick(['mel', 'mel16']); d.frontMaterialId = pick(['mel', 'mel16', 'glass']);
   d.carcaseEdgeRollId = pick(['', 'e1', 'e2']); d.frontEdgeRollId = pick(['', 'e1', 'e2']);
   d.width = int(150, 1200); d.height = int(300, 2400); d.depth = int(300, 700);
@@ -136,7 +137,7 @@ test('fuzz: engine invariants on random cabinets', () => {
 
 // ------------------------------------------------------------------------------------------------ stock
 const cabinetOf = (subtype, items, woods = WOODS) => {
-  const d = P.resolveDraft(P.draftFromPreset(subtype), woods, items, ROLLS);
+  const d = P.resolveDraft(LG.draftFromPreset(subtype), woods, items, ROLLS);
   return { ...P.draftToNewCabinet(d, { id: subtype, name: subtype, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
 };
 const BASE_ITEMS = HW.filter((h) => h.id !== 'legs' && h.id !== 'hang');
@@ -170,7 +171,7 @@ test('invoice: the printed lines add up to the grand total to the dinar, whateve
   for (let i = 0; i < 120; i++) {
     const subtypes = SUBTYPES.slice(i % 7).filter((_, k) => k % 5 === 0).slice(0, 1 + (i % 5));
     const cabs = subtypes.map((s, k) => {
-      const d = P.resolveDraft({ ...P.draftFromPreset(s), carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e1', frontMaterialId: k % 2 ? 'acr' : 'mel' }, woods, items, ROLLS);
+      const d = P.resolveDraft({ ...LG.draftFromPreset(s), carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e1', frontMaterialId: k % 2 ? 'acr' : 'mel' }, woods, items, ROLLS);
       return { ...P.draftToNewCabinet(d, { id: s + k, name: s + k, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
     });
     const inv = generateCustomerInvoice(generateFactoryBOMReport(cabs, woods, items, ROLLS), 20 + (i % 3) * 3.5, 30 - (i % 4) * 2.5);
@@ -190,7 +191,7 @@ test('invoice: a line with a zero quantity does not produce NaN / Infinity', () 
 
 // ------------------------------------------------------------------------------------------------ degenerate zones (found by the fuzz)
 const cabOf = (zones, over = {}) => {
-  const d0 = { ...P.draftFromPreset('Deep_Drawers'), height: 720, ...over, zones };
+  const d0 = { ...LG.draftFromPreset('Deep_Drawers'), height: 720, ...over, zones };
   const d = P.resolveDraft(d0, WOODS, HW, ROLLS);
   const cab = { ...P.draftToNewCabinet(d, { id: 'z', name: 'z', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   return { cab, pr: E.priceCabinet(cab, WOODS, HW, ROLLS) };

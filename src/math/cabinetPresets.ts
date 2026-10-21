@@ -60,6 +60,8 @@ export interface CabinetDraft {
   hardwareItemId: string;
   /** Runners, for the DRAWERS zones. */
   drawerHardwareItemId: string;
+  /** A template may ask for an overhead lift instead of hinges when none is picked (the old lift-up unit). Missing = hinges. */
+  preferLift?: boolean;
 }
 
 export function draftFromPreset(
@@ -84,6 +86,7 @@ export function draftFromPreset(
     frontEdgeRollId: keep?.frontEdgeRollId ?? '',
     hardwareItemId: '', // re-picked automatically for the kind of fronts
     drawerHardwareItemId: '',
+    ...(p.preferLift ? { preferLift: true } : {}),
   };
 }
 
@@ -201,7 +204,7 @@ export function resolveDraft(
     : [];
 
   // Hardware: hinges / lift for the doors, runners for the drawers.
-  const preferLift = !!SUBTYPE_PRESETS[d.subtype]?.preferLift;
+  const preferLift = !!(d.preferLift ?? SUBTYPE_PRESETS[d.subtype]?.preferLift);
   const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category));
   const drawerOptions = hardware.filter((h) => drawerHardwareCategories().includes(h.category));
   d.hardwareItemId = !needs.doors ? ''
@@ -288,7 +291,7 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
   const hasDoors = zones.some((z) => z.kind === 'DOORS') || needs.doors;
   const hasDrawers = zones.some((z) => z.kind === 'DRAWERS') || needs.drawers;
   return {
-    subtype: known ?? (c.category === 'WALL_UNIT' ? 'Standard_Wall' : 'Deep_Drawers'),
+    subtype: known ?? (c.category === 'WALL_UNIT' ? 'Standard_Wall' : 'Standard_Base'),
     category: c.category,
     width: c.width,
     height: c.height,

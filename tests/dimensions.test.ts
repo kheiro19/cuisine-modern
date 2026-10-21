@@ -1,16 +1,17 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // The dimension lines of the 3D atomic workspace (the style of the reference screenshots).
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
 import { assemblyGeometry } from '../src/math/assemblyGeometry';
-import { SUBTYPES } from '../src/rules/templates';
+import { SUBTYPES } from './fixtures/legacy';
 import { dimensionGraphics, dimensionsOf, formatMm } from '../src/math/dimensions';
 
 const wood = (id, th) => ({ id, brand: id, type: 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: 15000 });
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
 const dimsOf = (subtype, over = {}) => {
-  const d = P.resolveDraft({ ...P.draftFromPreset(subtype), ...over }, WOODS, [], []);
+  const d = P.resolveDraft({ ...LG.draftFromPreset(subtype), ...over }, WOODS, [], []);
   const cab = { ...P.draftToNewCabinet(d, { id: 'c', name: 'c', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   const geo = assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: false, inset: false });
   return { cab, geo, dims: dimensionsOf(geo, cab, 18) };

@@ -143,3 +143,29 @@ export function cornerClearanceMm(
   }
   return z;
 }
+
+/**
+ * "Auto arrange": every free cabinet is packed against its neighbours, from the start of its wall, keeping its current order.
+ * The boxes of an L corner (a group) stay where they are: they ARE the corner, the others pack around them.
+ * Returns only the new positions; the wall of a cabinet is never changed.
+ */
+export function autoArrange(
+  cabinets: ReadonlyArray<Placed & { id: string; category: CabinetCategory; groupId?: string }>,
+  layout: KitchenLayout,
+): Array<{ id: string; positionX: number }> {
+  const placed = cabinets.filter((c) => c.groupId).slice();
+  const moves: Array<{ id: string; positionX: number }> = [];
+  (['A', 'B', 'C'] as RunId[]).forEach((run) => {
+    (['BASE_UNIT', 'WALL_UNIT'] as CabinetCategory[]).forEach((category) => {
+      cabinets
+        .filter((c) => !c.groupId && runOf(c) === run && c.category === category)
+        .sort((a, b) => a.positionX - b.positionX)
+        .forEach((c) => {
+          const x = nextFreeX(placed, run, category, c.width, cornerClearanceMm(placed, layout, run, category));
+          placed.push({ ...c, positionX: x });
+          moves.push({ id: c.id, positionX: x });
+        });
+    });
+  });
+  return moves;
+}

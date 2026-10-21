@@ -1,5 +1,6 @@
 // @ts-nocheck  (tests are plain node:test files, run with: npm test)
 // حرّاس طبقة القواعد (src/rules): إن كسر تعديلٌ قاعدةً، يفشل هنا بدل أن يظهر في السعر أو الرسم.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as R from '../src/rules';
@@ -10,17 +11,17 @@ import * as G from '../src/math/assemblyGeometry';
 import { buildFasteners } from '../src/math/fasteners';
 import * as Z from '../src/math/zones';
 
-const templates = Object.entries(R.TEMPLATES);
+const templates = Object.entries(LG.TEMPLATES);
 
 test('families: four families, each with templates, and every template carries a valid family', () => {
-  assert.deepEqual(R.FAMILY_ORDER.slice().sort(), ['BASE', 'BUILT_IN', 'CORNER', 'WALL']);
-  for (const f of R.FAMILY_ORDER) assert.ok(R.templatesOf(f).length > 0, `${f}: no templates`);
-  for (const [key, t] of templates) assert.ok(R.FAMILIES[t.family], `${key}: unknown family`);
+  assert.deepEqual(LG.FAMILY_ORDER.slice().sort(), ['BASE', 'BUILT_IN', 'CORNER', 'WALL']);
+  for (const f of LG.FAMILY_ORDER) assert.ok(LG.templatesOf(f).length > 0, `${f}: no templates`);
+  for (const [key, t] of templates) assert.ok(LG.FAMILIES[t.family], `${key}: unknown family`);
   assert.equal(templates.length, 28, 'the 24 first templates, the 3 open bays (washer, dryer, under-counter fridge) and the wall blind corner are registered');
 });
 
 test('families: every kinematic a family lists exists, and a MODELLED one accepts the family category', () => {
-  for (const f of Object.values(R.FAMILIES)) {
+  for (const f of Object.values(LG.FAMILIES)) {
     for (const id of f.kinematics) {
       const k = R.KINEMATICS[id];
       assert.ok(k, `${f.id}: unknown kinematic ${id}`);
@@ -104,7 +105,7 @@ test('construction: base = rails + legs, wall = roof + hanger plates', () => {
 // ---- zone.kinematic: the optional field on a zone
 const wood = (id, th) => ({ id, brand: id, type: id === 'hdf' ? 'HDF Standard 3mm' : 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: 15000 });
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
-const resolve = (subtype, mutate = (d) => d) => P.resolveDraft(mutate({ ...P.draftFromPreset(subtype) }), WOODS, [], []);
+const resolve = (subtype, mutate = (d) => d) => P.resolveDraft(mutate({ ...LG.draftFromPreset(subtype) }), WOODS, [], []);
 
 test('zone kinematic: default comes from the zone kind unless declared', () => {
   assert.equal(R.kinematicOfZone({ kind: 'DOORS' }), 'SWING');
@@ -130,11 +131,11 @@ test('zone kinematic: accepted only for a zone kind and cabinet category the mec
 });
 
 test('zone kinematic: templates write their mechanism on the zones it moves, others stay untouched', () => {
-  assert.equal(R.TEMPLATES.Tall_Pantry_Cargo.zones[0].kinematic, 'PULL_OUT_FRAME');
-  assert.equal(R.TEMPLATES.Cargo_Pull_Out.zones[0].kinematic, 'PULL_OUT_FRAME');
-  assert.equal(R.TEMPLATES.Lift_Up.zones[0].kinematic, undefined, 'lift is chosen by the hardware item, not stamped on the zone');
-  assert.equal(R.TEMPLATES.Standard_Wall.zones[0].kinematic, undefined);
-  assert.equal(R.TEMPLATES.Built_In_Appliance.zones.some((z) => z.kinematic), false);
+  assert.equal(LG.TEMPLATES.Tall_Pantry_Cargo.zones[0].kinematic, 'PULL_OUT_FRAME');
+  assert.equal(LG.TEMPLATES.Cargo_Pull_Out.zones[0].kinematic, 'PULL_OUT_FRAME');
+  assert.equal(LG.TEMPLATES.Lift_Up.zones[0].kinematic, undefined, 'lift is chosen by the hardware item, not stamped on the zone');
+  assert.equal(LG.TEMPLATES.Standard_Wall.zones[0].kinematic, undefined);
+  assert.equal(LG.TEMPLATES.Built_In_Appliance.zones.some((z) => z.kinematic), false);
 });
 
 test('zone kinematic: resolveDraft keeps a valid declaration and drops an invalid one (old cabinets have none)', () => {
@@ -152,7 +153,7 @@ test('zone kinematic: resolveDraft keeps a valid declaration and drops an invali
 const hw = (id, category, modelType = 'x', price = 300) => ({ id, category, brand: 'B', modelType, pricePerUnitDA: price, availableQty: 100 });
 const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('lift', 'Overhead Lift Systems', 'Aventos'), hw('slide', 'Drawer Slide Systems', 'Tandem', 900), hw('legs', 'Assembly & Fixing', 'Adjustable Kitchen Legs', 100), hw('cam', 'Assembly & Fixing', 'Cam Lock', 10), hw('pin', 'Assembly & Fixing', 'Shelf Support Pin', 2)];
 const cabinetOf = (subtype, mutate = (d) => d) => {
-  const d = P.resolveDraft(mutate({ ...P.draftFromPreset(subtype) }), WOODS, HW, []);
+  const d = P.resolveDraft(mutate({ ...LG.draftFromPreset(subtype) }), WOODS, HW, []);
   return { d, cab: { ...P.draftToNewCabinet(d, { id: subtype, name: subtype, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 } };
 };
 
@@ -177,7 +178,7 @@ test('pull-out: a zone mechanism wins for its facades, otherwise doors swing / l
 test('pull-out: one runner set per front, no hinges, no fixed shelves, and the price is the rows', () => {
   for (const s of ['Tall_Pantry_Cargo', 'Tandem_Pantry', 'Cargo_Pull_Out']) {
     const { d, cab } = cabinetOf(s);
-    assert.equal(R.TEMPLATES[s].zones[0].kinematic, 'PULL_OUT_FRAME');
+    assert.equal(LG.TEMPLATES[s].zones[0].kinematic, 'PULL_OUT_FRAME');
     assert.equal(d.hardwareItemId, '', `${s}: no hinge picked for pull-out fronts`);
     assert.equal(d.drawerHardwareItemId, 'slide', `${s}: the runner picker is filled`);
     const reqs = E.hardwareRequirements(cab, HW);

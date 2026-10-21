@@ -1,10 +1,11 @@
 // src/rules/families.ts
-// الأنواع الأربعة للخزائن العصرية. ما يختلف بينها: الفئة والأبعاد الافتراضية والحركات المتاحة.
+// عائلات الخزائن الثلاث: سفلية، علوية، زاوية. ما يختلف بينها: الفئة والأبعاد الافتراضية والحركات المتاحة.
 // الباقي (الأقسام، طريقة الفتح، الإكسسوار) خيارات داخل الخزانة نفسها، لا أنواع جديدة.
+// الأنواع المعروضة أربعة: سفلية عادية، علوية عادية، وزاويتان (سفلية وعلوية). أما زاوية L الحقيقية فتُضاف من لوحة شكل المطبخ (math/lCorner.ts).
 import type { CabinetCategory } from '../types/flatma';
 import type { KinematicId } from './kinematics';
 
-export type FamilyId = 'BASE' | 'WALL' | 'BUILT_IN' | 'CORNER';
+export type FamilyId = 'BASE' | 'WALL' | 'CORNER';
 
 export interface FamilySpec {
   id: FamilyId;
@@ -12,7 +13,7 @@ export interface FamilySpec {
   /** فئة الخزانة التي تُنشأ بها افتراضيًا. */
   category: CabinetCategory;
   dims: { width: number; height: number; depth: number };
-  /** الحركات التي تعرضها هذه العائلة (المُعلَنة منها تظهر عند تجسيدها). */
+  /** الحركات التي تعرضها هذه العائلة. */
   kinematics: KinematicId[];
 }
 
@@ -25,19 +26,14 @@ export const FAMILIES: Record<FamilyId, FamilySpec> = {
   WALL: {
     id: 'WALL', label: 'علوية', category: 'WALL_UNIT',
     dims: { width: 600, height: 720, depth: 350 },
-    kinematics: ['SWING', 'LIFT', 'POCKET_FOLD'],
-  },
-  BUILT_IN: {
-    id: 'BUILT_IN', label: 'مدمجة وطولية', category: 'BASE_UNIT',
-    dims: { width: 600, height: 2200, depth: 600 },
-    kinematics: ['SWING', 'SLIDE', 'PULL_OUT_FRAME', 'POCKET_FOLD'],
+    kinematics: ['SWING', 'LIFT'],
   },
   CORNER: {
     id: 'CORNER', label: 'زاوية', category: 'BASE_UNIT',
     dims: { width: 1050, height: 870, depth: 600 },
-    kinematics: ['SWING', 'SLIDE', 'CORNER_TRAYS', 'ROTARY', 'CURVED_PULL'],
+    kinematics: ['SWING'],
   },
 };
 
 /** ترتيب الظهور في القائمة. */
-export const FAMILY_ORDER: FamilyId[] = ['BASE', 'WALL', 'BUILT_IN', 'CORNER'];
+export const FAMILY_ORDER: FamilyId[] = ['BASE', 'WALL', 'CORNER'];

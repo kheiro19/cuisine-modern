@@ -28,7 +28,7 @@ npm run build    # tsc ثم vite build
 | `src/math/assemblyGeometry.ts` | صناديق الرسم بالملم (يقارنها اختبار بأجزاء الـ BOM) |
 | `src/math/fasteners.ts` | الوصلات (كامات، أوتاد، براغي، مفصلات، سكك) ومنظر التفكيك |
 | `src/math/bomEngine.ts` / `costEngine.ts` / `invoiceEngine.ts` | تقرير المصنع، التكلفة، فاتورة الزبون |
-| `src/math/cabinetPresets.ts` | قوالب الأنواع الـ24 ونموذج المسودة (draft) |
+| `src/math/cabinetPresets.ts` | القوالب الأربعة ونموذج المسودة (draft) |
 | `src/math/constants.ts` | **كل الأرقام القابلة للتعديل**: الفراغات والسماكات وقواعد العتاد ومقاسات الوصلات |
 | `src/context/FurnitureContext.tsx` | الحالة المركزية والمخزن والتراجع (Undo) |
 | `src/components/` | `CabinetAssembly3D` (الرسم)، `CabinetPreview3D`، `Kitchen3DCanvas`، `InventoryManager` |

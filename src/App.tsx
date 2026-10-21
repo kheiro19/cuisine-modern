@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
 import InventoryManager from './components/InventoryManager';
 import Kitchen3DCanvas from './components/Kitchen3DCanvas';
@@ -26,7 +26,7 @@ import {
 import { libraryAppliances } from './math/applianceModels';
 import {
   DEFAULT_LAYOUT, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WIDTH_LIMITS_MM,
-  cornerClearanceMm, cornerWalls, fitStates, nextFreeX, runOf, runsOf,
+  autoArrange, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, runOf, runsOf,
 } from './math/kitchenLayout';
 import { L_CORNER_LIMITS, lCornerCabinets, lCornerSpan } from './math/lCorner';
 import { LIMITS, PANEL } from './math/constants';
@@ -71,6 +71,23 @@ const FRONT_COUNT_OPTIONS = Array.from(
   (_, i) => LIMITS.FRONT_ELEMENTS[0] + i,
 );
 
+/** A number box that commits on Enter or when it loses focus (a move is one undo step, not one per typed digit). */
+function CommitNumber({ value, onCommit, title }: { value: number; onCommit: (v: number) => void; title?: string }) {
+  const [text, setText] = useState<string>(String(value));
+  useEffect(() => { setText(String(value)); }, [value]);
+  const commit = () => {
+    const n = Number(text);
+    if (Number.isFinite(n) && Math.round(n) !== value) onCommit(Math.round(n));
+    else setText(String(value));
+  };
+  return (
+    <input type="number" min={0} step={10} value={text} title={title}
+      onChange={(e) => setText(e.target.value)} onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-[10px] font-mono text-center" style={{ direction: 'ltr' }} />
+  );
+}
+
 export default function App() {
   const {
     cabinets,
@@ -80,6 +97,7 @@ export default function App() {
     addCabinet,
     addCabinets,
     deleteCabinets,
+    moveCabinets,
     updateCabinet,
     updateManyCabinets,
     triggerUndo,
@@ -105,7 +123,7 @@ export default function App() {
   const [isShowroomMinimized, setIsShowroomMinimized] = useState<boolean>(false);
 
   // ---- the cabinet being designed (form + preview) --------------------------------------------------------------
-  const [draft, setDraft] = useState<CabinetDraft>(() => draftFromPreset('Deep_Drawers'));
+  const [draft, setDraft] = useState<CabinetDraft>(() => draftFromPreset('Standard_Base'));
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = editingId ? cabinets.find((c) => c.id === editingId) ?? null : null;
 
@@ -161,7 +179,7 @@ export default function App() {
       draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId }),
     );
 
-  // The four families (rules/families.ts): switching family loads that family's first ready template.
+  // The three families (rules/families.ts): switching family loads that family's first ready template.
   const family: FamilyId = preset.family;
   const handleFamilyChange = (f: FamilyId) => handleSubtypeChange(templatesOf(f)[0]);
 
@@ -214,6 +232,22 @@ export default function App() {
       { draft: resolved, woods, hardware: hardwareItems, edgeRolls, groupId: uid('lc'), newId: () => uid('cab'), name: `خزانة زاوية L ${cornerCategory === 'WALL_UNIT' ? 'علوية' : 'سفلية'} #${groups + 1}` },
     ));
   };
+
+  // ---- moving the units: the arrows move 5 cm, the box takes any distance (from the left end on the back wall, from the corner on a side wall)
+  const MOVE_STEP_MM = 50;
+  const nudgeCabinet = (id: string, deltaMm: number) => {
+    const cab = cabinets.find((c) => c.id === id);
+    if (cab) moveCabinets([{ id, positionX: Math.max(0, cab.positionX + deltaMm) }]);
+  };
+  /** Another wall: the unit goes to the first free place there (after the corner, if something stands in it). */
+  const moveToRun = (id: string, run: RunId) => {
+    const cab = cabinets.find((c) => c.id === id);
+    if (!cab || runOf(cab) === run) return;
+    const others = cabinets.filter((c) => c.id !== id);
+    const x = nextFreeX(others, run, cab.category, cab.width, cornerClearanceMm(others, layout, run, cab.category));
+    moveCabinets([{ id, run, positionX: x }]);
+  };
+  const handleAutoArrange = () => moveCabinets(autoArrange(cabinets, layout));
 
   const handleEditCabinet = (id: string) => {
     const cab = cabinets.find((c) => c.id === id);
@@ -500,7 +534,7 @@ export default function App() {
 
             {/* العائلة (4 أنواع) ثم قالب جاهز اختياري: القالب يضبط الخزانة الحقيقية فقط، وكل شيء بعده قابل للتعديل */}
             <div className="space-y-1">
-              <div className="grid grid-cols-4 gap-1">
+              <div className="grid grid-cols-3 gap-1">
                 {FAMILY_ORDER.map((f) => (
                   <button key={f} type="button" onClick={() => handleFamilyChange(f)} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${family === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{FAMILIES[f].label}</button>
                 ))}
@@ -541,6 +575,16 @@ export default function App() {
                           {z.kind === 'DOORS' ? 'عدد الأبواب' : 'عدد الأدراج'}
                           <select value={z.count ?? 1} onChange={(e) => updateZone(i, { count: Number(e.target.value) })} className="border bg-white rounded p-0.5 text-[11px]" style={{ direction: 'ltr' }}>
                             {FRONT_COUNT_OPTIONS.map((n) => (<option key={n} value={n}>{n}</option>))}
+                          </select>
+                        </label>
+                      )}
+                      {z.kind === 'DOORS' && !z.split && (
+                        <label className="flex items-center gap-1 text-[10px] font-bold" title="المفصلات على أي جهة من الباب؛ الباب يُفتح من الجهة المقابلة">
+                          المفصلات
+                          <select value={z.hingeSide ?? 'AUTO'} onChange={(e) => updateZone(i, { hingeSide: e.target.value === 'AUTO' ? undefined : (e.target.value as 'LEFT' | 'RIGHT') })} className="border bg-white rounded p-0.5 text-[11px]">
+                            <option value="AUTO">تلقائي</option>
+                            <option value="LEFT">يسار</option>
+                            <option value="RIGHT">يمين</option>
                           </select>
                         </label>
                       )}
@@ -831,7 +875,16 @@ export default function App() {
 
             {/* الوحدات المثبّتة: تعديل وحذف دائمان (لا يتطلبان النقر على الخزانة في المشهد) */}
             <div className="border-t border-slate-100 pt-2 space-y-1">
-              <span className="font-bold text-[11px] block">🗂️ الوحدات المثبّتة ({cabinets.length})</span>
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-bold text-[11px]">🗂️ الوحدات المثبّتة ({cabinets.length})</span>
+                {cabinets.length > 1 && (
+                  <button type="button" onClick={handleAutoArrange} title="ترصّ الوحدات متجاورة من بداية كل جدار حسب ترتيبها الحالي (زاوية L تبقى مكانها)" className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-[10px] font-bold cursor-pointer">⟲ ترتيب تلقائي</button>
+                )}
+              </div>
+              {cabinets.some((c) => fits[c.id] === 'OVERLAP') && (
+                <span className="block text-[9px] leading-snug rounded p-1 border text-red-800 bg-red-50 border-red-200">🔴 وحدات متداخلة: الأحمر يعني أن وحدة تأخذ مكان أخرى. حرّكها أو اضغط «ترتيب تلقائي».</span>
+              )}
+              <span className="block text-[9px] text-slate-500">الإطار الأخضر: وحدة ملاصقة لجارتها. الأحمر: تداخل.</span>
               {cabinets.length === 0 && <span className="text-[10px] text-slate-400 block">لا توجد وحدات بعد.</span>}
               {listRows.map((row) => row.kind === 'group' ? (
                 <div key={row.groupId} className="border border-indigo-200 bg-indigo-50/40 rounded p-1 text-[10px] space-y-1">
@@ -856,7 +909,17 @@ export default function App() {
                     <div className="font-bold truncate" title={c.name}>{c.name}{layoutRuns.length > 1 || runOf(c) !== 'A' ? <span className="text-slate-400 font-normal"> · {RUN_LABELS[runOf(c)]}</span> : null}</div>
                     <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{c.width}×{c.height}×{c.depth} · {frontSummary(c)} · {c.calculatedCostDA.toLocaleString('fr-DZ')} دج</div>
                   </div>
-                  <div className="flex gap-1 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-0.5" title="موضع الوحدة على جدارها (مم)" style={{ direction: 'ltr' }}>
+                      <button type="button" onClick={() => nudgeCabinet(c.id, -MOVE_STEP_MM)} className="px-1 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">◀</button>
+                      <CommitNumber value={c.positionX} onCommit={(v) => moveCabinets([{ id: c.id, positionX: v }])} />
+                      <button type="button" onClick={() => nudgeCabinet(c.id, MOVE_STEP_MM)} className="px-1 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">▶</button>
+                    </div>
+                    {layoutRuns.length > 1 && (
+                      <select value={runOf(c)} onChange={(e) => moveToRun(c.id, e.target.value as RunId)} title="الجدار" className="border bg-white rounded p-0.5 text-[10px]">
+                        {layoutRuns.map((r) => (<option key={r} value={r}>{r}</option>))}
+                      </select>
+                    )}
                     <button type="button" onClick={() => handleEditCabinet(c.id)} title="تعديل" className="px-1.5 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">✏️</button>
                     <button type="button" onClick={() => handleDeleteFromList(c.id)} title="حذف" className="px-1.5 py-0.5 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer">🗑</button>
                   </div>

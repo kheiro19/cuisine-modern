@@ -1,5 +1,6 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // Gola on wall units and towers (one channel per doors / drawers zone) and the front frame of built-in appliances.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -15,7 +16,7 @@ const ROLLS = [{ id: 'e1', brand: 'PVC', thickness: 1, width: 22, totalLengthMet
 const EPS = 1e-6;
 
 const build = (subtype, mod = (d) => d, items = HW) => {
-  const d = P.resolveDraft(mod(P.draftFromPreset(subtype)), WOODS, items, ROLLS);
+  const d = P.resolveDraft(mod(LG.draftFromPreset(subtype)), WOODS, items, ROLLS);
   const cab = { ...P.draftToNewCabinet(d, { id: subtype, name: subtype, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   return { d, cab, pr: E.priceCabinet(cab, WOODS, items, ROLLS) };
 };

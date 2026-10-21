@@ -1,6 +1,7 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // The "half cabinet" for an appliance under the worktop: two sides and the two top rails, no bottom, no back, no front, and the
 // appliance (washer, dryer, small fridge, dishwasher) stands inside with its own front visible.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -8,7 +9,7 @@ import { assemblyGeometry } from '../src/math/assemblyGeometry';
 import { modelCabinet } from '../src/math/partsEngine';
 import { isOpenCarcase, layoutZones, planFronts, zonesOf } from '../src/math/zones';
 import { APPLIANCES, OPEN_BAY_APPLIANCES } from '../src/rules/appliances';
-import { SUBTYPES, TEMPLATES } from '../src/rules/templates';
+import { SUBTYPES, TEMPLATES } from './fixtures/legacy';
 import { applianceLookOf } from '../src/math/applianceModels';
 import { ACCESSORY_MODEL_KEYS, modelPrims, primBounds } from '../src/math/accessoryModels';
 import { FINISHES } from '../src/data/accessoryCatalog';
@@ -17,7 +18,7 @@ import { sceneRefOf } from '../src/math/accessoryPlacement';
 const wood = (id, th) => ({ id, brand: id, type: 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: 15000 });
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
 const make = (subtype, over = {}) => {
-  const d = P.resolveDraft({ ...P.draftFromPreset(subtype), ...over }, WOODS, [], []);
+  const d = P.resolveDraft({ ...LG.draftFromPreset(subtype), ...over }, WOODS, [], []);
   return { ...P.draftToNewCabinet(d, { id: subtype, name: subtype, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
 };
 const BAYS = ['Washer_Bay', 'Dryer_Bay', 'Under_Counter_Fridge_Bay', 'Panel_Ready'];

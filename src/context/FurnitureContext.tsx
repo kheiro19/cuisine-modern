@@ -1,6 +1,6 @@
 // src/context/FurnitureContext.tsx
 import React, { createContext, useContext, useRef, useState } from 'react';
-import { CabinetObject, WorkshopInventoryState, EdgeBandRoll, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { CabinetObject, RunId, WorkshopInventoryState, EdgeBandRoll, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { computeCabinetTotalCost } from '../math/costEngine';
 import { applyConsumptionDelta, registerHardwareItem } from '../math/stockDelta';
 
@@ -15,6 +15,8 @@ interface FurnitureContextType {
   /** Several cabinets at once (an L corner is three boxes): ONE undo step. */
   addCabinets: (cabinets: Array<Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>>) => void;
   deleteCabinets: (ids: string[]) => void;
+  /** Moves (and wall changes) of several cabinets: ONE undo step. */
+  moveCabinets: (moves: Array<{ id: string; positionX?: number; run?: RunId }>) => void;
   updateCabinet: (id: string, fields: Partial<CabinetObject>) => void;
   /** Same change on several cabinets with ONE undo step. */
   updateManyCabinets: (ids: string[], fields: Partial<CabinetObject>) => void;
@@ -113,6 +115,21 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     if (gone.has(activeCabinetId)) setActiveCabinetId('');
   };
 
+  const moveCabinets = (moves: Array<{ id: string; positionX?: number; run?: RunId }>) => {
+    const byId = new Map(moves.map(m => [m.id, m]));
+    const changes = (cab: CabinetObject) => {
+      const m = byId.get(cab.id);
+      return !!m && ((m.positionX !== undefined && m.positionX !== cab.positionX) || (m.run !== undefined && m.run !== (cab.run ?? 'A')));
+    };
+    if (!cabinetsRef.current.some(changes)) return;
+    saveToHistory(cabinetsRef.current); // a typed or clicked move is one undo step (only drags skip the history, see updateManyCabinets)
+    commit(cabinetsRef.current.map(cab => {
+      const m = byId.get(cab.id);
+      if (!m || !changes(cab)) return cab;
+      return refresh({ ...cab, ...(m.positionX !== undefined ? { positionX: Math.max(0, Math.round(m.positionX)) } : {}), ...(m.run !== undefined ? { run: m.run } : {}) });
+    }));
+  };
+
   const updateManyCabinets = (ids: string[], fields: Partial<CabinetObject>) => {
     const targets = new Set(ids);
     if (!cabinetsRef.current.some(c => targets.has(c.id))) return;
@@ -176,6 +193,7 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       addCabinet,
       addCabinets,
       deleteCabinets,
+      moveCabinets,
       updateCabinet,
       updateManyCabinets,
       deleteCabinet,

@@ -1,5 +1,6 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // The 3D materials own GPU memory (a texture clone each): the rules that decide when they are rebuilt and released.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -9,7 +10,7 @@ import { facadeMaterialSignature, grainOf, materialKeyOf, parseMaterialKey, disp
 const wood = (id, th) => ({ id, brand: id, type: 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: 15000 });
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
 const sigOf = (subtype, over = {}, cabOver = {}) => {
-  const d = P.resolveDraft({ ...P.draftFromPreset(subtype), ...over }, WOODS, [], []);
+  const d = P.resolveDraft({ ...LG.draftFromPreset(subtype), ...over }, WOODS, [], []);
   const cab = { ...P.draftToNewCabinet(d, { id: 'c', name: 'c', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0, ...cabOver };
   return facadeMaterialSignature(assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: false, inset: false }).facades);
 };
@@ -22,7 +23,7 @@ test('materials: the front materials are keyed by facade SIZES, so a cabinet tha
 });
 
 test('materials: equal fronts share one material, and drawers run their grain across', () => {
-  const d = P.resolveDraft({ ...P.draftFromPreset('Deep_Drawers'), zones: [{ kind: 'DRAWERS', count: 4 }] }, WOODS, [], []);
+  const d = P.resolveDraft({ ...LG.draftFromPreset('Deep_Drawers'), zones: [{ kind: 'DRAWERS', count: 4 }] }, WOODS, [], []);
   const cab = { ...P.draftToNewCabinet(d, { id: 'c', name: 'c', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   const facades = assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: false, inset: false }).facades;
   assert.equal(facades.length, 4);

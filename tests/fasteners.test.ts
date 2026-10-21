@@ -1,4 +1,5 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -18,7 +19,7 @@ const ROLLS = [];
 const sum = (a) => a.reduce((x, y) => x + y, 0);
 
 function build(s, hws = HW, tweak = (d) => d) {
-  const d = P.resolveDraft(tweak(P.draftFromPreset(s)), WOODS, hws, ROLLS);
+  const d = P.resolveDraft(tweak(LG.draftFromPreset(s)), WOODS, hws, ROLLS);
   const cab = { ...P.draftToNewCabinet(d, { id: s, name: s, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   const doorHw = E.pickFrontHardware(cab, 'DOORS', hws);
   const geo = G.assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: E.isLiftItem(doorHw), inset: false });
@@ -43,7 +44,7 @@ test('explode: 0 = assembled; offsets scale linearly; every part moves in its na
 });
 
 test('explode: after a full explosion no two parts occupy the same space (all 24 presets)', () => {
-  for (const s of P.SUBTYPES) {
+  for (const s of LG.SUBTYPES) {
     const { cab, geo } = build(s);
     const off = F.explodeOffsets(geo, cab, 1);
     const boxes = [];
@@ -59,7 +60,7 @@ test('explode: after a full explosion no two parts occupy the same space (all 24
 
 // ------------------------------------------------------------------------------------------- fasteners
 test('fasteners: every connector belongs to a part that exists', () => {
-  for (const s of P.SUBTYPES) {
+  for (const s of LG.SUBTYPES) {
     const { geo, list } = build(s);
     const keys = new Set([...geo.boxes.map((b) => b.key), ...geo.facades.map(G.facadeKey)]);
     list.forEach((f) => assert.ok(keys.has(f.parent), `${s}: ${f.kind} -> ${f.parent}`));
@@ -67,7 +68,7 @@ test('fasteners: every connector belongs to a part that exists', () => {
 });
 
 test('fasteners: PARITY - hinge cups = BOM hinges, lift kits = BOM lift kits, runner pairs = BOM runners, for all presets and variants', () => {
-  const variants = P.SUBTYPES.map((s) => [s, (d) => d]);
+  const variants = LG.SUBTYPES.map((s) => [s, (d) => d]);
   variants.push(['Standard_Wall', (d) => ({ ...d, zones: [{ kind: 'DOORS', count: 2, shelves: 1 }], hardwareItemId: 'lift' })]);
   variants.push(['Standard_Wall', (d) => ({ ...d, zones: [{ kind: 'DOORS', count: 1, shelves: 1 }], hardwareItemId: 'lift' })]);
   variants.push(['Deep_Drawers', (d) => ({ ...d, zones: [{ kind: 'DRAWERS', count: 5 }] })]);

@@ -117,10 +117,10 @@ test('L corner: a wall corner is the same shape with the wall unit depth, and hi
 });
 
 test('hinge side: a zone can choose it, and it survives the form normalisation', () => {
-  const d = P.resolveDraft({ ...P.draftFromPreset('Deep_Drawers'), category: 'BASE_UNIT', zones: [{ kind: 'DOORS', count: 1, shelves: 0, hingeSide: 'RIGHT' }] }, WOODS, HW, ROLLS);
+  const d = P.resolveDraft({ ...P.draftFromPreset('Standard_Base'), category: 'BASE_UNIT', zones: [{ kind: 'DOORS', count: 1, shelves: 0, hingeSide: 'RIGHT' }] }, WOODS, HW, ROLLS);
   assert.equal(d.zones[0].hingeSide, 'RIGHT');
   const cab = { ...P.draftToNewCabinet(d, { id: 'x', name: 'x', positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
   assert.deepEqual(geoOf(cab).facades.map((f) => f.hinge), ['RIGHT']);
-  const auto = P.resolveDraft({ ...P.draftFromPreset('Deep_Drawers'), zones: [{ kind: 'DOORS', count: 1, shelves: 0 }] }, WOODS, HW, ROLLS);
+  const auto = P.resolveDraft({ ...P.draftFromPreset('Standard_Base'), zones: [{ kind: 'DOORS', count: 1, shelves: 0 }] }, WOODS, HW, ROLLS);
   assert.equal(auto.zones[0].hingeSide, undefined, 'unset = the old automatic behaviour');
 });

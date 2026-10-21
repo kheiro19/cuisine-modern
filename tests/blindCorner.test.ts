@@ -1,17 +1,18 @@
 // @ts-nocheck  (plain node:test file, run with: npm test)
 // The two blind corners (lower and upper): a door on the visible part, a fixed panel on the blind part, one vertical board between.
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
 import { layoutZones, planFronts } from '../src/math/zones';
 import { modelCabinet } from '../src/math/partsEngine';
 import { assemblyGeometry } from '../src/math/assemblyGeometry';
-import { TEMPLATES, SUBTYPES } from '../src/rules/templates';
+import { TEMPLATES, SUBTYPES } from './fixtures/legacy';
 
 const wood = (id, th) => ({ id, brand: id, type: 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: 15000 });
 const WOODS = [wood('hdf', 3), wood('mel', 18)];
 const make = (subtype, over = {}) => {
-  const d = P.resolveDraft({ ...P.draftFromPreset(subtype), ...over }, WOODS, [], []);
+  const d = P.resolveDraft({ ...LG.draftFromPreset(subtype), ...over }, WOODS, [], []);
   return { ...P.draftToNewCabinet(d, { id: subtype, name: subtype, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
 };
 const GEO = { carcaseTh: 18, frontTh: 18, lift: false, inset: false };

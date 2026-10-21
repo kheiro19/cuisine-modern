@@ -1,4 +1,5 @@
 // @ts-nocheck  (tests are plain node:test files, run with: npm test)
+import * as LG from './fixtures/legacy';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as P from '../src/math/cabinetPresets';
@@ -20,7 +21,7 @@ const ROLLS = [{ id: 'e1', brand: 'PVC', thickness: 1, width: 22, totalLengthMet
 
 const cabinetFrom = (d, name = 'c') => ({ ...P.draftToNewCabinet(d, { id: name, name, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 });
 const preset = (s, woods = WOODS, hws = HW_ALL, rolls = ROLLS, tweak = (d) => d) => {
-  const d = P.resolveDraft(tweak({ ...P.draftFromPreset(s), carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e2' }), woods, hws, rolls);
+  const d = P.resolveDraft(tweak({ ...LG.draftFromPreset(s), carcaseEdgeRollId: 'e1', frontEdgeRollId: 'e2' }), woods, hws, rolls);
   return { d, cab: cabinetFrom(d, s) };
 };
 const sum = (a) => a.reduce((x, y) => x + y, 0);
@@ -83,7 +84,7 @@ test('zones: sink base = doors + fixed apron; ceiling-height = two tiers', () =>
 // ------------------------------------------------------------------------------------------------ the two promises
 test('PARITY 1 - the price of every cabinet equals the sum of its BOM rows, for all 24 presets and the option variants', () => {
   const variants = [];
-  for (const s of P.SUBTYPES) variants.push([s, (d) => d]);
+  for (const s of LG.SUBTYPES) variants.push([s, (d) => d]);
   variants.push(['Deep_Drawers', (d) => ({ ...d, zones: [{ kind: 'DRAWERS', count: 4 }], openingMode: 'GOLA', golaSlots: [0, 2, 3] })]);
   variants.push(['Standard_Wall', (d) => ({ ...d, zones: [{ kind: 'DOORS', count: 2, shelves: 1 }], hardwareItemId: 'lift' })]);
   variants.push(['Glass_Front', (d) => d]);
@@ -108,7 +109,7 @@ test('PARITY 1b - a whole kitchen: report total = sum of rows = sum of cabinet p
 
 test('PARITY 2 - the 3D boxes are exactly the BOM parts (same sizes, same counts), for all 24 presets', () => {
   const key = (t, a, b) => [t, a, b].map((x) => r2(x)).sort((x, y) => x - y).join('x');
-  for (const s of P.SUBTYPES) {
+  for (const s of LG.SUBTYPES) {
     const { cab } = preset(s);
     const pr = E.priceCabinet(cab, WOODS, HW_ALL, ROLLS);
     const th = 18;
@@ -126,7 +127,7 @@ test('PARITY 2 - the 3D boxes are exactly the BOM parts (same sizes, same counts
 });
 
 test('PARITY 2b - the 3D layout is physically sane: nothing outside the cabinet, facades never overlap', () => {
-  for (const s of P.SUBTYPES) {
+  for (const s of LG.SUBTYPES) {
     const { cab, d } = preset(s);
     const geo = G.assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, lift: false, inset: false });
     geo.boxes.forEach((b) => {
@@ -183,7 +184,7 @@ test('lift: ONE or TWO lifting doors, one kit per door, never priced like hinges
     assert.ok(geo.facades.every((f) => f.motion === 'LIFT' && f.hinge === null));
     assert.ok(pr.parts.some((p) => p.partType.startsWith('Lift Facade Panel')));
   }
-  const draft = P.resolveDraft({ ...P.draftFromPreset('Lift_Up'), zones: [{ kind: 'DOORS', count: 2 }] }, WOODS, HW_ALL, ROLLS);
+  const draft = P.resolveDraft({ ...LG.draftFromPreset('Lift_Up'), zones: [{ kind: 'DOORS', count: 2 }] }, WOODS, HW_ALL, ROLLS);
   assert.equal(draft.zones[0].count, 2, 'the draft no longer forces one lift door');
   assert.equal(draft.hardwareItemId, 'lift');
 });
@@ -206,11 +207,11 @@ test('gola: a channel per chosen drawer gap; heights add up; profile priced per 
 });
 
 test('gola: allowed on towers and wall units; a stack with no doors / drawers zone still falls back to handles', () => {
-  const tower = P.resolveDraft({ ...P.draftFromPreset('Built_In_Appliance'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
+  const tower = P.resolveDraft({ ...LG.draftFromPreset('Built_In_Appliance'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
   assert.equal(tower.openingMode, 'GOLA');
-  const wall = P.resolveDraft({ ...P.draftFromPreset('Standard_Wall'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
+  const wall = P.resolveDraft({ ...LG.draftFromPreset('Standard_Wall'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
   assert.equal(wall.openingMode, 'GOLA');
-  const open = P.resolveDraft({ ...P.draftFromPreset('Open_Shelving'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
+  const open = P.resolveDraft({ ...LG.draftFromPreset('Open_Shelving'), openingMode: 'GOLA' }, WOODS, HW_ALL, ROLLS);
   assert.equal(open.openingMode, 'HANDLE');
 });
 
@@ -236,7 +237,7 @@ test('mixed tower: hinges for the doors AND runners for the drawer, each priced 
 
 // ------------------------------------------------------------------------------------------------ draft model + stock
 test('draft: every preset resolves to a consistent cabinet and survives draft -> cabinet -> draft', () => {
-  for (const s of P.SUBTYPES) {
+  for (const s of LG.SUBTYPES) {
     const { d } = preset(s);
     assert.ok(d.zones.length >= 1 && d.zones.length <= 6, s);
     assert.ok(d.zones.some((z) => z.heightMm === undefined), `${s}: one flexible zone`);
@@ -252,10 +253,10 @@ test('draft: every preset resolves to a consistent cabinet and survives draft ->
 });
 
 test('draft: the user can build ANY stack (6 zones max), counts 1..6, wall units never get drawers', () => {
-  const d = P.resolveDraft({ ...P.draftFromPreset('Standard_Wall'), zones: Array.from({ length: 9 }, () => ({ kind: 'DRAWERS', count: 9 })) }, WOODS, HW_ALL, ROLLS);
+  const d = P.resolveDraft({ ...LG.draftFromPreset('Standard_Wall'), zones: Array.from({ length: 9 }, () => ({ kind: 'DRAWERS', count: 9 })) }, WOODS, HW_ALL, ROLLS);
   assert.equal(d.zones.length, 6);
   assert.ok(d.zones.every((z) => z.kind === 'DOORS' && z.count === 6));
-  assert.deepEqual(P.resolveDraft({ ...P.draftFromPreset('Standard_Wall'), zones: [] }, WOODS, HW_ALL, ROLLS).zones.map((z) => z.kind), ['DOORS']);
+  assert.deepEqual(P.resolveDraft({ ...LG.draftFromPreset('Standard_Wall'), zones: [] }, WOODS, HW_ALL, ROLLS).zones.map((z) => z.kind), ['DOORS']);
 });
 
 test('stock: hardware follows add / edit / delete / undo exactly, zones and lift included', () => {
