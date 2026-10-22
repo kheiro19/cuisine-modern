@@ -138,8 +138,6 @@ export default function App() {
   // The L corner: arm widths (the width of each door) and the level (floor or wall).
   const [armA, setArmA] = useState<number>(450);
   const [armB, setArmB] = useState<number>(450);
-  const [cornerDrawerArm, setCornerDrawerArm] = useState<'NONE' | 'ARM_A' | 'ARM_B'>('NONE');
-  const [cornerDrawerCount, setCornerDrawerCount] = useState<number>(3);
   const [cornerWallRaw, setCornerWall] = useState<'B' | 'C'>('B');
   const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
   const fits = useMemo(() => fitStates(cabinets, layout), [cabinets, layout]);
@@ -243,7 +241,7 @@ export default function App() {
     if (!canInject || cornerTaken(wall)) return;
     const groups = new Set(cabinets.map((c) => c.groupId).filter(Boolean)).size;
     addCabinets(lCornerCabinets(
-      { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB), ...(cornerDrawerArm !== 'NONE' && cornerCategory === 'BASE_UNIT' ? { drawerArm: cornerDrawerArm, drawerCount: cornerDrawerCount } : {}) },
+      { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) },
       { draft: resolved, woods, hardware: hardwareItems, edgeRolls, groupId: uid('lc'), newId: () => uid('cab'), name: `خزانة زاوية L ${cornerCategory === 'WALL_UNIT' ? 'علوية' : 'سفلية'} #${groups + 1}` },
     ));
   };
@@ -580,20 +578,6 @@ export default function App() {
                     <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
                       {(() => { const sp = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${sp.alongA} × ${sp.alongSide} mm · ${cornerDepth}`; })()}
                     </span>
-                    {cornerCategory === 'BASE_UNIT' && (
-                      <div className="mt-2 border-t border-indigo-200 pt-2 space-y-1.5">
-                        <label className="flex items-center justify-between gap-2 text-[10px] font-semibold"><span>واجهة الذراع الخلفي</span>
-                          <select value={cornerDrawerArm === 'ARM_A' ? 'DRAWERS' : 'DOORS'} onChange={(e) => setCornerDrawerArm(e.target.value === 'DRAWERS' ? 'ARM_A' : cornerDrawerArm === 'ARM_A' ? 'NONE' : cornerDrawerArm)} className="border rounded bg-white p-1 text-[10px]"><option value="DOORS">باب</option><option value="DRAWERS">أدراج</option></select>
-                        </label>
-                        <label className="flex items-center justify-between gap-2 text-[10px] font-semibold"><span>واجهة الذراع الجانبي</span>
-                          <select value={cornerDrawerArm === 'ARM_B' ? 'DRAWERS' : 'DOORS'} onChange={(e) => setCornerDrawerArm(e.target.value === 'DRAWERS' ? 'ARM_B' : cornerDrawerArm === 'ARM_B' ? 'NONE' : cornerDrawerArm)} className="border rounded bg-white p-1 text-[10px]"><option value="DOORS">باب</option><option value="DRAWERS">أدراج</option></select>
-                        </label>
-                        {cornerDrawerArm !== 'NONE' && <>
-                          <label className="flex items-center justify-between gap-2 text-[10px]"><span>عدد الأدراج</span><input type="number" min={2} max={4} value={cornerDrawerCount} onChange={(e) => setCornerDrawerCount(Math.max(2, Math.min(4, Number(e.target.value) || 3)))} className="w-14 border rounded p-1 text-center" /></label>
-                          <p className="text-[9px] leading-snug text-slate-600">يُضاف تلقائيًا لوح حامل للأدراج عند جهة الزاوية، بسماكة واجهة الباب المقابل + 2 مم، ويُدرج في المجسم وقائمة القص والتكلفة.</p>
-                        </>}
-                      </div>
-                    )}
                     {cornerWall && cornerTaken(cornerWall) && (
                       <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">توجد زاوية من هذا المستوى على هذا الجدار. احذفها أولاً لتغيير مقاساتها.</span>
                     )}

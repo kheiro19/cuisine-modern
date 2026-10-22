@@ -14,7 +14,7 @@ import { carcaseSidesOf } from './carcaseSides';
 
 export interface BoxGeo {
   key: string;
-  kind: 'side' | 'corner-spacer' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'shelf';
+  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'shelf';
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
 }
@@ -91,11 +91,6 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
 
   if (sides.left) boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
   if (sides.right) boxes.push({ key: 'side-right', kind: 'side', sizeMm: [th, H, D], centerMm: [W - th / 2, H / 2, 0] });
-  if (cab.lCornerSpacer && cab.lCornerSpacer.thicknessMm > 0) {
-    const sp = cab.lCornerSpacer;
-    const x = sp.side === 'LEFT' ? sp.offsetMm + sp.thicknessMm / 2 : W - sp.offsetMm - sp.thicknessMm / 2;
-    boxes.push({ key: 'l-corner-spacer', kind: 'corner-spacer', sizeMm: [sp.thicknessMm, H, D], centerMm: [x, H / 2, 0] });
-  }
   if (!open) boxes.push({ key: 'bottom', kind: 'bottom', sizeMm: [inner, th, D], centerMm: [cx, th / 2, 0] });
   if (!open) {
     // One shared board per divider, or two glued face to face (rules/construction.ts).

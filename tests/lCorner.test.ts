@@ -15,7 +15,7 @@ import { computeCabinetTotalCost } from '../src/math/costEngine';
 const wood = (id, th, price = 15000) => ({ id, brand: id, type: 'MDF Melamine Matt', thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 50, averagePriceDA: price });
 const hw = (id, category, modelType, price = 300) => ({ id, category, brand: 'B', modelType, pricePerUnitDA: price, availableQty: 500 });
 const WOODS = [wood('hdf', 3, 4000), wood('mel', 18)];
-const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('runners', 'Drawer Slide Systems', 'Ball Bearing Runners'), hw('legs', 'Assembly & Fixing', 'Adjustable Kitchen Legs', 120), hw('hang', 'Assembly & Fixing', 'Cabinet Hanger Plates', 200), hw('cam', 'Assembly & Fixing', 'Cam Lock', 10), hw('dowel', 'Assembly & Fixing', 'Wooden Dowel', 2), hw('screw', 'Assembly & Fixing', 'Back Panel Screw', 2)];
+const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('legs', 'Assembly & Fixing', 'Adjustable Kitchen Legs', 120), hw('hang', 'Assembly & Fixing', 'Cabinet Hanger Plates', 200), hw('cam', 'Assembly & Fixing', 'Cam Lock', 10), hw('dowel', 'Assembly & Fixing', 'Wooden Dowel', 2), hw('screw', 'Assembly & Fixing', 'Back Panel Screw', 2)];
 const ROLLS = [];
 const BASE = { category: 'BASE_UNIT', depthMm: 600, armAMm: 450, armBMm: 450, roomWidthMm: 3000 };
 const build = (over = {}) => {
@@ -123,26 +123,4 @@ test('hinge side: a zone can choose it, and it survives the form normalisation',
   assert.deepEqual(geoOf(cab).facades.map((f) => f.hinge), ['RIGHT']);
   const auto = P.resolveDraft({ ...P.draftFromPreset('Standard_Base'), zones: [{ kind: 'DOORS', count: 1, shelves: 0 }] }, WOODS, HW, ROLLS);
   assert.equal(auto.zones[0].hingeSide, undefined, 'unset = the old automatic behaviour');
-});
-
-
-test('L corner mixed fronts: drawer arm gets an automatic real support spacer (front thickness + 2 mm); door-only default stays unchanged', () => {
-  const normal = build().cabs;
-  assert.ok(normal.every((c) => !c.lCornerSpacer));
-  const p = { ...BASE, wall: 'B', drawerArm: 'ARM_A', drawerCount: 3 };
-  let n = 0;
-  const cabs = lCornerCabinets(p, { draft: P.draftFromPreset('L_Corner_Base'), woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g2', newId: () => `m${++n}`, name: 'Mixed L' }).map((c) => ({ ...c, carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 }));
-  const drawerArm = cabs.find((c) => c.subtype === 'L_Corner_Base' && c.zones?.some((z) => z.kind === 'DRAWERS'));
-  assert.ok(drawerArm);
-  assert.equal(drawerArm.frontConfig.openingType, 'DRAWERS');
-  assert.equal(drawerArm.lCornerSpacer.thicknessMm, 18, 'the support board uses the carcass board thickness');
-  assert.equal(drawerArm.lCornerSpacer.offsetMm, 20, '18 mm opposite front + 2 mm clearance');
-  const geo = geoOf(drawerArm);
-  assert.ok(geo.boxes.some((b) => b.key === 'l-corner-spacer' && b.kind === 'corner-spacer'));
-  const model = E.modelCabinet(drawerArm, 18, 18);
-  assert.ok(model.parts.some((part) => part.partType === 'L-corner drawer clearance spacer' && part.quantity === 1));
-  assert.equal(geo.boxes.length, model.parts.filter((part) => part.role !== 'front').reduce((sum, part) => sum + part.quantity, 0));
-  assert.equal(geo.facades.filter((f) => f.kind === 'DRAWER').length, 3);
-  const withoutDrawerArm = lCornerCabinets({ ...BASE, wall: 'B' }, { draft: P.draftFromPreset('L_Corner_Base'), woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g3', newId: () => `n${++n}`, name: 'Door-only L' });
-  assert.ok(!withoutDrawerArm.some((c) => c.lCornerSpacer), 'door-only corner remains unchanged');
 });

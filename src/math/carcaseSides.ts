@@ -16,12 +16,11 @@ export interface CarcaseSides {
   centerMm: number;
 }
 
-export function carcaseSidesOf(cab: Pick<CabinetObject, 'width' | 'omitSides' | 'lCornerSpacer'>, thicknessMm: number): CarcaseSides {
+export function carcaseSidesOf(cab: Pick<CabinetObject, 'width' | 'omitSides'>, thicknessMm: number): CarcaseSides {
   const left = !cab.omitSides?.includes('LEFT');
   const right = !cab.omitSides?.includes('RIGHT');
-  const spacer = cab.lCornerSpacer;
-  const loMm = left ? thicknessMm : spacer?.side === 'LEFT' ? Math.max(0, spacer.offsetMm) + spacer.thicknessMm : 0;
-  const hiMm = right ? cab.width - thicknessMm : spacer?.side === 'RIGHT' ? cab.width - Math.max(0, spacer.offsetMm) - spacer.thicknessMm : cab.width;
+  const loMm = left ? thicknessMm : 0;
+  const hiMm = cab.width - (right ? thicknessMm : 0);
   const innerMm = Math.max(0, hiMm - loMm);
   return { left, right, loMm, hiMm, innerMm, centerMm: (loMm + hiMm) / 2 };
 }
