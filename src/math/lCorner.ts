@@ -32,7 +32,6 @@ export interface LCornerParams {
   /** Optional mixed-front mode, supported for base L corners only. */
   drawerArm?: 'ARM_A' | 'ARM_B';
   drawerCount?: number;
-  spacer?: { enabled: boolean; thicknessMm: number; offsetMm: number };
 }
 
 export interface LCornerBox {
@@ -109,12 +108,15 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
     const base = draftToNewCabinet(resolved, { id: b.newId(), name: `${b.name} — ${CORNER_ROLE_LABELS[box.role]}`, positionX: box.positionX });
     // The arm along the side wall stops its door short at the corner, so the door of the arm along the back wall runs past it
     // instead of the two doors (each stands one front thickness in front of its box) going through each other.
-    const hasSpacer = isDrawerArm && p.spacer?.enabled && p.spacer.thicknessMm > 0;
+    // Drawer arms need a real support/clearance board at the open corner side.
+    // Its thickness follows the opposite door front plus 2 mm clearance automatically.
     const spacerSide = box.omitSides[0];
+    const spacerThicknessMm = Math.max(1, Math.min(60, Math.round(base.carcaseThickness || 18)));
+    const spacerOffsetMm = Math.max(0, Math.min(box.width - spacerThicknessMm, Math.round((base.frontThickness || 18) + 2)));
     return {
       ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides,
       ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}),
-      ...(hasSpacer && spacerSide ? { lCornerSpacer: { side: spacerSide, thicknessMm: Math.max(1, Math.min(60, p.spacer!.thicknessMm)), offsetMm: Math.max(0, Math.min(box.width - p.spacer!.thicknessMm, p.spacer!.offsetMm)) } } : {}),
+      ...(isDrawerArm && spacerSide ? { lCornerSpacer: { side: spacerSide, thicknessMm: spacerThicknessMm, offsetMm: spacerOffsetMm } } : {}),
     };
   });
 }

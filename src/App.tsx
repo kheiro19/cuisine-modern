@@ -140,9 +140,6 @@ export default function App() {
   const [armB, setArmB] = useState<number>(450);
   const [cornerDrawerArm, setCornerDrawerArm] = useState<'NONE' | 'ARM_A' | 'ARM_B'>('NONE');
   const [cornerDrawerCount, setCornerDrawerCount] = useState<number>(3);
-  const [cornerSpacerEnabled, setCornerSpacerEnabled] = useState<boolean>(true);
-  const [cornerSpacerThickness, setCornerSpacerThickness] = useState<number>(18);
-  const [cornerSpacerOffset, setCornerSpacerOffset] = useState<number>(0);
   const [cornerWallRaw, setCornerWall] = useState<'B' | 'C'>('B');
   const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
   const fits = useMemo(() => fitStates(cabinets, layout), [cabinets, layout]);
@@ -246,7 +243,7 @@ export default function App() {
     if (!canInject || cornerTaken(wall)) return;
     const groups = new Set(cabinets.map((c) => c.groupId).filter(Boolean)).size;
     addCabinets(lCornerCabinets(
-      { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB), ...(cornerDrawerArm !== 'NONE' && cornerCategory === 'BASE_UNIT' ? { drawerArm: cornerDrawerArm, drawerCount: cornerDrawerCount, spacer: { enabled: cornerSpacerEnabled, thicknessMm: cornerSpacerThickness, offsetMm: cornerSpacerOffset } } : {}) },
+      { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB), ...(cornerDrawerArm !== 'NONE' && cornerCategory === 'BASE_UNIT' ? { drawerArm: cornerDrawerArm, drawerCount: cornerDrawerCount } : {}) },
       { draft: resolved, woods, hardware: hardwareItems, edgeRolls, groupId: uid('lc'), newId: () => uid('cab'), name: `خزانة زاوية L ${cornerCategory === 'WALL_UNIT' ? 'علوية' : 'سفلية'} #${groups + 1}` },
     ));
   };
@@ -593,12 +590,7 @@ export default function App() {
                         </label>
                         {cornerDrawerArm !== 'NONE' && <>
                           <label className="flex items-center justify-between gap-2 text-[10px]"><span>عدد الأدراج</span><input type="number" min={2} max={4} value={cornerDrawerCount} onChange={(e) => setCornerDrawerCount(Math.max(2, Math.min(4, Number(e.target.value) || 3)))} className="w-14 border rounded p-1 text-center" /></label>
-                          <label className="flex items-center gap-2 text-[10px]"><input type="checkbox" checked={cornerSpacerEnabled} onChange={(e) => setCornerSpacerEnabled(e.target.checked)} /><span>إضافة لوح فاصل إنشائي عند جهة الزاوية</span></label>
-                          {cornerSpacerEnabled && <div className="grid grid-cols-2 gap-1 text-[10px]">
-                            <label className="flex items-center justify-between gap-1"><span>سماكة اللوح</span><input type="number" min={9} max={30} step={1} value={cornerSpacerThickness} onChange={(e) => setCornerSpacerThickness(Math.max(9, Math.min(30, Number(e.target.value) || 18)))} className="w-14 border rounded p-1 text-center" /></label>
-                            <label className="flex items-center justify-between gap-1"><span>إزاحة عن الحافة</span><input type="number" min={0} max={100} step={1} value={cornerSpacerOffset} onChange={(e) => setCornerSpacerOffset(Math.max(0, Math.min(100, Number(e.target.value) || 0)))} className="w-14 border rounded p-1 text-center" /></label>
-                          </div>}
-                          <p className="text-[9px] leading-snug text-slate-600">يُنشأ اللوح كقطعة فعلية في المجسم وقائمة القص. تأكد من توفر لوح بسماكة مطابقة في المخزون.</p>
+                          <p className="text-[9px] leading-snug text-slate-600">يُضاف تلقائيًا لوح حامل للأدراج عند جهة الزاوية، بسماكة واجهة الباب المقابل + 2 مم، ويُدرج في المجسم وقائمة القص والتكلفة.</p>
                         </>}
                       </div>
                     )}
