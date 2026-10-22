@@ -134,7 +134,7 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
 
   // Hinge boards of a row of several doors (zones.ts partitions): as deep as the cabinet, as tall as the zone's opening.
   layout.bands.forEach((band) => {
-    const n = band.partitions?.length ?? 0;
+    const n = (band.partitions ?? []).reduce((sum, p) => sum + p.boards, 0);
     if (n > 0) parts.push(carcase(`Door Hinge Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, n, 'vertical', 'FRONT'));
   });
 

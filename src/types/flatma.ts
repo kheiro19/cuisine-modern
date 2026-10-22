@@ -89,6 +89,16 @@ export interface CabinetZone {
   split?: ZoneSplit;
   /** DOORS only, no split: the side the hinges are on, for every door of the zone. Missing = the first door on the left, then alternating. */
   hingeSide?: 'LEFT' | 'RIGHT';
+  /**
+   * DOORS only, no split: the hinge side of EACH door, left to right ('AUTO' = the zone's side, else alternating). Wins over hingeSide
+   * for the doors it names, so every door of a row opens the way the user wants.
+   */
+  hingeSides?: Array<'LEFT' | 'RIGHT' | 'AUTO'>;
+  /**
+   * DOORS only: two neighbouring doors hinged on the same edge normally get a board EACH (two boards back to back), so no board holds
+   * the hinges of two doors. True = they share one board.
+   */
+  sharedHingeBoard?: boolean;
 }
 
 /** What fills the second column of a split zone. AUTO (or missing) = suggested from its width (math/columns.ts). */

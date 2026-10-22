@@ -39,7 +39,7 @@ test('hinge boards: every hinge of a row of doors hangs on a board, whatever the
       assert.ok(boards.some((b) => hx >= b.x0 - 0.5 && hx <= b.x1 + 0.5 && f.yMm + f.heightMm / 2 >= b.y0 && f.yMm + f.heightMm / 2 <= b.y1), `${count} doors in ${width}: the hinge of door ${f.index} at x=${hx} has no board behind it`);
     });
     const partitions = geo.boxes.filter((b) => b.key.startsWith('vpart-'));
-    assert.equal(partitions.length, Math.floor((count - 1) / 2), `${count} doors alternate their hinges: one board per pair of neighbours that share a hinge edge`);
+    assert.equal(partitions.length, 2 * Math.floor((count - 1) / 2), `${count} doors alternate their hinges: a board EACH for the two neighbours that hang on the same edge`);
     const bom = E.priceCabinet(cab, WOODS, HW, ROLLS).parts.filter((p) => p.partType.startsWith('Door Hinge Board')).reduce((s, p) => s + p.quantity, 0);
     assert.equal(bom, partitions.length, 'the cutting list has exactly the boards the drawing has');
     // a hinge plate sits on the face of its board and the arm is a normal hinge arm, never a bar across the cabinet
@@ -163,4 +163,72 @@ test('hinge helpers: edges, sides and the boards they need', () => {
   assert.equal(row.doors.length, 3);
   assert.equal(row.boards.length, 1);
   assert.ok(row.doors[2].xMm >= row.boards[0].xLoMm + 18 + 2 - 1e-6 && row.doors[1].xMm + row.doors[1].widthMm <= row.boards[0].xLoMm - 2 + 1e-6, 'doors keep 2 mm off the board on both sides');
+});
+
+// ---- every door has its own board, and its own hinge side ---------------------------------------------------------------------------
+
+const hingeX = (f) => (f.hinge === 'LEFT' ? f.xMm : f.xMm + f.widthMm);
+const boardsOf = (geo) => geo.boxes.filter((b) => b.key.startsWith('vpart-'));
+const hingesOnBoard = (geo, b) => geo.facades.filter((f) => f.motion === 'SWING' && hingeX(f) >= box(b).x0 && hingeX(f) <= box(b).x1).length; // strict: the hinge edge is over THIS board
+
+test('own board: no board holds the hinges of two doors, unless the zone says to share it', () => {
+  for (const count of [4, 6]) {
+    const own = geoOf(make('BASE_UNIT', 1200, 870, 600, [{ kind: 'DOORS', count }]));
+    boardsOf(own).forEach((b) => assert.equal(hingesOnBoard(own, b), 1, `${count} doors: ${b.key} carries ${hingesOnBoard(own, b)} hinge edges`));
+    const shared = geoOf(make('BASE_UNIT', 1200, 870, 600, [{ kind: 'DOORS', count, sharedHingeBoard: true }]));
+    assert.equal(boardsOf(shared).length, Math.floor((count - 1) / 2), 'shared: one board per pair');
+    boardsOf(shared).forEach((b) => assert.equal(hingesOnBoard(shared, b), 2, 'the shared board carries both doors'));
+    // the two boards of a pair touch back to back: 2 x 18 mm, one after the other, same height and depth
+    const stack = boardsOf(own).filter((b) => b.key.startsWith('vpart-0-2'));
+    assert.equal(stack.length, 2);
+    assert.ok(Math.abs(box(stack[0]).x1 - box(stack[1]).x0) < 0.01 || Math.abs(box(stack[1]).x1 - box(stack[0]).x0) < 0.01);
+  }
+});
+
+test('own board: the cutting list has the boards the drawing has, shared or not', () => {
+  for (const sharedHingeBoard of [false, true]) {
+    const cab = make('BASE_UNIT', 1200, 870, 600, [{ kind: 'DOORS', count: 4, ...(sharedHingeBoard ? { sharedHingeBoard } : {}) }]);
+    const bom = E.priceCabinet(cab, WOODS, HW, ROLLS).parts.filter((p) => p.partType.startsWith('Door Hinge Board')).reduce((s, p) => s + p.quantity, 0);
+    assert.equal(bom, boardsOf(geoOf(cab)).length);
+    assert.equal(bom, sharedHingeBoard ? 1 : 2);
+  }
+});
+
+test('own board: inset doors hang beside their own board and never go through one', () => {
+  const cab = make('BASE_UNIT', 1200, 870, 600, [{ kind: 'DOORS', count: 4 }], {}, HW_INSET);
+  const geo = geoOf(cab, HW_INSET);
+  assert.equal(boardsOf(geo).length, 2);
+  geo.facades.forEach((f) => geo.boxes.forEach((b) => assert.ok(!overlap(fbox(f), box(b)), `door ${f.index} goes through ${b.key}`)));
+  const w = geo.facades.map((f) => f.widthMm);
+  assert.ok(w.every((x) => Math.abs(x - w[0]) < 0.01), 'inset doors of a row are all the same width');
+});
+
+test('per-door opening: every door takes the hinge side it is given, a board stands behind each hinge', () => {
+  const sides = ['RIGHT', 'RIGHT', 'LEFT', 'LEFT'];
+  const cab = make('BASE_UNIT', 1200, 870, 600, [{ kind: 'DOORS', count: 4, hingeSides: sides }]);
+  const geo = geoOf(cab);
+  assert.deepEqual(geo.facades.map((f) => f.hinge), sides);
+  const boards = geo.boxes.filter((b) => b.kind === 'side' || b.kind === 'vdivider').map(box);
+  geo.facades.forEach((f) => assert.ok(boards.some((b) => hingeX(f) >= b.x0 - 0.5 && hingeX(f) <= b.x1 + 0.5), `door ${f.index} hangs on nothing`));
+  // edges 1 and 3 hold one hinge each (a board), edge 2 holds two (a board each): 4 boards, and the cutting list agrees
+  assert.equal(boardsOf(geo).length, 4);
+  assert.equal(E.priceCabinet(cab, WOODS, HW, ROLLS).parts.filter((p) => p.partType.startsWith('Door Hinge Board')).reduce((s, p) => s + p.quantity, 0), 4);
+  buildFasteners(geo, cab, { carcaseTh: 18, frontTh: 18 }).filter((x) => x.kind === 'HINGE_ARM').forEach((a) => assert.ok(a.sizeMm[0] <= 40));
+});
+
+test('per-door opening: AUTO falls back to the zone side, then to alternating; a single door can be chosen too', () => {
+  const geo = (zone) => geoOf(make('BASE_UNIT', 1200, 870, 600, [zone])).facades.map((f) => f.hinge);
+  assert.deepEqual(geo({ kind: 'DOORS', count: 3, hingeSides: ['AUTO', 'LEFT', 'AUTO'] }), ['LEFT', 'LEFT', 'LEFT']);
+  assert.deepEqual(geo({ kind: 'DOORS', count: 3, hingeSide: 'RIGHT', hingeSides: ['AUTO', 'LEFT', 'AUTO'] }), ['RIGHT', 'LEFT', 'RIGHT']);
+  assert.deepEqual(geo({ kind: 'DOORS', count: 1, hingeSides: ['RIGHT'] }), ['RIGHT']);
+  assert.deepEqual(geo({ kind: 'DOORS', count: 2 }), ['LEFT', 'RIGHT'], 'nothing chosen: the old alternating pattern');
+});
+
+test('per-door opening: the form keeps the choices, cuts them to the number of doors and drops an all-AUTO list', () => {
+  const norm = (zone) => P.resolveDraft({ ...P.draftFromPreset('Standard_Base'), zones: [zone] }, WOODS, HW, ROLLS).zones[0];
+  assert.deepEqual(norm({ kind: 'DOORS', count: 3, shelves: 0, hingeSides: ['RIGHT', 'AUTO', 'LEFT', 'LEFT', 'LEFT'] }).hingeSides, ['RIGHT', 'AUTO', 'LEFT']);
+  assert.deepEqual(norm({ kind: 'DOORS', count: 3, shelves: 0, hingeSides: ['RIGHT'] }).hingeSides, ['RIGHT', 'AUTO', 'AUTO'], 'padded with AUTO');
+  assert.equal(norm({ kind: 'DOORS', count: 2, shelves: 0, hingeSides: ['AUTO', 'AUTO'] }).hingeSides, undefined);
+  assert.equal(norm({ kind: 'DOORS', count: 4, shelves: 0, sharedHingeBoard: true }).sharedHingeBoard, true);
+  assert.equal(norm({ kind: 'DOORS', count: 4, shelves: 0 }).sharedHingeBoard, undefined);
 });

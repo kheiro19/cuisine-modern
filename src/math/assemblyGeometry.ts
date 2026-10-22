@@ -109,7 +109,11 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     // The hinge boards of a row of several doors (zones.ts partitions): same height and depth as a vertical board.
     layout.bands.forEach((band) => {
       (band.partitions ?? []).forEach((p) => {
-        boxes.push({ key: `vpart-${band.index}-${p.edge}`, kind: 'vdivider', sizeMm: [p.widthMm, band.openingHeightMm, D], centerMm: [p.xLoMm + p.widthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+        // One box per board: two doors hung on the same edge have a board each, back to back (a stack of `boards` boards).
+        const each = p.widthMm / p.boards;
+        for (let i = 0; i < p.boards; i++) {
+          boxes.push({ key: `vpart-${band.index}-${p.edge}${p.boards > 1 ? `-${i + 1}` : ''}`, kind: 'vdivider', sizeMm: [each, band.openingHeightMm, D], centerMm: [p.xLoMm + (i + 0.5) * each, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+        }
       });
     });
   }

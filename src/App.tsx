@@ -33,7 +33,7 @@ import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { clampInt, uid } from './math/utils';
 import { ApplianceKind, CabinetCategory, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, RunId, ZoneKind } from './types/flatma';
-import { APPLIANCES, ZONE_LABELS, isOpenCarcase, zonesOf } from './math/zones';
+import { APPLIANCES, ZONE_LABELS, hingeSidesOf, isOpenCarcase, sharedHingeEdgesOf, zonesOf } from './math/zones';
 import { OPEN_BAY_APPLIANCES } from './rules/appliances';
 import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
 import { priceCabinet } from './math/partsEngine';
@@ -626,7 +626,7 @@ export default function App() {
                       )}
                       {z.kind === 'DOORS' && !z.split && (
                         <label className="flex items-center gap-1 text-[10px] font-bold" title="المفصلات على أي جهة من الباب؛ الباب يُفتح من الجهة المقابلة">
-                          المفصلات
+                          المفصلات (كل الأبواب)
                           <select value={z.hingeSide ?? 'AUTO'} onChange={(e) => updateZone(i, { hingeSide: e.target.value === 'AUTO' ? undefined : (e.target.value as 'LEFT' | 'RIGHT') })} className="border bg-white rounded p-0.5 text-[11px]">
                             <option value="AUTO">تلقائي</option>
                             <option value="LEFT">يسار</option>
@@ -634,6 +634,44 @@ export default function App() {
                           </select>
                         </label>
                       )}
+                      {z.kind === 'DOORS' && !z.split && (z.count ?? 1) >= 1 && (() => {
+                        const n = Math.max(1, Math.round(z.count ?? 1));
+                        const effective = hingeSidesOf(n, z.hingeSide); // what AUTO means here: the zone's side, else alternating
+                        const chosen = hingeSidesOf(n, z.hingeSide, z.hingeSides);
+                        const sharedEdges = sharedHingeEdgesOf(chosen);
+                        const sideName = (v: 'LEFT' | 'RIGHT') => (v === 'LEFT' ? 'يسار' : 'يمين');
+                        return (
+                          <div className="basis-full rounded border border-slate-200 bg-white p-1 space-y-1">
+                            <span className="font-bold text-slate-600 block">جهة المفصلات لكل باب (من اليسار إلى اليمين كما تراها من الأمام):</span>
+                            <div className="flex flex-wrap gap-1">
+                              {Array.from({ length: n }, (_, k) => (
+                                <label key={k} className="flex items-center gap-1 font-bold border rounded px-1 py-0.5 bg-slate-50">
+                                  باب {k + 1}
+                                  <select
+                                    value={z.hingeSides?.[k] ?? 'AUTO'}
+                                    onChange={(e) => {
+                                      const next = Array.from({ length: n }, (_, j) => z.hingeSides?.[j] ?? 'AUTO') as Array<'LEFT' | 'RIGHT' | 'AUTO'>;
+                                      next[k] = e.target.value as 'LEFT' | 'RIGHT' | 'AUTO';
+                                      updateZone(i, { hingeSides: next.every((v) => v === 'AUTO') ? undefined : next });
+                                    }}
+                                    className="border bg-white rounded p-0.5 text-[11px]"
+                                  >
+                                    <option value="AUTO">{`تلقائي (${sideName(effective[k])})`}</option>
+                                    <option value="LEFT">مفصلات يسار</option>
+                                    <option value="RIGHT">مفصلات يمين</option>
+                                  </select>
+                                </label>
+                              ))}
+                            </div>
+                            {sharedEdges.length > 0 && (
+                              <label className="flex items-center gap-1 font-bold" title="بابان مفصلاتهما على الحافة نفسها: لوح لكل باب (لوحان متلاحمان)، أو لوح واحد يحمل مفصلات البابين">
+                                <input type="checkbox" checked={!!z.sharedHingeBoard} onChange={(e) => updateZone(i, { sharedHingeBoard: e.target.checked ? true : undefined })} />
+                                لوح مفصلات واحد مشترك بين البابين <span className="font-normal text-slate-500">(الافتراضي: لوح لكل باب)</span>
+                              </label>
+                            )}
+                          </div>
+                        );
+                      })()}
                       {z.kind === 'APPLIANCE' && (
                         <select
                           value={z.appliance ?? 'OVEN'}

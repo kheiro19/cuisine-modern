@@ -124,13 +124,20 @@ export function frontHardwareNeedsOf(d: Pick<CabinetDraft, 'zones' | 'width'>, w
   return frontHardwareNeeds(d.zones, { width: d.width }, sheet?.thickness ?? PANEL.DEFAULT_THICKNESS_MM, isOpenCarcase(d.zones));
 }
 
+/** Per-door hinge sides and the shared-board flag of a doors zone: cut to the number of doors, and dropped when they say nothing. */
+function doorOpeningFields(z: CabinetZone): Pick<CabinetZone, 'hingeSides' | 'sharedHingeBoard'> {
+  const count = clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2);
+  const sides = Array.from({ length: count }, (_, k): 'LEFT' | 'RIGHT' | 'AUTO' => (z.hingeSides?.[k] === 'LEFT' || z.hingeSides?.[k] === 'RIGHT' ? z.hingeSides[k] : 'AUTO'));
+  return { ...(sides.some((x) => x !== 'AUTO') ? { hingeSides: sides } : {}), ...(z.sharedHingeBoard ? { sharedHingeBoard: true } : {}) };
+}
+
 function normalizeZoneShape(z: CabinetZone, category: CabinetCategory): CabinetZone {
   let kind = z.kind;
   if (kind === 'DRAWERS' && category === 'WALL_UNIT') kind = 'DOORS'; // no drawers in a wall unit
   const height = typeof z.heightMm === 'number' && Number.isFinite(z.heightMm) && z.heightMm > 0
     ? clampInt(z.heightMm, LIMITS.ZONE_HEIGHT_MM[0], LIMITS.ZONE_HEIGHT_MM[1], LIMITS.ZONE_HEIGHT_MM[0])
     : undefined;
-  if (kind === 'DOORS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2), shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0), ...(z.hingeSide === 'LEFT' || z.hingeSide === 'RIGHT' ? { hingeSide: z.hingeSide } : {}) };
+  if (kind === 'DOORS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2), shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0), ...(z.hingeSide === 'LEFT' || z.hingeSide === 'RIGHT' ? { hingeSide: z.hingeSide } : {}), ...doorOpeningFields(z) };
   if (kind === 'DRAWERS') return { kind, heightMm: height, count: clampInt(z.count, LIMITS.FRONT_ELEMENTS[0], LIMITS.FRONT_ELEMENTS[1], 2) };
   if (kind === 'OPEN') return { kind, heightMm: height, shelves: clampInt(z.shelves, LIMITS.SHELVES[0], LIMITS.SHELVES[1], 0) };
   if (kind === 'APRON') return { kind, heightMm: height };
