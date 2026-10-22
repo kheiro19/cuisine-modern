@@ -13,7 +13,7 @@
 //   ARM_A   = door width x D along the back wall;   ARM_B = door width x D along the side wall.
 import type { CabinetCategory, CabinetObject, CabinetZone, RunId } from '../types/flatma';
 import { FAMILIES } from '../rules/families';
-import { CabinetDraft, draftToNewCabinet, resolveDraft } from './cabinetPresets';
+import { CabinetDraft, draftToNewCabinet, resolveDraft, drawerHardwareCategories } from './cabinetPresets';
 import type { EdgeBandRoll, InjectedHardwareItem, InjectedWoodMaterial } from '../types/flatma';
 
 export type CornerRole = 'SQUARE' | 'ARM_A' | 'ARM_B';
@@ -29,6 +29,10 @@ export interface LCornerParams {
   /** Width of the box (and of its door) along the back wall / along the side wall. */
   armAMm: number;
   armBMm: number;
+  /** Optional mixed-front mode, supported for base L corners only. */
+  drawerArm?: 'ARM_A' | 'ARM_B';
+  drawerCount?: number;
+  spacer?: { enabled: boolean; thicknessMm: number; offsetMm: number };
 }
 
 export interface LCornerBox {
@@ -81,9 +85,13 @@ type NewCabinet = Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 
 export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[] {
   const family = p.category === 'WALL_UNIT' ? FAMILIES.WALL : FAMILIES.BASE;
   return lCornerBoxes(p).map((box) => {
+    const isDrawerArm = p.category === 'BASE_UNIT' && box.role !== 'SQUARE' && p.drawerArm === box.role;
     const zones: CabinetZone[] = box.role === 'SQUARE'
       ? [{ kind: 'OPEN', shelves: 0 }]
-      : [{ kind: 'DOORS', count: 1, shelves: 0, ...(box.hingeSide ? { hingeSide: box.hingeSide } : {}) }];
+      : isDrawerArm
+        ? [{ kind: 'DRAWERS', count: Math.max(2, Math.min(4, Math.round(p.drawerCount ?? 3))) }]
+        : [{ kind: 'DOORS', count: 1, shelves: 0, ...(box.hingeSide ? { hingeSide: box.hingeSide } : {}) }];
+    const drawerHw = b.draft.drawerHardwareItemId || b.hardware.find((h) => drawerHardwareCategories().includes(h.category))?.id || '';
     const resolved = resolveDraft({
       ...b.draft,
       subtype: p.category === 'WALL_UNIT' ? 'L_Corner_Wall' : 'L_Corner_Base',
@@ -92,6 +100,7 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
       height: family.dims.height,
       depth: p.depthMm,
       zones,
+      ...(isDrawerArm ? { hardwareItemId: '', drawerHardwareItemId: drawerHw, openingMode: 'HANDLE' as const, golaSlots: [] } : {}),
       openingMode: 'HANDLE',
       dividerBoards: 1,
       frontStyle: 'SOLID',
@@ -100,6 +109,12 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
     const base = draftToNewCabinet(resolved, { id: b.newId(), name: `${b.name} — ${CORNER_ROLE_LABELS[box.role]}`, positionX: box.positionX });
     // The arm along the side wall stops its door short at the corner, so the door of the arm along the back wall runs past it
     // instead of the two doors (each stands one front thickness in front of its box) going through each other.
-    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides, ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}) };
+    const hasSpacer = isDrawerArm && p.spacer?.enabled && p.spacer.thicknessMm > 0;
+    const spacerSide = box.omitSides[0];
+    return {
+      ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides,
+      ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}),
+      ...(hasSpacer && spacerSide ? { lCornerSpacer: { side: spacerSide, thicknessMm: Math.max(1, Math.min(60, p.spacer!.thicknessMm)), offsetMm: Math.max(0, Math.min(box.width - p.spacer!.thicknessMm, p.spacer!.offsetMm)) } } : {}),
+    };
   });
 }

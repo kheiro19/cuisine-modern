@@ -188,6 +188,8 @@ export interface CabinetObject {
    * one at a right angle (the two arms of an L corner) is not hit by it: the other door runs past, this one butts against it.
    */
   frontSetbackSides?: Array<'LEFT' | 'RIGHT'>;
+  /** Optional real separator board at the open end of a drawer arm in an L corner. Dimensions are millimetres. */
+  lCornerSpacer?: { side: 'LEFT' | 'RIGHT'; thicknessMm: number; offsetMm: number };
 
   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
   frontTextureOverride?: FrontTextureOverride;

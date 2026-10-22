@@ -125,6 +125,9 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
 
   const sideCount = Number(sides.left) + Number(sides.right); // 2, unless a neighbouring box of an L corner replaces one
   if (sideCount > 0) parts.push(carcase('Side Panel (Left/Right)', cab.depth, cab.height, sideCount, 'vertical', 'FRONT'));
+  if (cab.lCornerSpacer && cab.lCornerSpacer.thicknessMm > 0) {
+    parts.push({ partType: 'L-corner drawer clearance spacer', role: 'carcase', thicknessMm: cab.lCornerSpacer.thicknessMm, widthMm: cab.depth, lengthMm: cab.height, quantity: 1, grain: 'vertical', edge: 'FRONT' });
+  }
   if (!open) parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
   if (!open && zones.length > 1) parts.push(carcase('Zone Divider Panel', cab.depth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
   // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
@@ -380,7 +383,7 @@ export function priceCabinet(
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   const parts: PricedPart[] = model.parts.map((p) => {
-    const material = p.role === 'front' ? frontMat : p.role === 'back' ? hdfMat ?? carcaseMat : carcaseMat;
+    const material = p.role === 'front' ? frontMat : p.role === 'back' ? hdfMat ?? carcaseMat : p.partType === 'L-corner drawer clearance spacer' ? woods.find((m) => m.thickness === p.thicknessMm && m.thickness >= 9) ?? carcaseMat : carcaseMat;
     const roll = p.role === 'front' ? frontRoll : p.role === 'carcase' ? carcaseRoll : undefined;
     const edgeMm = p.edge === 'NONE' ? 0 : Math.max(0, roll ? roll.thickness : material?.edgeThickness ?? 0);
     const cutWidth = p.edge === 'ALL' ? p.widthMm - 2 * edgeMm : p.edge === 'FRONT' ? p.widthMm - edgeMm : p.widthMm;
