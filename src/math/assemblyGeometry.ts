@@ -85,8 +85,8 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
   const cx = sides.centerMm; // middle of the boards between the sides
   const zones = zonesOf(cab);
   const open = isOpenCarcase(zones);
-  const layout = layoutZones(cab, th);
-  const plan = planFronts(cab, layout);
+  const layout = layoutZones(cab, th, { inset: o.inset });
+  const plan = planFronts(cab, layout, { inset: o.inset, frontThMm: frontTh });
   const boxes: BoxGeo[] = [];
 
   if (sides.left) boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
@@ -105,6 +105,12 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     layout.bands.forEach((band) => {
       if (!band.split) return;
       boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+    });
+    // The hinge boards of a row of several doors (zones.ts partitions): same height and depth as a vertical board.
+    layout.bands.forEach((band) => {
+      (band.partitions ?? []).forEach((p) => {
+        boxes.push({ key: `vpart-${band.index}-${p.edge}`, kind: 'vdivider', sizeMm: [p.widthMm, band.openingHeightMm, D], centerMm: [p.xLoMm + p.widthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+      });
     });
   }
 
@@ -125,10 +131,11 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     const count = Math.max(0, Math.round(band.zone.shelves ?? 0));
     if (count === 0) return;
     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
-    shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets).forEach((span) => {
+    shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets, band.partitions).forEach((span) => {
       for (let k = 0; k < count; k++) {
         const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
-        const key = span.column === 'ALL' ? `shelf-${band.index}-${k}` : `shelf-${band.index}-${span.column === 'FILL' ? 'f' : 'm'}-${k}`;
+        const tag = `${span.column === 'ALL' ? '' : span.column === 'FILL' ? 'f-' : 'm-'}${span.part !== undefined ? `p${span.part}-` : ''}`;
+        const key = `shelf-${band.index}-${tag}${k}`;
         boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM], centerMm: [(span.loMm + span.hiMm) / 2, y, -PANEL.SHELF_DEPTH_INSET_MM / 2] });
       }
     });

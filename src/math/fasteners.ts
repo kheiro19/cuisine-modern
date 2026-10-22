@@ -26,6 +26,7 @@ export interface Fastener {
 }
 
 type Vec = [number, number, number];
+const span = (b: BoxGeo) => ({ x0: b.centerMm[0] - b.sizeMm[0] / 2, x1: b.centerMm[0] + b.sizeMm[0] / 2, y0: b.centerMm[1] - b.sizeMm[1] / 2, y1: b.centerMm[1] + b.sizeMm[1] / 2 });
 const cyl = (kind: FastenerKind, axis: Fastener['axis'], c: Vec, dia: number, len: number, parent: string): Fastener =>
   ({ kind, shape: 'cyl', axis, centerMm: c, sizeMm: [dia, len, 0], parent });
 const box = (kind: FastenerKind, c: Vec, size: Vec, parent: string): Fastener =>
@@ -94,12 +95,17 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     const [cx, cy, cz] = b.centerMm;
     const y = cy - b.sizeMm[1] / 2 - FASTENER.SHELF_PIN_DIA_MM / 2;
     const zs = [cz + b.sizeMm[2] / 2 - FASTENER.SHELF_PIN_SETBACK_MM, cz - b.sizeMm[2] / 2 + FASTENER.SHELF_PIN_SETBACK_MM];
-    const vdiv = `vdiv-${/^shelf-(\d+)/.exec(b.key)?.[1] ?? 0}`;
     const reach = (b.sizeMm[0] + PANEL.SHELF_WIDTH_CLEARANCE_MM) / 2; // the shelf plus its clearance: up to the board it rests against
-    [{ xFace: cx - reach, dir: 1 as const, side: 'side-left' }, { xFace: cx + reach, dir: -1 as const, side: 'side-right' }].forEach((e) => {
-      const onSide = Math.abs(e.xFace - (e.dir === 1 ? th : W - th)) < 0.6;
-      if (onSide && !geo.boxes.some((x) => x.key === e.side)) return; // that side is not cut (L corner): no pins in thin air
-      zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, onSide ? e.side : vdiv)));
+    [{ xFace: cx - reach, dir: 1 as const }, { xFace: cx + reach, dir: -1 as const }].forEach((e) => {
+      // The board that really stands at this end of the shelf: a side, a vertical board or a hinge board. None (an L corner leaves one
+      // side out) = no pins in thin air.
+      const holder = geo.boxes.find((o) => {
+        if (o.kind !== 'side' && o.kind !== 'vdivider') return false;
+        const r = span(o);
+        return Math.abs((e.dir === 1 ? r.x1 : r.x0) - e.xFace) < 0.6 && cy >= r.y0 && cy <= r.y1;
+      });
+      if (!holder) return;
+      zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, holder.key)));
     });
   });
 
@@ -120,10 +126,17 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     if (f.motion === 'SWING' && f.hinge) {
       const left = f.hinge === 'LEFT';
       const xCup = left ? f.xMm + FASTENER.HINGE_CUP_EDGE_MM : f.xMm + f.widthMm - FASTENER.HINGE_CUP_EDGE_MM;
-      // In a split zone the plate sits on the board at the outer edge of the door's column (a side or the vertical board).
+      // The mounting plate sits on the face of the board the hinge edge hangs on: a side, the zone's vertical board or a hinge board
+      // between two doors (zones.ts partitions). It is looked up in the drawing itself, so a hinge is never mounted on nothing.
+      const hx = left ? f.xMm : f.xMm + f.widthMm;
+      const cyDoor = f.yMm + f.heightMm / 2;
+      const reach = (b: BoxGeo) => { const r = span(b); return hx < r.x0 ? r.x0 - hx : hx > r.x1 ? hx - r.x1 : 0; }; // 0 = the edge is over the board; an inset door stands a reveal off it
+      const holder = geo.boxes
+        .filter((b) => (b.kind === 'side' || b.kind === 'vdivider') && cyDoor >= span(b).y0 && cyDoor <= span(b).y1 && reach(b) <= PANEL.INSET_GAP_MM + 1)
+        .sort((a, b) => reach(a) - reach(b))[0];
       const colLo = f.innerLoMm ?? th, colHi = f.innerHiMm ?? W - th;
-      const xPlate = left ? colLo + 4 : colHi - 4;
-      const plateParent = left ? (colLo <= th + 0.5 ? 'side-left' : `vdiv-${f.zoneIndex}`) : (colHi >= W - th - 0.5 ? 'side-right' : `vdiv-${f.zoneIndex}`);
+      const xPlate = holder ? (left ? span(holder).x1 + 4 : span(holder).x0 - 4) : (left ? colLo + 4 : colHi - 4);
+      const plateParent = holder ? holder.key : left ? 'side-left' : 'side-right';
       const n = hingesPerDoor(f.heightMm);
       const lo = f.yMm + Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
       const hi = f.yMm + f.heightMm - Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
@@ -134,8 +147,14 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
         out.push(box('HINGE_PLATE', [xPlate, y, zRear - 22], [8, 40, 35], plateParent));
       });
     } else if (f.motion === 'LIFT') {
-      const parent = geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
-      out.push(box('LIFT_KIT', [f.xMm + f.widthMm / 2, f.yMm + f.heightMm - 55, zRear - 40], [Math.min(f.widthMm * 0.6, 320), 40, 60], parent));
+      // The kit hangs against the underside of the board above the door (the roof, or the divider over its zone), touching it.
+      const top = f.yMm + f.heightMm, mid = f.xMm + f.widthMm / 2, kitH = 40;
+      const above = geo.boxes
+        .filter((b) => (b.kind === 'roof' || b.kind === 'divider' || b.kind === 'rail') && span(b).y1 >= top - 0.5 && mid >= span(b).x0 && mid <= span(b).x1)
+        .sort((a, b) => span(a).y0 - span(b).y0)[0];
+      const parent = above ? above.key : geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
+      const yTop = above ? span(above).y0 : top - 35;
+      out.push(box('LIFT_KIT', [mid, yTop - kitH / 2, zRear - 40], [Math.min(f.widthMm * 0.6, 320), kitH, 60], parent));
     } else if (f.motion === 'SLIDE') {
       const len = runnerLengthMm(D);
       const y = f.yMm + f.heightMm * 0.35;

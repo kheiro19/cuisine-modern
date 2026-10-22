@@ -173,6 +173,11 @@ export interface CabinetObject {
   groupId?: string;
   /** Sides that are not cut because the neighbouring box of the same group is open to this one (the interior of an L corner is continuous). */
   omitSides?: Array<'LEFT' | 'RIGHT'>;
+  /**
+   * Edges where the door row stops short by one front thickness + the gap, so the door of a neighbouring box that meets this
+   * one at a right angle (the two arms of an L corner) is not hit by it: the other door runs past, this one butts against it.
+   */
+  frontSetbackSides?: Array<'LEFT' | 'RIGHT'>;
 
   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
   frontTextureOverride?: FrontTextureOverride;

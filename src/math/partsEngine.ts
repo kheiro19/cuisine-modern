@@ -16,7 +16,7 @@ import {
 } from '../types/flatma';
 import { EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
-import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, openingModeOf } from '../rules';
+import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { bandPricePerMeterDA } from './edgeBand';
 import { frontHardwareNeeds, shelfSpansOf } from './columns';
@@ -68,8 +68,11 @@ export interface CabinetIssue {
     | 'APPLIANCE_ZONE_TOO_SHORT'
     | 'APPLIANCE_ZONE_WIDE'
     | 'SPLIT_NO_ROOM'
+    | 'DOORS_TOO_NARROW'
     | 'SHELVES_TOO_CLOSE'
-    | 'GOLA_ZONE_TOO_SHORT';
+    | 'GOLA_ZONE_TOO_SHORT'
+    | 'GOLA_NOT_WITH_INSET'
+    | 'LIFT_ZONE_NOT_TOP';
   severity: 'error' | 'warning';
   message: string;
 }
@@ -108,10 +111,10 @@ export interface CabinetModel {
 }
 
 /** Layout + fronts + the list of parts, from the cabinet and the two board thicknesses. Pure geometry. */
-export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean } = {}): CabinetModel {
+export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean } = {}): CabinetModel {
   const zones = zonesOf(cab);
-  const layout = layoutZones(cab, carcaseTh);
-  const plan = planFronts(cab, layout);
+  const layout = layoutZones(cab, carcaseTh, { inset: opts.inset });
+  const plan = planFronts(cab, layout, { inset: opts.inset, frontThMm: frontTh });
   const sides = carcaseSidesOf(cab, carcaseTh);
   const inner = sides.innerMm;
   const open = isOpenCarcase(zones);
@@ -127,6 +130,12 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
   // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
   layout.bands.forEach((band) => {
     if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
+  });
+
+  // Hinge boards of a row of several doors (zones.ts partitions): as deep as the cabinet, as tall as the zone's opening.
+  layout.bands.forEach((band) => {
+    const n = band.partitions?.length ?? 0;
+    if (n > 0) parts.push(carcase(`Door Hinge Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, n, 'vertical', 'FRONT'));
   });
 
   if (topOf(cab) === 'RAILS') {
@@ -146,7 +155,7 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
     const n = Math.max(0, Math.round(band.zone.shelves ?? 0));
     if (n === 0) return;
     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
-    shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets).forEach((s) => {
+    shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets, band.partitions).forEach((s) => {
       const w = s.hiMm - s.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM;
       shelfRows.set(w, (shelfRows.get(w) ?? 0) + n);
     });
@@ -198,7 +207,9 @@ export function hardwareRequirements(
 ): HardwareRequirement[] {
   const th = dims?.carcaseTh ?? (cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM);
   const fTh = dims?.frontTh ?? (cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
-  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th));
+  const doorHwForPlan = pickFrontHardware(cab, 'DOORS', items);
+  const insetHw = !!doorHwForPlan && doorHwForPlan.modelType.includes('Inset Hinge');
+  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th, { inset: insetHw }), { inset: insetHw, frontThMm: fTh });
   const out: HardwareRequirement[] = [];
   const add = (item: InjectedHardwareItem | undefined, quantity: number, group: HardwareGroup) => {
     if (!item || quantity <= 0) return;
@@ -335,7 +346,8 @@ export function priceCabinet(
   }
 
   const doorHw = pickFrontHardware(cab, 'DOORS', hardwareItems);
-  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw) });
+  const inset = !!doorHw && doorHw.modelType.includes('Inset Hinge');
+  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw), inset });
 
   model.layout.issues.forEach((i) => issues.push({ code: i.code, severity: i.code === 'ZONES_TOO_TALL' ? 'error' : 'warning', message: `Cabinet "${name}": ${i.message}` }));
   if (!carcaseMat) issues.push({ code: 'NO_CARCASE_MATERIAL', severity: 'error', message: `Cabinet "${name}": carcase material is not in stock — carcase not priced` });
@@ -345,6 +357,8 @@ export function priceCabinet(
   if (needs.drawers && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
   if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
   if (model.plan.golaSkipped?.length) issues.push({ code: 'GOLA_ZONE_TOO_SHORT', severity: 'warning', message: `Cabinet "${name}": zone ${model.plan.golaSkipped.map((i) => i + 1).join(', ')} too short for a Gola channel plus fronts of at least ${PANEL.GOLA_MIN_FRONT_MM} mm: no channel there` });
+  if (model.plan.golaDroppedByInset) issues.push({ code: 'GOLA_NOT_WITH_INSET', severity: 'warning', message: `Cabinet "${name}": inset hinges put the fronts inside the carcase, where a Gola channel cannot go: no channel is drawn or priced` });
+  if (isLiftItem(doorHw) && !liftZoneIsTop(zones)) issues.push({ code: 'LIFT_ZONE_NOT_TOP', severity: 'error', message: `Cabinet "${name}": an overhead lift opens upward through everything above it, so it only fits the doors zone that is the top one and the only one with doors: use hinges here` });
   if (model.plan.channels.length > 0 && !hardwareItems.some((h) => h.id === cab.frontConfig.golaProfileItemId || h.category === OPENING_HARDWARE.GOLA.hardwareCategory)) issues.push({ code: 'NO_GOLA_ITEM', severity: 'warning', message: `Cabinet "${name}": Gola channels but no "Gola & Handle Profiles" item in stock — profile not priced` });
   if (model.plan.facades.some((f) => f.kind === 'DRAWER' && f.kinematic !== 'PULL_OUT_FRAME' && f.heightMm < minDrawerFrontMm())) {
     issues.push({ code: 'DRAWER_BOX_TOO_LOW', severity: 'warning', message: `Cabinet "${name}": a drawer front is lower than ${minDrawerFrontMm()} mm, too low for a drawer box: use fewer drawers or a taller cabinet` });

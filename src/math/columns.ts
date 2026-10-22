@@ -147,12 +147,25 @@ export interface ShelfSpan {
   column: 'ALL' | 'MAIN' | 'FILL';
   loMm: number;
   hiMm: number;
+  /** Compartment number, left to right, when hinge boards (zones.ts partitions) cut the run into several. */
+  part?: number;
+}
+
+/** A run [lo, hi] cut by vertical boards into the compartments between them. Compartments narrower than a column are dropped. */
+function compartments(lo: number, hi: number, boards: ReadonlyArray<{ xLoMm: number; widthMm: number }>): Array<[number, number]> {
+  const cuts = [...boards].sort((a, b) => a.xLoMm - b.xLoMm);
+  const out: Array<[number, number]> = [];
+  let from = lo;
+  cuts.forEach((b) => { out.push([from, b.xLoMm]); from = b.xLoMm + b.widthMm; });
+  out.push([from, hi]);
+  return out.filter(([a, b]) => b - a >= SPLIT.MIN_COLUMN_MM);
 }
 
 /**
  * Where a zone's fixed shelves go. An unsplit DOORS / OPEN zone has one run across the interior (nothing when it carries baskets).
  * In a split zone every column that is a shelf compartment gets the zone's shelf count: the doors column (unless it carries
- * baskets) and a small-door or open filler. A pull-out or a panel column has none. BOM and 3D both read this.
+ * baskets) and a small-door or open filler. A pull-out or a panel column has none. A run that hinge boards cross is cut into one
+ * span per compartment, so no shelf passes through a board. BOM and 3D both read this.
  */
 export function shelfSpansOf(
   zone: CabinetZone,
@@ -160,13 +173,18 @@ export function shelfSpansOf(
   th: number,
   cabinetWidthMm: number,
   mainHasBaskets: boolean,
+  partitions: ReadonlyArray<{ xLoMm: number; widthMm: number }> = [],
 ): ShelfSpan[] {
+  const run = (column: ShelfSpan['column'], lo: number, hi: number, boards: ReadonlyArray<{ xLoMm: number; widthMm: number }> = []): ShelfSpan[] => {
+    const parts = compartments(lo, hi, boards);
+    return parts.map(([a, b], n) => ({ column, loMm: a, hiMm: b, ...(boards.length > 0 ? { part: n } : {}) }));
+  };
   if (!split) {
     if (zone.kind !== 'DOORS' && zone.kind !== 'OPEN') return [];
-    return mainHasBaskets ? [] : [{ column: 'ALL', loMm: th, hiMm: cabinetWidthMm - th }];
+    return mainHasBaskets ? [] : run('ALL', th, cabinetWidthMm - th, partitions);
   }
   const out: ShelfSpan[] = [];
-  if (zone.kind === 'DOORS' && !mainHasBaskets) out.push({ column: 'MAIN', loMm: split.main.innerLoMm, hiMm: split.main.innerHiMm });
-  if (split.fill.fill === 'DOOR' || split.fill.fill === 'OPEN') out.push({ column: 'FILL', loMm: split.fill.innerLoMm, hiMm: split.fill.innerHiMm });
+  if (zone.kind === 'DOORS' && !mainHasBaskets) out.push(...run('MAIN', split.main.innerLoMm, split.main.innerHiMm, partitions));
+  if (split.fill.fill === 'DOOR' || split.fill.fill === 'OPEN') out.push(...run('FILL', split.fill.innerLoMm, split.fill.innerHiMm));
   return out;
 }

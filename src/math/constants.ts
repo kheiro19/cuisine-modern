@@ -35,6 +35,11 @@ export const PANEL = {
    * like a wall unit: a channel at the top of a 2.2 m tower cannot be reached. Lower doors keep it at the top.
    */
   GOLA_REACH_MM: 1500,
+  /**
+   * Inset (flush) fronts sit INSIDE the carcase opening: this reveal is left on every edge, between neighbouring doors / drawers
+   * and against the sides, the dividers, the bottom and the top (typical 2-3 mm for inset hinges).
+   */
+  INSET_GAP_MM: 2,
   /** Used only when a cabinet references a material that is not in stock. */
   DEFAULT_THICKNESS_MM: 18,
   /**

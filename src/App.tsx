@@ -37,7 +37,7 @@ import { APPLIANCES, ZONE_LABELS, isOpenCarcase, zonesOf } from './math/zones';
 import { OPEN_BAY_APPLIANCES } from './rules/appliances';
 import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
 import { priceCabinet } from './math/partsEngine';
-import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, templatesOf } from './rules';
+import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, liftZoneIsTop, templatesOf } from './rules';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
@@ -163,7 +163,7 @@ export default function App() {
   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
   const hasDoorZone = needs.doors;
   const hasDrawerZone = needs.drawers;
-  const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category));
+  const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category) && (liftZoneIsTop(resolved.zones) || h.category !== 'Overhead Lift Systems')); // a lift only fits the top doors zone
   const drawerOptions = hardwareItems.filter((h) => drawerHardwareCategories().includes(h.category));
   const isLift = kinematicOfHardware(hardwareItems.find((h) => h.id === resolved.hardwareItemId))?.id === 'LIFT';
   const golaAllowed = canUseGola(resolved.category, resolved.zones); // rules/openings.ts
@@ -179,7 +179,7 @@ export default function App() {
     };
     return { front: info('front', previewCabinet.frontEdgeRollId), carcase: info('carcase', previewCabinet.carcaseEdgeRollId) };
   }, [previewPricing, previewCabinet, edgeRolls]);
-  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
+  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'DOORS_TOO_NARROW', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'GOLA_NOT_WITH_INSET', 'LIFT_ZONE_NOT_TOP', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
   const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
 
   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));

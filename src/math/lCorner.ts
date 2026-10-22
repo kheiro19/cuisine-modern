@@ -98,6 +98,8 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
       golaSlots: [],
     }, b.woods, b.hardware, b.edgeRolls);
     const base = draftToNewCabinet(resolved, { id: b.newId(), name: `${b.name} — ${CORNER_ROLE_LABELS[box.role]}`, positionX: box.positionX });
-    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides };
+    // The arm along the side wall stops its door short at the corner, so the door of the arm along the back wall runs past it
+    // instead of the two doors (each stands one front thickness in front of its box) going through each other.
+    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides, ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}) };
   });
 }

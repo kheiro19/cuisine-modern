@@ -22,7 +22,7 @@ import { APPLIANCES, isOpenCarcase, zonesOf } from './zones';
 import { COLUMN_FILLS, canSplitZone, frontHardwareNeeds } from './columns';
 import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templates';
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
-import { openingModeOf, resolveOpeningMode } from '../rules/openings';
+import { liftZoneIsTop, openingModeOf, resolveOpeningMode } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
 import { OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
 import { getAccessory } from '../data/accessoryCatalog';
@@ -205,7 +205,9 @@ export function resolveDraft(
 
   // Hardware: hinges / lift for the doors, runners for the drawers.
   const preferLift = !!(d.preferLift ?? SUBTYPE_PRESETS[d.subtype]?.preferLift);
-  const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category));
+  // An overhead lift only fits a doors zone that is the top (and only) one: otherwise its door would sweep through the zone above.
+  const liftFits = liftZoneIsTop(zones);
+  const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category) && (liftFits || h.category !== 'Overhead Lift Systems'));
   const drawerOptions = hardware.filter((h) => drawerHardwareCategories().includes(h.category));
   d.hardwareItemId = !needs.doors ? ''
     : (doorOptions.find((h) => h.id === d.hardwareItemId)

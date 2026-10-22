@@ -29,3 +29,13 @@ export function resolveOpeningMode(requested: OpeningMode | undefined, category:
 /** طريقة فتح خزانة محفوظة (الخزائن القديمة بلا openingMode تُقرأ من علم Gola). */
 export const openingModeOf = (cab: Pick<CabinetObject, 'openingMode' | 'frontConfig'>): OpeningMode =>
   cab.openingMode ?? (cab.frontConfig.hasGolaProfile ? 'GOLA' : 'HANDLE');
+
+/**
+ * An overhead lift swings its door UP through everything above it, so it only fits when the doors are in the top zone and in no other
+ * (a lower lift door would sweep through the zone above; hinged doors below need a second hardware item). A zone also carries a door
+ * when it is split and its filler column is, or may become (AUTO), a small door beside an appliance.
+ */
+export function liftZoneIsTop(zones: ReadonlyArray<{ kind: ZoneKind; split?: { fill?: string } }>): boolean {
+  const bearing = zones.map((z, i) => (z.kind === 'DOORS' || (!!z.split && (z.split.fill === undefined || z.split.fill === 'DOOR' || z.split.fill === 'AUTO')) ? i : -1)).filter((i) => i >= 0);
+  return bearing.length === 0 || (bearing.length === 1 && bearing[0] === zones.length - 1);
+}

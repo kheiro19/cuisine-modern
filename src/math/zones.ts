@@ -15,6 +15,7 @@ import { golaSlotsOfZone } from './gola';
 import { APPLIANCES, OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
 import { canUseGola } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
+import { carcaseSidesOf } from './carcaseSides';
 import { KinematicId, validKinematic } from '../rules/kinematics';
 
 export { APPLIANCES, nicheOf } from '../rules/appliances';
@@ -45,7 +46,7 @@ export function isOpenCarcase(zones: CabinetZone[]): boolean {
 }
 
 export interface ZoneIssue {
-  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SHELVES_TOO_CLOSE';
+  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SHELVES_TOO_CLOSE' | 'DOORS_TOO_NARROW';
   message: string;
 }
 
@@ -60,6 +61,18 @@ export interface ZoneBand {
   bandTopMm: number;
   /** The two columns when a vertical board splits this zone (math/columns.ts); missing = one column, the whole width. */
   split?: SplitLayout;
+  /**
+   * Doors zones with several swinging doors: the vertical boards the hinges hang on. A hinge needs a board behind it, so every hinge
+   * that is not on a side (or on the zone's own vertical board) gets one: neighbouring doors hinged on the same edge share it.
+   */
+  partitions?: ZonePartition[];
+}
+
+/** One hinge board inside a doors zone: `edge` = the index of the door edge it stands behind (1 = between door 0 and door 1). */
+export interface ZonePartition {
+  edge: number;
+  xLoMm: number;
+  widthMm: number;
 }
 
 export interface ZoneLayout {
@@ -67,11 +80,57 @@ export interface ZoneLayout {
   /** Bottom edge of each divider board (n - 1 of them), measured from the cabinet bottom. */
   dividerBottomsMm: number[];
   issues: ZoneIssue[];
+  /** Board thickness the layout was made with (the partitions and the inset fronts need it). */
+  thicknessMm?: number;
+}
+
+/**
+ * The hinge side of every door of a row. A zone that states a side hangs all its doors on it; otherwise they alternate
+ * (door 0 on the left) so the neighbours open towards each other.
+ */
+export function hingeSidesOf(count: number, forced?: 'LEFT' | 'RIGHT'): Array<'LEFT' | 'RIGHT'> {
+  return Array.from({ length: Math.max(0, count) }, (_, k) => forced ?? (k % 2 === 0 ? 'LEFT' : 'RIGHT'));
+}
+
+/** The count + 1 edges of a row of doors, left to right: the nominal cuts of the cabinet width, or the strip of a column. All to the half millimetre. */
+export function doorEdgesOf(count: number, widthMm: number, strip?: { loMm: number; hiMm: number }): number[] {
+  return Array.from({ length: count + 1 }, (_, j) => (strip
+    ? (j === 0 ? strip.loMm : j === count ? strip.hiMm : Math.round(2 * (strip.loMm + (j * (strip.hiMm - strip.loMm)) / count)) / 2)
+    : Math.round((2 * j * widthMm) / count) / 2));
+}
+
+/**
+ * A row of INSET doors between two walls [loMm, hiMm]: the hinge boards (one per entry of `boardEdges`, see hingeEdgesOf) cut the row
+ * into compartments and the doors sit inside them, `g` clear of every board and of each other, all the same width. Returns the doors
+ * (x, width, left to right) and the x of the left face of each board. layoutZones cuts the boards from this and insetPlan hangs the
+ * doors in it, so a door never stands where a board is.
+ */
+export function insetRowOf(count: number, boardEdges: ReadonlyArray<number>, loMm: number, hiMm: number, boardMm: number, g: number): { doors: Array<{ xMm: number; widthMm: number }>; boards: Array<{ edge: number; xLoMm: number }> } {
+  const cuts = [0, ...boardEdges, count];
+  const compartments = cuts.length - 1;
+  const w = Math.max(0, Math.floor(2 * ((hiMm - loMm - boardEdges.length * boardMm - (count + compartments) * g) / count)) / 2);
+  const doors: Array<{ xMm: number; widthMm: number }> = [];
+  const boards: Array<{ edge: number; xLoMm: number }> = [];
+  let x = loMm;
+  for (let c = 0; c < compartments; c++) {
+    x += g;
+    for (let k = cuts[c]; k < cuts[c + 1]; k++) { doors.push({ xMm: x, widthMm: w }); x += w + (k < cuts[c + 1] - 1 ? g : 0); }
+    x += g;
+    if (c < compartments - 1) { boards.push({ edge: cuts[c + 1], xLoMm: x }); x += boardMm; }
+  }
+  return { doors, boards };
+}
+
+/** The inner door edges a hinge hangs on (0 and `count` are the carcase / column boundary, which is already a board). */
+export function hingeEdgesOf(count: number, sides: ReadonlyArray<'LEFT' | 'RIGHT'>): number[] {
+  const edges = new Set<number>();
+  sides.forEach((side, k) => { const e = side === 'LEFT' ? k : k + 1; if (e > 0 && e < count) edges.add(e); });
+  return [...edges].sort((a, b) => a - b);
 }
 
 type SizedCabinet = ZonedCabinet & Pick<CabinetObject, 'width' | 'height' | 'depth'>;
 
-export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout {
+export function layoutZones(cab: SizedCabinet, thicknessMm: number, opts: { inset?: boolean } = {}): ZoneLayout {
   const zones = zonesOf(cab);
   const n = zones.length;
   const th = thicknessMm;
@@ -127,6 +186,31 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout 
     if (s.layout) b.split = s.layout;
     if (s.issue) issues.push(s.issue);
   });
+  // Hinge boards: a door can only hang on a board. With three or more doors in a row (or all hinges on one side) some hinges fall
+  // between two doors, where there is nothing: a board is cut for each of those edges, and the doors hang on it.
+  bands.forEach((b) => {
+    const z = b.zone;
+    if (z.kind !== 'DOORS' || open || z.kinematic === 'PULL_OUT_FRAME') return;
+    const count = Math.max(1, Math.round(z.count ?? 1));
+    if (count < 2) return;
+    const edgeIdx = hingeEdgesOf(count, hingeSidesOf(count, b.split ? undefined : z.hingeSide));
+    if (edgeIdx.length === 0) return;
+    const inSides = carcaseSidesOf(cab, th);
+    const inLo = b.split ? b.split.main.innerLoMm : inSides.loMm, inHi = b.split ? b.split.main.innerHiMm : inSides.hiMm;
+    // Overlay doors: the board stands behind the gap between two doors. Inset doors: they sit in the compartments between the boards.
+    const edges = doorEdgesOf(count, cab.width, b.split ? frontStripOf(b.split.main, cab.width) : undefined);
+    const boards = opts.inset
+      ? insetRowOf(count, edgeIdx, inLo, inHi, th, PANEL.INSET_GAP_MM).boards.map((p) => ({ edge: p.edge, xLoMm: p.xLoMm, widthMm: th }))
+      : edgeIdx.map((e) => ({ edge: e, xLoMm: edges[e] - th / 2, widthMm: th }));
+    // The boards must leave a real compartment between them and the sides: doors so narrow that a board does not fit are reported instead.
+    const walls = [inLo, ...boards.flatMap((p) => [p.xLoMm, p.xLoMm + p.widthMm]), inHi];
+    const room = Math.min(...Array.from({ length: boards.length + 1 }, (_, n) => walls[2 * n + 1] - walls[2 * n])); // the compartments between the walls
+    if (room < SPLIT.MIN_COLUMN_MM) {
+      issues.push({ code: 'DOORS_TOO_NARROW', message: `Zone ${b.index + 1}: ${count} doors are too narrow for the hinge boards they hang on (${Math.round(Math.max(0, room))} mm left between boards): use fewer doors` });
+      return;
+    }
+    b.partitions = boards;
+  });
   bands.forEach((b) => {
     if (b.zone.kind !== 'APPLIANCE' || !b.zone.appliance) return;
     const spec = APPLIANCES[b.zone.appliance];
@@ -138,7 +222,7 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout 
     if (b.openingHeightMm < n.h) issues.push({ code: 'APPLIANCE_ZONE_TOO_SHORT', message: `${spec.label}: ارتفاع القسم ${Math.round(b.openingHeightMm)} مم أقل من الفتحة المطلوبة ${n.h} مم.` });
   });
 
-  return { bands, dividerBottomsMm, issues };
+  return { bands, dividerBottomsMm, issues, thicknessMm: th };
 }
 
 export interface Facade {
@@ -182,9 +266,18 @@ export interface FrontPlan {
   channels: GolaChannel[];
   /** Zones too short for a Gola channel plus fronts of a usable height: they got no channel. */
   golaSkipped?: number[];
+  /** Inset fronts sit inside the opening, where a Gola channel (an overlay profile) cannot be: the channels were dropped. */
+  golaDroppedByInset?: boolean;
 }
 
-export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, layout: ZoneLayout): FrontPlan {
+export interface FrontPlanOptions {
+  /** Inset hinges: the fronts sit INSIDE the carcase opening (see PANEL.INSET_GAP_MM) instead of in front of it. */
+  inset?: boolean;
+  /** Real thickness of the front sheet (mm); missing = the one cached on the cabinet. */
+  frontThMm?: number;
+}
+
+export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> & Partial<Pick<CabinetObject, 'frontThickness' | 'frontSetbackSides'>>, layout: ZoneLayout, opts: FrontPlanOptions = {}): FrontPlan {
   const facades: Facade[] = [];
   const golaSkipped: number[] = [];
   const channels: GolaChannel[] = [];
@@ -193,6 +286,11 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
   const half = PANEL.FRONT_HEIGHT_CLEARANCE_MM / 2;
   const reveal = PANEL.FRONT_REVEAL_MM / 2;
   const gapHalf = PANEL.FRONT_GAP_BETWEEN_MM / 2;
+  // A box whose door row stops short on a side (the arm of an L corner whose neighbour's door runs past): one front thickness + the gap.
+  const frontTh = opts.frontThMm ?? (cab.frontThickness && cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
+  const setback = frontTh + PANEL.FRONT_GAP_BETWEEN_MM;
+  const setLeft = cab.frontSetbackSides?.includes('LEFT') ? setback : 0;
+  const setRight = cab.frontSetbackSides?.includes('RIGHT') ? setback : 0;
 
   // Where Gola channels may exist is decided in rules/openings.ts (canUseGola).
   const golaOn = cab.frontConfig.hasGolaProfile && canUseGola(cab.category, layout.bands.map((b) => b.zone));
@@ -230,7 +328,7 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
         for (let k = 0; k < count; k++) {
           const lo = edge(k) + (k > 0 ? gapHalf : 0);
           const hi = edge(k + 1) - (k < count - 1 ? gapHalf : 0);
-          facades.push({ ...base(sp.main, 'MAIN'), kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: y, ...(count === 1 ? { hingeSide: outer(sp.main) } : {}), ...mark });
+          facades.push({ ...base(sp.main, 'MAIN'), kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: y, hingeSide: count === 1 ? outer(sp.main) : hingeSidesOf(count)[k], ...mark });
         }
         if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
       } else if (z.kind === 'APPLIANCE' && z.panelFront) {
@@ -255,10 +353,11 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
       // A lone door keeps the outer reveal on both sides (599 on a 600 cabinet); a row of several doors uses FRONT_ROW_OUTER_REVEAL_MM.
       const cut = (j: number) => Math.round((2 * j * cab.width) / count) / 2;
       const outer = count === 1 ? PANEL.FRONT_GAP_TOTAL_MM / 2 : PANEL.FRONT_ROW_OUTER_REVEAL_MM;
+      const hinges = hingeSidesOf(count, z.hingeSide); // several doors always carry their side: the hinge boards (layoutZones) stand behind it
       for (let k = 0; k < count; k++) {
-        const lo = cut(k) + (k === 0 ? outer : gapHalf);
-        const hi = cut(k + 1) - (k === count - 1 ? outer : gapHalf);
-        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(z.hingeSide ? { hingeSide: z.hingeSide } : {}), ...mark });
+        const lo = Math.max(cut(k) + (k === 0 ? outer : gapHalf), k === 0 ? setLeft : 0);
+        const hi = Math.min(cut(k + 1) - (k === count - 1 ? outer : gapHalf), k === count - 1 ? cab.width - setRight : cab.width);
+        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(count > 1 || z.hingeSide ? { hingeSide: hinges[k] } : {}), ...mark });
       }
       if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
     } else if (z.kind === 'DRAWERS') {
@@ -287,5 +386,47 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, 
     }
   });
 
-  return golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
+  const plan: FrontPlan = golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
+  return opts.inset ? insetPlan(cab, layout, plan) : plan;
+}
+
+/**
+ * Inset fronts: every front is laid inside the free opening of its zone (or of its column), with PANEL.INSET_GAP_MM on every edge and
+ * between neighbours, instead of in front of the carcase. A front as wide as the cabinet would run through the side boards.
+ * Doors share the opening left to right, drawers share it top to bottom (index 0 = the top one), a lone panel fills it.
+ */
+function insetPlan(cab: SizedCabinet, layout: ZoneLayout, plan: FrontPlan): FrontPlan {
+  const g = PANEL.INSET_GAP_MM;
+  const th = layout.thicknessMm ?? PANEL.DEFAULT_THICKNESS_MM;
+  const sides = carcaseSidesOf(cab, th);
+  const half = (v: number) => Math.floor(2 * v) / 2; // never round a front up into its neighbour
+  const groups = new Map<string, Facade[]>();
+  plan.facades.forEach((f) => { const k = `${f.zoneIndex}:${f.column ?? ''}:${f.kind}`; groups.set(k, [...(groups.get(k) ?? []), f]); });
+  const rect = new Map<Facade, Pick<Facade, 'xMm' | 'yMm' | 'widthMm' | 'heightMm'>>();
+  groups.forEach((list) => {
+    const first = list[0];
+    const band = layout.bands[first.zoneIndex];
+    const lo = (first.innerLoMm ?? sides.loMm) + g;
+    const hi = (first.innerHiMm ?? sides.hiMm) - g;
+    const yLo = band.openingBottomMm + g;
+    const yHi = band.openingBottomMm + band.openingHeightMm - g;
+    const n = list.length;
+    const height = Math.max(0, yHi - yLo);
+    if (first.kind === 'DOOR') {
+      // The doors hang between the hinge boards of this row (layoutZones), so they share the compartments, not the whole opening.
+      const boardEdges = (band.partitions ?? []).map((p) => p.edge);
+      const row = insetRowOf(n, boardEdges, lo - g, hi + g, th, g);
+      list.forEach((f) => rect.set(f, { xMm: row.doors[f.index].xMm, widthMm: row.doors[f.index].widthMm, yMm: yLo, heightMm: height }));
+    } else if (first.kind === 'DRAWER') {
+      const h = half(Math.max(0, (height - (n - 1) * g) / n));
+      list.forEach((f) => rect.set(f, { xMm: lo, widthMm: Math.max(0, hi - lo), yMm: yHi - (f.index + 1) * h - f.index * g, heightMm: h }));
+    } else {
+      list.forEach((f) => rect.set(f, { xMm: lo, widthMm: Math.max(0, hi - lo), yMm: yLo, heightMm: height }));
+    }
+  });
+  return {
+    facades: plan.facades.map((f) => ({ ...f, ...rect.get(f)! })),
+    channels: [],
+    ...(plan.channels.length > 0 ? { golaDroppedByInset: true } : {}),
+  };
 }
