@@ -29,9 +29,13 @@ import {
   DEFAULT_LAYOUT, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WIDTH_LIMITS_MM,
   autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, placeAlongWall, runOf, runsOf, wallLengthOf,
 } from './math/kitchenLayout';
-import { L_CORNER_LIMITS, lCornerCabinets, lCornerSpan } from './math/lCorner';
-import { LIMITS, PANEL } from './math/constants';
+import { clampCornerFillerMm, cornerDeckOf, L_CORNER_LIMITS, lCornerCabinets, lCornerSpan, withCornerExtension } from './math/lCorner';
+import { cornerDeckPieceOf } from './math/cornerDeck';
+import { BACK, CORNER, COUNTERTOP, LAYOUT, LIMITS, PANEL } from './math/constants';
+import { BACK_PANEL_LABELS, BACK_PANEL_MODES, BackPanelMode, backPanelModeOf, backRailDepthOf } from './math/backPanel';
 import { bandPricePerMeterDA } from './math/edgeBand';
+import { carriesCountertop, clampCountertopSettings, countertopDepthMm, COUNTERTOP_DEFAULT } from './math/countertop';
+import type { CountertopSettings } from './math/countertop';
 import { clampInt, uid } from './math/utils';
 import { BASE_TYPE_LABELS, baseOf } from './math/base';
 import { BASE } from './math/constants';
@@ -75,16 +79,18 @@ const FRONT_COUNT_OPTIONS = Array.from(
 );
 
 /** A number box that commits on Enter or when it loses focus (a move is one undo step, not one per typed digit). */
-function CommitNumber({ value, onCommit, title }: { value: number; onCommit: (v: number) => void; title?: string }) {
+function CommitNumber({ value, onCommit, title, min = 0, max, ariaLabel }: { value: number; onCommit: (v: number) => void; title?: string; min?: number; max?: number; ariaLabel?: string }) {
   const [text, setText] = useState<string>(String(value));
   useEffect(() => { setText(String(value)); }, [value]);
   const commit = () => {
-    const n = Number(text);
-    if (Number.isFinite(n) && Math.round(n) !== value) onCommit(Math.round(n));
+    const raw = Number(text);
+    const whole = Number.isFinite(raw) ? Math.round(raw) : NaN;
+    const n = Number.isFinite(whole) ? Math.min(max ?? whole, Math.max(min, whole)) : value;
+    if (n !== value) onCommit(n);
     else setText(String(value));
   };
   return (
-    <input type="number" min={0} step={10} value={text} title={title}
+    <input type="number" min={min} max={max} step={10} value={text} title={title} aria-label={ariaLabel}
       onChange={(e) => setText(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
       className="w-14 px-1 py-0.5 border border-slate-300 rounded text-[10px] font-mono text-center" style={{ direction: 'ltr' }} />
@@ -116,8 +122,20 @@ export default function App() {
 
   const [hardwareSettings] = useState({ carcaseThickness: 18, frontThickness: 18, wallSplashHeight: 600 });
   const [countertopPath] = useState([{ x: 0, zOffset: 0 }, { x: 2400, zOffset: 0 }]);
+  // The worktop slab: shown or hidden, 20–40 mm thick, 580–650 mm deep. Drawn and dimensioned — never priced.
+  const [countertop, setCountertop] = useState<CountertopSettings>(COUNTERTOP_DEFAULT);
+  const setCountertopSettings = (fields: Partial<CountertopSettings>) => setCountertop((v) => clampCountertopSettings({ ...v, ...fields }));
 
   const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, hardwareSettings.wallSplashHeight);
+
+  const countertopStretch = useMemo(() => {
+    const bases = cabinets.filter((c) => carriesCountertop(c));
+    if (bases.length === 0) return null;
+    const zBack = Math.min(...bases.map((c) => -c.positionZ));
+    const zFront = Math.max(...bases.map((c) => c.depth + c.frontThickness - c.positionZ)) + LAYOUT.COUNTERTOP_FRONT_OVERHANG_MM;
+    const { depthMm, stretched } = countertopDepthMm(countertop.depthMm, zFront - zBack);
+    return stretched ? { requested: countertop.depthMm, drawn: Math.round(depthMm) } : null;
+  }, [cabinets, countertop.depthMm]);
 
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
@@ -143,6 +161,12 @@ export default function App() {
   }), [rawLayout]);
   /** Why the last add / move was refused (a full wall, a unit wider than its wall). Cleared on the next success. */
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
+  // Width of the FIXED filler panel that closes the corner side of an L-corner arm (math/cornerFiller.ts). undefined = automatic
+  // (front thickness + 1.5 mm). Kept beside the draft because the draft is the cabinet's geometry, not its corner details.
+  const [cornerFillerMm, setCornerFillerMm] = useState<number | undefined>(undefined);  // Which sides of the corner box carry a fixed filler (math/cornerFiller.ts). undefined = automatic (the corner side, when a
+  // front slides out); [] = none. Both sides can carry one: the far side is for looks, the corner side is what makes the drawer
+  // pass beside the neighbour's closed door.
+  const [cornerFillerSides, setCornerFillerSides] = useState<Array<'LEFT' | 'RIGHT'> | undefined>(undefined);
   const layoutRuns = runsOf(layout);
   const [activeRunRaw, setActiveRun] = useState<RunId>('A');
   const activeRun: RunId = layoutRuns.includes(activeRunRaw) ? activeRunRaw : 'A'; // the wall a new cabinet is added on
@@ -169,10 +193,22 @@ export default function App() {
   const cornerTaken = (wall: 'B' | 'C') => cabinets.some((c) => !!c.groupId && c.category === cornerCategory && runOf(c) === wall);
   // The preview of a corner shows ONE arm (the whole L appears in the showroom once it is added).
   const previewCabinet = useMemo(() => {
-    if (!isCornerBuilder) return draftToPreviewCabinet(resolved, woods);
-    const arm = draftToPreviewCabinet({ ...resolved, width: cornerArm(armA), depth: cornerDepth, zones: resolved.zones.map((z) => (z.kind === 'DOORS' ? { ...z, hingeSide: 'RIGHT' as const } : z)) }, woods);
-    return { ...arm, omitSides: ['LEFT' as const] };
-  }, [resolved, woods, isCornerBuilder, armA, cornerDepth]);
+    if (isCornerBuilder) {
+      const arm = draftToPreviewCabinet({ ...resolved, width: cornerArm(armA), depth: cornerDepth, zones: resolved.zones.map((z) => (z.kind === 'DOORS' ? { ...z, hingeSide: 'RIGHT' as const } : z)) }, woods);
+      return { ...arm, omitSides: ['LEFT' as const] };
+    }
+    const base = draftToPreviewCabinet(resolved, woods);
+    // An arm of a corner shows ALREADY WIDENED while it is being edited: what the 3D draws is what the save will store, filler
+    // included (math/cornerFiller.ts). `withCornerExtension` subtracts the stored extension first, so editing twice changes nothing.
+    if (!editing?.cornerSide) return base;
+    const frontTh = woods.find((m) => m.id === resolved.frontMaterialId)?.thickness ?? (editing.frontThickness || 18);
+    const ext = withCornerExtension(
+      { ...base, cornerSide: editing.cornerSide, run: editing.run, cornerExtensionMm: editing.cornerExtensionMm, cornerFillerMm, cornerFillerSides },
+      resolved.zones,
+      frontTh,
+    );
+    return { ...base, width: ext.width, cornerSide: editing.cornerSide, cornerFillerMm, cornerFillerSides };
+  }, [resolved, woods, isCornerBuilder, armA, cornerDepth, editing, cornerFillerMm, cornerFillerSides]);
 
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
@@ -238,6 +274,15 @@ export default function App() {
     if (!window.confirm(`تطبيق هذه القاعدة على كل الخزائن السفلية (${ids.length})؟`)) return;
     updateManyCabinets(ids, { base: { ...resolved.base } });
   };
+  /** One back for the whole kitchen: the same three choices, written to every cabinet at once. */
+  const applyBackToAll = () => {
+    const ids = cabinets.map((c) => c.id);
+    if (ids.length === 0) return;
+    const mode = draft.backPanel ?? 'HDF';
+    const label = BACK_PANEL_LABELS[mode];
+    if (!window.confirm(`تطبيق خلفية «${label}» على كل الخزائن (${ids.length})؟`)) return;
+    updateManyCabinets(ids, { backPanel: mode, backRailDepthMm: mode === 'RAILS' ? draft.backRailDepthMm : undefined });
+  };
   const canInject = canSave && blockingIssues.length === 0;
   // A corner needs a wall that forms it (L or U layout) and no corner of this level already on that wall.
   const canAddNow = canInject && (!isCornerBuilder || (!!cornerWall && !cornerTaken(cornerWall)));
@@ -246,7 +291,44 @@ export default function App() {
     if (!canAddNow) return;
     if (isCornerBuilder) { if (cornerWall) handleAddLCorner(cornerWall); return; }
     if (editing) {
-      updateCabinet(editing.id, draftToCabinetPatch(resolved));
+      const patch = draftToCabinetPatch(resolved);
+      // The corner side of an arm that carries drawers is closed by a FIXED filler INSIDE the arm's width (math/cornerFiller.ts):
+      // the arm itself never grows, so nothing on the wall moves. A width an older version had widened is given back here too.
+      const frontTh = woods.find((m) => m.id === resolved.frontMaterialId)?.thickness ?? (editing.frontThickness || 18);
+      const corner = editing.cornerSide
+        ? withCornerExtension({ ...editing, cornerFillerMm, cornerFillerSides }, resolved.zones, frontTh)
+        : null;
+      // `cornerFillerMm` / `cornerFillerSides` are written back as the user left them (undefined = automatic), so changing the
+      // door thickness later moves the filler with it instead of freezing the number that happened to be right that day.
+      const savedPatch = corner
+        ? { ...patch, width: corner.width, positionX: corner.positionX, cornerExtensionMm: 0, cornerFillerMm, cornerFillerSides }
+        : patch;
+      // The three boxes of a corner stand on ONE L bottom (math/lCorner.ts): an arm edited here changes the piece itself, so
+      // the group's deck is worked out again from the boxes as they will be, and written on all three (one board, one cut).
+      const groupIds = editing.groupId ? cabinets.filter((c) => c.groupId === editing.groupId).map((c) => c.id) : [];
+      const nextGroup = groupIds.length
+        ? cabinets.filter((c) => c.groupId === editing.groupId).map((c) => (c.id === editing.id ? { ...c, ...savedPatch } : c))
+        : [];
+      const deckNow = nextGroup.length ? cornerDeckOf(nextGroup) : null;
+      const deckSame = nextGroup.every((c) => (c.cornerGroupDeckMm?.armAMm ?? null) === (deckNow?.armAMm ?? null) && (c.cornerGroupDeckMm?.armBMm ?? null) === (deckNow?.armBMm ?? null));
+      updateCabinet(editing.id, deckNow && !deckSame ? { ...savedPatch, cornerGroupDeckMm: deckNow } : savedPatch);
+      if (groupIds.length && deckNow && !deckSame) updateManyCabinets(groupIds.filter((id) => id !== editing.id), { cornerGroupDeckMm: deckNow });
+      if (corner) {
+        const { left, right } = corner.cornerFillers;
+        // one sentence for the two possible panels: either a clearance (drawers) or a look-only panel on a doors arm
+        const both = left > 0 && right > 0;
+        const where = both ? 'على الجهتين' : left > 0 ? 'على الجهة اليسرى' : 'على الجهة اليمنى';
+        const panelMm = both ? left : left > 0 ? left : right;
+        const slides = resolved.zones.some((z) => z.kind === 'DRAWERS' || z.split?.fill === 'PULL_OUT');
+        const frontMm = Math.round((Math.min(corner.width - 0.5, corner.width - right) - Math.max(0.5, left)) * 10) / 10;
+        if (left > 0 || right > 0) {
+          setLayoutNotice(`🖇️ ضلفة زاوية ثابتة بعرض ${panelMm} مم ${where} من أسفل الهيكل إلى أعلاه${slides ? `، والدرج يمرّ أمامها بفراغ ${CORNER.DRAWER_CLEARANCE_MM} مم` : ' — للجمال فقط، لا أدراج في هذا الذراع'}. عرض الذراع ${corner.width} مم · الواجهة ${frontMm} مم.`);
+        } else if (resolved.zones.some((z) => z.kind === 'DRAWERS' || z.split?.fill === 'PULL_OUT')) {
+          setLayoutNotice(`↔️ بلا ضلفة: عرض الذراع ${corner.width} مم، والدرج يصل إلى حافة الزاوية أمام باب الذراع الآخر.`);
+        } else {
+          setLayoutNotice(null);
+        }
+      }
       setEditingId(null);
       return;
     }
@@ -328,6 +410,8 @@ export default function App() {
     if (!cab) return;
     setEditingId(id);
     setActiveCabinetId(id);
+    setCornerFillerMm(cab.cornerFillerMm);
+    setCornerFillerSides(cab.cornerFillerSides);
     setDraft(cabinetToDraft(cab));
   };
 
@@ -498,7 +582,42 @@ export default function App() {
               >
                 {isXRayMode ? '💀 وضع X-Ray نشط (شفاف)' : '💀 تشغيل شفافية الألواح X-Ray'}
               </button>
+
+              {/* سطح العمل: إظهار / إخفاء — يرسمه الزبون من عنده، فلا يدخل التسعير */}
+              <span className="w-px bg-slate-600" />
+              <button
+                type="button"
+                aria-label="سطح العمل"
+                aria-pressed={countertop.visible}
+                title="إظهار أو إخفاء سطح العمل في المشهد ثلاثي الأبعاد"
+                onClick={() => setCountertopSettings({ visible: !countertop.visible })}
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${countertop.visible ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
+              >
+                {countertop.visible ? '🍽️ إخفاء سطح العمل' : '🍽️ إظهار سطح العمل'}
+              </button>
             </div>
+
+            {/* السمك والعرض: 20–40 مم و 580–650 مم. التغيير يتم عند Enter أو الخروج من الحقل. */}
+            {countertop.visible && (
+              <div data-testid="countertop-settings" className="absolute top-[3.1rem] left-32 z-40 flex flex-wrap items-center gap-2 bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 shadow-md">
+                <label className="flex items-center space-x-1 text-[9px] font-mono font-bold text-slate-300">
+                  <span>سُمك سطح العمل</span>
+                  <CommitNumber value={countertop.thicknessMm} min={COUNTERTOP.THICKNESS_MM[0]} max={COUNTERTOP.THICKNESS_MM[1]} ariaLabel="سُمك سطح العمل" title="السمك من 20 إلى 40 مم" onCommit={(v) => setCountertopSettings({ thicknessMm: v })} />
+                  <span>مم</span>
+                </label>
+                <label className="flex items-center space-x-1 text-[9px] font-mono font-bold text-slate-300">
+                  <span>عرض سطح العمل</span>
+                  <CommitNumber value={countertop.depthMm} min={COUNTERTOP.DEPTH_MM[0]} max={COUNTERTOP.DEPTH_MM[1]} ariaLabel="عرض سطح العمل" title="العرض (العمق من الجدار) من 580 إلى 650 مم" onCommit={(v) => setCountertopSettings({ depthMm: v })} />
+                  <span>مم</span>
+                </label>
+                {countertopStretch && (
+                  <span className="text-[9px] font-bold text-amber-300" title="العمق المطلوب أقل من الواجهة التي يغطيها">
+                    ⚠️ الواجهة عند {countertopStretch.drawn} مم ⇐ يُرسم بهذا العرض
+                  </span>
+                )}
+                <span className="text-[8px] font-mono text-slate-500">مجاني في التسعير — على الزبون</span>
+              </div>
+            )}
 
             <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded shadow-sm tracking-wider">
               {isWorkspaceMinimized ? "🧊 3D LUXURY KITCHEN SHOWROOM (100% MAXIMUM VIEW)" : "🧊 3D EXECUTIVE SHOWCASE"}
@@ -511,6 +630,7 @@ export default function App() {
                 showFronts={showFronts}
                 isXRayMode={isXRayMode}
                 countertopPath={countertopPath}
+                countertop={countertop}
                 layout={layout}
                 woodPanels={woods}
                 hardwareItems={hardwareItems}
@@ -649,6 +769,14 @@ export default function App() {
                     <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
                       {(() => { const sp = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${sp.alongA} × ${sp.alongSide} mm · ${cornerDepth}`; })()}
                     </span>
+                    <span className="block text-[9px] leading-snug text-emerald-800 bg-emerald-50 border border-emerald-200 rounded p-1">
+                      {(() => {
+                        // The three boxes stand on ONE board, cut in an L (math/cornerDeck.ts): the panel says what the shop will cut.
+                        const board = woods.find((w) => w.id === resolved.carcaseMaterialId)?.thickness ?? 18;
+                        const p = cornerDeckPieceOf({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB), boardMm: board });
+                        return `🟩 قاعدة واحدة L بين الصناديق الثلاثة: ${p.spanXMm}×${p.spanYMm} خارجياً، عرض الرجل ${p.legsMm}، من لوح ${board} مم — تُقصّ قطعة واحدة ويبقى مربع ${p.cutOutXMm}×${p.cutOutYMm} قصاصة.`;
+                      })()}
+                    </span>
                     {cornerWall && cornerTaken(cornerWall) && (
                       <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">توجد زاوية من هذا المستوى على هذا الجدار. احذفها أولاً لتغيير مقاساتها.</span>
                     )}
@@ -662,9 +790,9 @@ export default function App() {
 
             <div className={isCornerBuilder ? 'hidden' : 'contents'}>
             <div className="grid grid-cols-3 gap-1 text-[10px] bg-slate-50 p-1.5 rounded border" style={{ direction: 'ltr' }}>
-              <div>W:<input type="number" min={LIMITS.WIDTH_MM[0]} max={LIMITS.WIDTH_MM[1]} value={draft.width} onChange={(e) => patchDraft({ width: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
-              <div>H:<input type="number" min={LIMITS.HEIGHT_MM[0]} max={LIMITS.HEIGHT_MM[1]} value={draft.height} onChange={(e) => patchDraft({ height: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
-              <div>D:<input type="number" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
+              <div>W:<input type="number" aria-label="العرض" min={LIMITS.WIDTH_MM[0]} max={LIMITS.WIDTH_MM[1]} value={draft.width} onChange={(e) => patchDraft({ width: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
+              <div>H:<input type="number" aria-label="الارتفاع" min={LIMITS.HEIGHT_MM[0]} max={LIMITS.HEIGHT_MM[1]} value={draft.height} onChange={(e) => patchDraft({ height: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
+              <div>D:<input type="number" aria-label="العمق" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
             </div>
             </div>
 
@@ -724,9 +852,110 @@ export default function App() {
               </div>
             )}
 
+            {/* خلفية الخزانة: HDF أو عارضتان من لوح الهيكل أو لوح كامل مثل باقي قطع الهيكل (math/backPanel.ts) */}
+            <div className="space-y-1 bg-slate-50 p-1.5 rounded border">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-bold text-[10px]">🧱 خلفية الخزانة</span>
+                <span className="text-[9px] text-slate-500">{(draft.backPanel ?? 'HDF') === 'HDF' ? 'ملصوقة على الظهر' : (draft.backPanel ?? 'HDF') === 'RAILS' ? 'من لوح الهيكل' : 'داخل الظهر'}</span>
+              </div>
+              <div className="flex flex-wrap gap-1" role="group" aria-label="خلفية الخزانة">
+                {BACK_PANEL_MODES.map((mode: BackPanelMode) => {
+                  const on = backPanelModeOf(draft) === mode;
+                  return (
+                    <button key={mode} type="button" aria-pressed={on}
+                      onClick={() => patchDraft({ backPanel: mode, ...(mode !== 'RAILS' ? { backRailDepthMm: undefined } : {}) })}
+                      className={`px-1.5 py-0.5 rounded border text-[9px] font-bold cursor-pointer ${on ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'}`}>
+                      {BACK_PANEL_LABELS[mode]}
+                    </button>
+                  );
+                })}
+              </div>
+              {backPanelModeOf(draft) === 'RAILS' && (
+                <label className="flex items-center justify-between gap-1 text-[10px]">
+                  <span>عرض العارضة (مم)</span>
+                  <input type="number" aria-label="عرض عارضة الخلفية (مم)" min={BACK.RAIL_DEPTH_RANGE_MM[0]} max={BACK.RAIL_DEPTH_RANGE_MM[1]} step={10}
+                    value={draft.backRailDepthMm ?? ''} placeholder={String(BACK.RAIL_DEPTH_MM)}
+                    onChange={(e) => patchDraft({ backRailDepthMm: numOrUndef(e.target.value) })} onBlur={normalizeDraft}
+                    className="w-16 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} />
+                </label>
+              )}
+              <span className="block text-[9px] leading-snug text-slate-600">
+                {backPanelModeOf(draft) === 'HDF'
+                  ? 'لوح HDF ٣ مم ملصوق على الوجه الخلفي، يغطّي الجزء المغلق فقط. الخيار الافتراضي: أخفّ وأرخص، ويُقصّ من لوح HDF.'
+                  : backPanelModeOf(draft) === 'RAILS'
+                    ? `عارضتان من لوح الهيكل (${backRailDepthOf(draft)} مم عرضاً): واحدة على لوح القاع وأخرى تحت السقف/العارضتين العلويتين. بلا ظهر — أعمق داخل وأرخص، لكن الغبار والسلك يظهران من الخلف.`
+                    : 'لوح من خامة الهيكل بنفس سُمكه، مقصوص بين الجانبين وداخل الظهر: أقوى ظهر. يأكل سُمك اللوح من العمق الداخلي، فتقصر الأرفف والحواجز ولوحات المفصلات تلقائياً.'}
+              </span>
+              {cabinets.length > 0 && (
+                <button type="button" onClick={applyBackToAll} title="يضع هذه الخلفية على كل خزائن المطبخ" className="w-full rounded border border-slate-300 bg-white hover:bg-slate-100 text-[10px] font-bold py-0.5 cursor-pointer">⟲ تعميم على كل الخزائن</button>
+              )}
+            </div>
+
             {/* الأقسام: كل خزانة = كومة أقسام من الأسفل للأعلى، تُعرض هنا من الأعلى للأسفل */}
             <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
-              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
+              {editing?.cornerSide && (() => {
+                // The FIXED filler panels of a corner box (math/cornerFiller.ts): the corner side (what makes a drawer pass beside
+                // the neighbour's closed door) and/or the far side, for looks alone. Both are INSIDE the box: nothing on the wall moves.
+                const frontThMm = woods.find((m) => m.id === resolved.frontMaterialId)?.thickness ?? (editing.frontThickness || 18);
+                const boxWidth = Math.round((editing.width - (editing.cornerExtensionMm ?? 0)) * 10) / 10;
+                const clamp = (v: number) => clampCornerFillerMm(v, frontThMm);
+                const autoCorner = Math.round((frontThMm + CORNER.DRAWER_CLEARANCE_MM) * 10) / 10;
+                const autoLook = frontThMm;
+                const chosen = cornerFillerMm;
+                const sides = cornerFillerSides;                       // undefined = automatic
+                const on = (side: 'LEFT' | 'RIGHT') => (sides ? sides.includes(side) : side === editing.cornerSide);
+                const widthOn = (side: 'LEFT' | 'RIGHT') => (on(side) ? clamp(chosen ?? (side === editing.cornerSide ? autoCorner : autoLook)) : 0);
+                const toggle = (side: 'LEFT' | 'RIGHT') => {
+                  const base: Array<'LEFT' | 'RIGHT'> = sides ? [...sides] : (editing.cornerSide ? [editing.cornerSide] : []);
+                  setCornerFillerSides(base.includes(side) ? base.filter((x) => x !== side) : [...base, side]);
+                };
+                const setPreset = (value: 'AUTO' | 'NONE' | 'LEFT' | 'RIGHT' | 'BOTH') => {
+                  if (value === 'AUTO') return setCornerFillerSides(undefined);
+                  if (value === 'NONE') return setCornerFillerSides([]);
+                  if (value === 'BOTH') return setCornerFillerSides(['LEFT', 'RIGHT']);
+                  setCornerFillerSides([value]);
+                };
+                const sidesKey = sides === undefined ? 'AUTO' : sides.length === 0 ? 'NONE' : sides.length === 2 ? 'BOTH' : sides[0];
+                const anyPanel = on('LEFT') || on('RIGHT');
+                // the front spans from the left panel edge to the right one; the 0.5 outer reveal only where no panel stands
+        const frontMm = Math.round((Math.min(boxWidth - 0.5, boxWidth - widthOn('RIGHT')) - Math.max(0.5, widthOn('LEFT'))) * 10) / 10;
+                const btn = (active: boolean) => `px-1.5 py-0.5 rounded border text-[9px] font-bold cursor-pointer ${active ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'}`;
+                return (
+                  <div className="rounded border border-amber-300 bg-amber-50 p-1.5 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-amber-900">ضلفة الزاوية الثابتة</span>
+                      <span className="text-[9px] text-amber-700">جهة الزاوية: {editing.cornerSide === 'LEFT' ? 'يسار' : 'يمين'}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-1" role="group" aria-label="جهات ضلفة الزاوية">
+                      {([['AUTO', 'تلقائي'], ['NONE', 'بلا ضلفة'], ['LEFT', 'اليسرى'], ['RIGHT', 'اليمنى'], ['BOTH', 'الجهتان']] as const).map(([value, label]) => (
+                        <button key={value} type="button" onClick={() => setPreset(value)} className={btn(sidesKey === value)} aria-pressed={sidesKey === value}>{label}</button>
+                      ))}
+                    </div>
+                    {sides !== undefined && (
+                      <div className="flex flex-wrap gap-1">
+                        <button type="button" onClick={() => toggle('LEFT')} className={btn(on('LEFT'))} aria-pressed={on('LEFT')}>ضلفة يسرى</button>
+                        <button type="button" onClick={() => toggle('RIGHT')} className={btn(on('RIGHT'))} aria-pressed={on('RIGHT')}>ضلفة يمنى</button>
+                      </div>
+                    )}
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-amber-900" title="ضلفة ثابتة من أسفل الهيكل إلى أعلاه، بسُمك الواجهات ومادتها، تُقتطع من عرض الذراع">
+                      <span>العرض (مم)</span>
+                      <input
+                        type="number" min={frontThMm} max={CORNER.FILLER_MAX_MM} step={0.5} aria-label="ضلفة الزاوية الثابتة (مم)"
+                        value={chosen ?? ''} placeholder={`تلقائي ${autoCorner}`} disabled={!anyPanel}
+                        onChange={(e) => setCornerFillerMm(e.target.value === '' ? undefined : clamp(Number(e.target.value) || 0))}
+                        className="w-16 px-1 py-0.5 border border-amber-300 rounded font-mono text-center text-[11px] disabled:opacity-40"
+                        style={{ direction: 'ltr' }}
+                      />
+                      <button type="button" onClick={() => setCornerFillerMm(undefined)} className="px-1 rounded border border-amber-300 bg-white text-[9px] text-amber-800 hover:bg-amber-100 cursor-pointer">تلقائي</button>
+                    </label>
+                    <span className="block text-[9px] leading-snug text-amber-800">
+                      {anyPanel
+                        ? `اليسرى ${widthOn('LEFT')} · اليمنى ${widthOn('RIGHT')} مم من عرض ${boxWidth} ⇒ الواجهة ${frontMm} مم. العرض من ${frontThMm} (سُمك الباب المواجه) إلى ${CORNER.FILLER_MAX_MM} مم.`
+                        : `بلا ضلفة: الواجهة تستعمل عرض الذراع كاملاً (${boxWidth} مم). اضغط «اليسرى» أو «اليمنى» أو «الجهتان» لإضافة ضلفة ثابتة.`}
+                    </span>
+                  </div>
+                );
+              })()}              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
               <div className="flex items-center justify-between">
                 <span className="font-bold text-[10px]">الأقسام (من الأعلى للأسفل):</span>
                 <button type="button" onClick={addZone} disabled={resolved.zones.length >= LIMITS.ZONES[1]} className="px-2 py-0.5 rounded border border-indigo-300 bg-white text-indigo-700 text-[10px] font-bold hover:bg-indigo-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">➕ قسم</button>
@@ -738,7 +967,7 @@ export default function App() {
                 return (
                   <div key={i} className="bg-white border rounded p-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-1">
-                      <select value={z.kind} onChange={(e) => replaceZone(i, zoneOfKind(e.target.value as ZoneKind, z))} className="border bg-white rounded p-0.5 text-[11px] font-bold">
+                      <select aria-label="نوع القسم" value={z.kind} onChange={(e) => replaceZone(i, zoneOfKind(e.target.value as ZoneKind, z))} className="border bg-white rounded p-0.5 text-[11px] font-bold">
                         {ZONE_KINDS.map((k) => (
                           <option key={k} value={k} disabled={k === 'DRAWERS' && resolved.category === 'WALL_UNIT'}>{ZONE_LABELS[k]}</option>
                         ))}

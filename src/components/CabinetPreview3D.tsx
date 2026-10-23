@@ -12,6 +12,7 @@ import { baseOf, bodyView } from '../math/base';
 import { AuditReport, expectedParts } from '../math/audit';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { DEFAULT_PALETTE } from '../math/palette';
 
 /** The edge band glued on a group of parts, as the pricing resolved it (roll, else the sheet's own band). */
 export interface EdgeBandInfo {
@@ -59,6 +60,7 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
   return (
     <div className="w-full h-full relative">
       <Canvas camera={{ position: [0.9, 1.1, 3.4], fov: 38 }} shadows gl={{ antialias: true }} className="absolute inset-0">
+        <color attach="background" args={[DEFAULT_PALETTE.background.color]} />
         <ambientLight intensity={0.75} />
         <directionalLight position={[2, 4, 3]} intensity={0.9} castShadow />
         {/* Fixed centring on the ASSEMBLED size (<Center> re-centred on every change, so the view jumped while exploding). */}

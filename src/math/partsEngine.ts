@@ -18,6 +18,8 @@ import { BASE, EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
 import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, backPanelBottomMm, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
+import { backInsideMm, backPanelModeOf, backPartsOf } from './backPanel';
+import { cornerDeckPieceOf } from './cornerDeck';
 import { bandPricePerMeterDA } from './edgeBand';
 import { frontHardwareNeeds, shelfSpansOf } from './columns';
 import { hingesPerDoor } from './hinges';
@@ -40,6 +42,11 @@ export interface CabinetPart {
   quantity: number;
   grain: GrainDirection;
   edge: EdgeBanding;
+  /**
+   * FRONT edge only: the length of the edge that really gets the band when it is not the whole `lengthMm`. An L-shaped corner
+   * deck is one piece with TWO front edges (one per arm); its lengthMm is the developed length round the corner.
+   */
+  edgeLengthMm?: number;
 }
 
 export type HardwareGroup = 'Front Hardware' | 'Gola Profile' | 'Push-Open' | 'Assembly Fixings' | 'Base Fixing System' | 'Wall Fixing System';
@@ -121,6 +128,10 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
   const sides = carcaseSidesOf(cab, carcaseTh);
   const inner = sides.innerMm;
   const open = isOpenCarcase(zones);
+  // A full back panel is fitted INSIDE the rear (math/backPanel.ts): every board that runs from the back to the front — dividers,
+  // vertical boards and shelves — stops at it by its thickness, so nothing overlaps it in the cut list or in the picture.
+  const backInside = backInsideMm(cab, carcaseTh);
+  const innerDepth = Math.max(0, cab.depth - backInside);
   const parts: CabinetPart[] = [];
 
   const carcase = (partType: string, widthMm: number, lengthMm: number, quantity: number, grain: GrainDirection, edge: EdgeBanding): CabinetPart =>
@@ -128,18 +139,38 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
 
   const sideCount = Number(sides.left) + Number(sides.right); // 2, unless a neighbouring box of an L corner replaces one
   if (sideCount > 0) parts.push(carcase('Side Panel (Left/Right)', cab.depth, cab.height, sideCount, 'vertical', 'FRONT'));
-  if (!open) parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
+  // The bottom (math/lCorner.ts): an L corner stands its three boxes on ONE board cut in an L. The square cuts the whole piece
+  // here — outside size, legs and the inner cut-out, all in the description — and the two arms skip their own deck, because a
+  // second board under them would be the same board. No L (a plain cabinet, or a group that cannot share) = one deck per box.
+  const sharedDeck = cab.cornerGroupDeckMm;
+  const deckCarrier = !!sharedDeck && (cab.cornerRole ? cab.cornerRole === 'SQUARE' : cab.width === cab.depth);
+  if (!open) {
+    if (sharedDeck && !deckCarrier) {
+      // the arm of a corner: its bottom is part of the square's L piece
+    } else if (sharedDeck && deckCarrier) {
+      // Numbers: math/cornerDeck.ts (the same ones the panel shows). One row, one board, one cut.
+      const piece = cornerDeckPieceOf({ depthMm: cab.depth, armAMm: sharedDeck.armAMm, armBMm: sharedDeck.armBMm, boardMm: carcaseTh });
+      parts.push({
+        partType: `Corner L Bottom Deck (one piece: L ${piece.spanXMm}×${piece.spanYMm} outside, legs ${piece.legsMm}, corner offcut ${piece.cutOutXMm}×${piece.cutOutYMm})`,
+        role: 'carcase', thicknessMm: carcaseTh, widthMm: piece.legsMm, lengthMm: piece.developedMm, quantity: 1,
+        // The band runs along the two FRONTS only: the square's own front edge is the seam where the two arms meet.
+        grain: 'horizontal', edge: 'FRONT', edgeLengthMm: piece.frontRunMm,
+      });
+    } else {
+      parts.push(carcase('Bottom Deck Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
+    }
+  }
   // The board between two zones is always cut — including above an open bay: the zone above it has to stand on something.
-  if (zones.length > 1) parts.push(carcase('Zone Divider Panel', cab.depth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
+  if (zones.length > 1) parts.push(carcase('Zone Divider Panel', innerDepth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
   // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
   layout.bands.forEach((band) => {
-    if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
+    if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, innerDepth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
   });
 
   // Hinge boards of a row of several doors (zones.ts partitions): as deep as the cabinet, as tall as the zone's opening.
   layout.bands.forEach((band) => {
     const n = (band.partitions ?? []).reduce((sum, p) => sum + p.boards, 0);
-    if (n > 0) parts.push(carcase(`Door Hinge Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, n, 'vertical', 'FRONT'));
+    if (n > 0) parts.push(carcase(`Door Hinge Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, innerDepth, band.openingHeightMm, n, 'vertical', 'FRONT'));
   });
 
   if (topOf(cab) === 'RAILS') {
@@ -148,13 +179,21 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     parts.push(carcase('Top Roof Panel', cab.depth, inner, 1, 'horizontal', 'FRONT'));
   }
 
-  // The back covers the closed part only: behind an open bay it is not cut at all (hoses, ventilation, depth), so the panel
+  // The back covers the closed part only: behind an open bay it is not cut at all (hoses, ventilation, depth), so the back
   // starts at the board above the bay, and disappears when nothing stands above it. A board not cut is not priced either.
+  // WHAT closes it is the user's choice (math/backPanel.ts): HDF sheet, two carcase rails, or a full carcase board.
   const backBottomMm = backPanelBottomMm(layout);
-  const backLengthMm = cab.height - backBottomMm;
-  if (backLengthMm > 0.5) {
-    parts.push({ partType: 'Backwall Panel (MDF/HDF)', role: 'back', thicknessMm: PANEL.BACK_THICKNESS_MM, widthMm: cab.width, lengthMm: backLengthMm, quantity: 1, grain: 'vertical', edge: 'NONE' });
-  }
+  parts.push(...backPartsOf(cab, {
+    bottomMm: backBottomMm,
+    closedHeightMm: cab.height - backBottomMm,
+    widthMm: cab.width,
+    innerWidthMm: inner,
+    centerXMm: sides.centerMm,
+    carcaseThMm: carcaseTh,
+    bottomBoardMm: backBottomMm > 0 || !open ? carcaseTh : 0,
+    // The top always has a board or the two top stretchers at its very top (thick): what closes the back stops under them.
+    topBoardMm: carcaseTh,
+  }));
 
   // A column with pull-out frames carries baskets (its "shelves" are the basket levels), not fixed shelves. One row per shelf
   // width: a split zone has a narrower run in each column (math/columns.ts), an unsplit cabinet has a single row as always.
@@ -168,7 +207,7 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
       shelfRows.set(w, (shelfRows.get(w) ?? 0) + n);
     });
   });
-  shelfRows.forEach((qty, w) => parts.push(carcase('Adjustable Internal Shelf', cab.depth - PANEL.SHELF_DEPTH_INSET_MM, w, qty, 'horizontal', 'FRONT')));
+  shelfRows.forEach((qty, w) => parts.push(carcase('Adjustable Internal Shelf', innerDepth - PANEL.SHELF_DEPTH_INSET_MM, w, qty, 'horizontal', 'FRONT')));
 
   // Facades: one row per zone, or per column of a split zone; EQUAL facades inside it share the row. Equality includes the
   // size, because a stack of drawers is not always equal (834 mm in four: 183 / 182.5 / 182.5 / 182) and a cutting list that
@@ -187,6 +226,7 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     if (f.kind === 'DOOR') partType = `${opts.glass ? 'Glass Door Panel' : opts.lift ? 'Lift Facade Panel' : 'Door Facade Panel'} (1 of ${f.count})${tag}`;
     else if (f.kind === 'DRAWER') { partType = `Drawer Front Facade (1 of ${f.count})${tag}`; grain = 'horizontal'; }
     else if (f.kind === 'APRON') { partType = `Fixed Apron Panel${tag}`; grain = 'horizontal'; }
+    else if (f.kind === 'FILLER') partType = `Corner Filler Panel${tag}`;
     else partType = f.column === 'FILL' ? `Fixed Filler Panel${tag}` : `Appliance Front Panel${tag}`;
     parts.push({ partType, role: 'front', thicknessMm: frontTh, widthMm: f.widthMm, lengthMm: f.heightMm, quantity: list.length, grain, edge: 'ALL' });
   });
@@ -404,7 +444,9 @@ export function priceCabinet(
       issues.push({ code: c.code, severity: 'warning', message: `Cabinet "${name}": ${c.message}` });
     });
   });
-  if (!hdfMat) issues.push({ code: 'BACK_PRICED_AS_CARCASE', severity: 'warning', message: 'No "HDF 3 mm" sheet in stock — back panels are priced with the carcase sheet' });
+  if (!hdfMat && (backPanelModeOf(cab) === 'HDF' || model.parts.some((p) => p.role === 'back' && p.partType.startsWith('Drawer Box Bottom')))) {
+    issues.push({ code: 'BACK_PRICED_AS_CARCASE', severity: 'warning', message: 'No "HDF 3 mm" sheet in stock — back panels and drawer bottoms are priced with the carcase sheet' });
+  }
 
   const carcaseRoll = cab.carcaseEdgeRollId ? edgeRolls.find((r) => r.id === cab.carcaseEdgeRollId) : undefined;
   const frontRoll = cab.frontEdgeRollId ? edgeRolls.find((r) => r.id === cab.frontEdgeRollId) : undefined;
@@ -416,7 +458,7 @@ export function priceCabinet(
     const edgeMm = p.edge === 'NONE' ? 0 : Math.max(0, roll ? roll.thickness : material?.edgeThickness ?? 0);
     const cutWidth = p.edge === 'ALL' ? p.widthMm - 2 * edgeMm : p.edge === 'FRONT' ? p.widthMm - edgeMm : p.widthMm;
     const cutLength = p.edge === 'ALL' ? p.lengthMm - 2 * edgeMm : p.lengthMm;
-    const perPieceMm = !roll ? 0 : p.edge === 'ALL' ? 2 * (p.widthMm + p.lengthMm) : p.edge === 'FRONT' ? p.lengthMm : 0;
+    const perPieceMm = !roll ? 0 : p.edge === 'ALL' ? 2 * (p.widthMm + p.lengthMm) : p.edge === 'FRONT' ? (p.edgeLengthMm ?? p.lengthMm) : 0;
     const cutW = round2(Math.max(0, cutWidth));
     const cutL = round2(Math.max(0, cutLength));
     // The board consumed from the sheet is the CUT piece (the band adds thickness, not board). The old BOM priced the

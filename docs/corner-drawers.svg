@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1500" width="920" height="1500" font-family="Inter, 'Segoe UI', Tahoma, Arial, sans-serif" direction="rtl">
+  <!-- Front elevation of the back-wall arm: 450 mm wide, 766 mm of facade. Scale 0.7 px/mm, origin (120,110).
+       The arm's cornerSide is LEFT, so the FIXED filler panel stands on the left, in front of the neighbouring closed door.
+       filler 19.5 + drawer front 430 + reveal 0.5 = 450 mm: the filler comes out of the arm, so the arm never grows. -->
+  <rect width="920" height="1500" fill="#75808E"/>
+
+  <text x="460" y="36" text-anchor="middle" font-size="19" font-weight="700" fill="#F5F7FA">ذراع الزاوية الخلفي — ضلفة زاوية ثابتة داخل عرض الذراع</text>
+  <text x="460" y="58" text-anchor="middle" font-size="12" fill="#E2E7EC">الذراع 450 مم كما هي · الضلفة الثابتة 19.5 مم · واجهة الدرج 430 مم تبدأ على حافتها · الباب مغلق خلفها</text>
+
+  <!-- total width: 469.5 mm = 328.65 px -->
+  <line x1="120" y1="80" x2="435" y2="80" stroke="#F5F7FA" stroke-width="1.2"/>
+  <line x1="120" y1="75" x2="120" y2="85" stroke="#F5F7FA" stroke-width="1.2"/>
+  <line x1="435" y1="75" x2="435" y2="85" stroke="#F5F7FA" stroke-width="1.2"/>
+  <text x="277" y="73" text-anchor="middle" font-size="11" font-weight="700" fill="#F5F7FA">450 مم — لم يتغيّر</text>
+
+  <!-- carcase -->
+  <rect x="120" y="110" width="315" height="536" fill="#D9CFC2" stroke="#B9AC9C" stroke-width="2"/>
+
+  <!-- the neighbouring door, now BEHIND the filler: 18 mm from the corner edge, drawn faintly -->
+  <rect x="120" y="110" width="12.6" height="536" fill="#C46A5A" opacity="0.35"/>
+  <line x1="132.6" y1="110" x2="132.6" y2="646" stroke="#F2B8AE" stroke-width="1.5" stroke-dasharray="6 4" opacity="0.9"/>
+
+  <!-- the FIXED filler panel: 19.5 mm wide, floor to top of the carcase -->
+  <rect x="120" y="110" width="13.65" height="536" fill="#9C775F" stroke="#3E2B24" stroke-width="1.2"/>
+  <line x1="122" y1="110" x2="122" y2="646" stroke="#E8D9CE" stroke-width="1.2" opacity="0.55"/>
+  <line x1="131" y1="110" x2="131" y2="646" stroke="#E8D9CE" stroke-width="1.2" opacity="0.55"/>
+  <text x="112" y="383" transform="rotate(-90 112 383)" text-anchor="middle" font-size="10" font-weight="700" fill="#F0E4DA">ضلفة ثابتة 19.5</text>
+
+  <!-- 18 mm: the door thickness, and the 1.5 mm of play the filler covers -->
+  <line x1="120" y1="100" x2="132.6" y2="100" stroke="#F2B8AE" stroke-width="1.5"/>
+  <line x1="120" y1="95" x2="120" y2="105" stroke="#F2B8AE" stroke-width="1.5"/>
+  <line x1="132.6" y1="95" x2="132.6" y2="105" stroke="#F2B8AE" stroke-width="1.5"/>
+  <text x="126" y="92" text-anchor="middle" font-size="9" font-weight="700" fill="#F2B8AE">18</text>
+  <line x1="132.6" y1="100" x2="133.65" y2="100" stroke="#FFD166" stroke-width="4"/>
+  <text x="462" y="104" font-size="11" font-weight="700" fill="#FFD166">1.5 مم فراغ تحت الضلفة</text>
+
+  <!-- the drawer fronts: 449 mm, after the filler and the ordinary 1 mm seam -->
+  <rect x="133.65" y="118" width="301" height="170" fill="#5C4033" stroke="#3E2B24" stroke-width="1.5"/>
+  <rect x="133.65" y="294" width="301" height="170" fill="#5C4033" stroke="#3E2B24" stroke-width="1.5"/>
+  <rect x="133.65" y="470" width="301" height="170" fill="#5C4033" stroke="#3E2B24" stroke-width="1.5"/>
+  <g stroke="#4B332A" stroke-width="1" opacity="0.35">
+    <path d="M190 124 C 200 204, 186 264, 196 284"/>
+    <path d="M260 124 C 250 204, 268 264, 256 284"/>
+    <path d="M330 124 C 340 204, 326 264, 336 284"/>
+    <path d="M400 124 C 390 204, 408 264, 396 284"/>
+  </g>
+  <text x="284" y="210" text-anchor="middle" font-size="12" font-weight="700" fill="#F3E9DF">درج 1</text>
+  <text x="284" y="386" text-anchor="middle" font-size="12" font-weight="700" fill="#F3E9DF">درج 2</text>
+  <text x="284" y="562" text-anchor="middle" font-size="12" font-weight="700" fill="#F3E9DF">درج 3</text>
+
+  <!-- 19.5 from the corner edge to the drawer front -->
+  <line x1="120" y1="676" x2="133.65" y2="676" stroke="#7CD9A5" stroke-width="1.5"/>
+  <line x1="120" y1="670" x2="120" y2="682" stroke="#7CD9A5" stroke-width="1.5"/>
+  <line x1="133.65" y1="670" x2="133.65" y2="682" stroke="#7CD9A5" stroke-width="1.5"/>
+  <line x1="150" y1="700" x2="130" y2="682" stroke="#7CD9A5" stroke-width="1"/>
+  <text x="156" y="704" font-size="11" font-weight="700" fill="#7CD9A5">19.5 = سُمك الباب 18 + 1.5 (وتختار من 18 إلى 50)</text>
+
+  <!-- the drawer front starts exactly on the filler edge -->
+  <line x1="133.65" y1="664" x2="133.65" y2="650" stroke="#A8D8FF" stroke-width="1.5"/>
+  <line x1="200" y1="650" x2="136" y2="656" stroke="#A8D8FF" stroke-width="1"/>
+  <text x="206" y="654" font-size="10" font-weight="700" fill="#A8D8FF">الواجهة تبدأ على حافة الضلفة بلا فاصل — ولا تغطّيها</text>
+
+  <!-- 449 mm: the drawer front keeps its full width -->
+  <line x1="133.65" y1="736" x2="434.65" y2="736" stroke="#A8D8FF" stroke-width="1.2"/>
+  <line x1="133.65" y1="730" x2="133.65" y2="742" stroke="#A8D8FF" stroke-width="1.2"/>
+  <line x1="434.65" y1="730" x2="434.65" y2="742" stroke="#A8D8FF" stroke-width="1.2"/>
+  <text x="284" y="728" text-anchor="middle" font-size="10" font-weight="700" fill="#A8D8FF">430 مم = 450 − 19.5 − 0.5</text>
+
+  <!-- legend / numbers -->
+  <g transform="translate(500,110)">
+    <rect x="0" y="0" width="396" height="330" rx="14" fill="#F7F5F2" opacity="0.97"/>
+    <text x="374" y="32" text-anchor="end" font-size="13" font-weight="700" fill="#3E2B24">القطعة الثابتة</text>
+
+    <rect x="344" y="46" width="16" height="16" fill="#9C775F" stroke="#3E2B24"/>
+    <text x="334" y="59" text-anchor="end" font-size="11" fill="#4A423A">ضلفة الزاوية الثابتة — جوز، 18 مم</text>
+    <rect x="344" y="72" width="16" height="16" fill="#5C4033"/>
+    <text x="334" y="85" text-anchor="end" font-size="11" fill="#4A423A">واجهة الدرج — جوز مطفي</text>
+    <rect x="344" y="98" width="16" height="16" fill="#C46A5A" opacity="0.35"/>
+    <text x="334" y="111" text-anchor="end" font-size="11" fill="#4A423A">باب الذراع الآخر — 18 مم، خلف الضلفة</text>
+    <rect x="344" y="124" width="16" height="16" fill="#D9CFC2" stroke="#B9AC9C"/>
+    <text x="334" y="137" text-anchor="end" font-size="11" fill="#4A423A">الهيكل — كشمير مطفي فائق</text>
+
+    <line x1="22" y1="156" x2="374" y2="156" stroke="#CFC4B6" stroke-width="1"/>
+
+    <text x="374" y="180" text-anchor="end" font-size="12" font-weight="700" fill="#3E2B24">من أسفل الهيكل إلى أعلاه</text>
+    <text x="374" y="202" text-anchor="end" font-size="11" fill="#4A423A">عرضها تلقائي = سُمك الباب + 1.5 مم</text>
+    <text x="374" y="222" text-anchor="end" font-size="11" fill="#2E6B4A">18 مم ⇒ 19.5 · 16 مم ⇒ 17.5</text>
+    <text x="374" y="246" text-anchor="end" font-size="11" fill="#4A423A">وأنت تتحكم بها من سُمك الباب إلى 50 مم</text>
+    <text x="374" y="266" text-anchor="end" font-size="11" fill="#4A423A">18 مم ⇒ واجهة 431.5 · 50 مم ⇒ واجهة 399.5</text>
+    <text x="374" y="290" text-anchor="end" font-size="11" fill="#4A423A">تُقصّ مع الواجهات: لوح واحد + حافة على 4 جوانب</text>
+    <text x="374" y="312" text-anchor="end" font-size="11" fill="#4A423A">19.5 + 430 + 0.5 = 450 · صندوق الدرج 388</text>
+  </g>
+
+  <text x="874" y="470" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">الخط الأحمر المتقطّع = حافة الباب المغلق خلف الضلفة (18 مم)،</text>
+  <text x="874" y="488" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">والفراغ المتبقي 1.5 مم لا يُرى: الضلفة تغطّيه من الأسفل للأعلى.</text>
+  <text x="874" y="506" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">الضلفة من عرض الذراع نفسه (450)، فلا يتغيّر عرض الذراع</text>
+  <text x="874" y="524" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">ولا يتقدّم طرفها على الجارة ولا يخرج عن الجدار.</text>
+  <!-- ================= the same arm, doors only: a look-only filler on EITHER side ================= -->
+  <line x1="40" y1="756" x2="880" y2="756" stroke="#F5F7FA" stroke-width="1" opacity="0.25"/>
+  <text x="460" y="792" text-anchor="middle" font-size="19" font-weight="700" fill="#F5F7FA">ذراع أبواب — الضلفة على الجهتين للجمال فقط</text>
+  <text x="460" y="814" text-anchor="middle" font-size="12" fill="#E2E7EC">18 + 414 + 18 = 450 · لا أدراج في هذا الذراع، فلا حاجة لفراغ 1.5 مم: عرض الضلفة = سُمك الواجهات</text>
+
+  <!-- total width: 450 mm = 315 px -->
+  <line x1="120" y1="836" x2="435" y2="836" stroke="#F5F7FA" stroke-width="1.2"/>
+  <line x1="120" y1="831" x2="120" y2="841" stroke="#F5F7FA" stroke-width="1.2"/>
+  <line x1="435" y1="831" x2="435" y2="841" stroke="#F5F7FA" stroke-width="1.2"/>
+  <text x="277" y="829" text-anchor="middle" font-size="11" font-weight="700" fill="#F5F7FA">450 مم — الذراع كما هي</text>
+
+  <!-- carcase -->
+  <rect x="120" y="866" width="315" height="536" fill="#D9CFC2" stroke="#B9AC9C" stroke-width="2"/>
+
+  <!-- left look-only panel: 18 mm -->
+  <rect x="120" y="866" width="12.6" height="536" fill="#9C775F" stroke="#3E2B24" stroke-width="1.2"/>
+  <!-- the single door, from the left panel edge to the right panel edge -->
+  <rect x="132.6" y="874" width="289.8" height="520" fill="#5C4033" stroke="#3E2B24" stroke-width="1.5"/>
+  <!-- right look-only panel: 18 mm -->
+  <rect x="422.4" y="866" width="12.6" height="536" fill="#9C775F" stroke="#3E2B24" stroke-width="1.2"/>
+
+  <text x="277" y="1130" text-anchor="middle" font-size="12" font-weight="700" fill="#F3E9DF">باب واحد — 414 مم</text>
+  <text x="126" y="1210" text-anchor="middle" font-size="9" font-weight="700" fill="#F0E4DA" transform="rotate(-90 126 1210)">18</text>
+  <text x="429" y="1210" text-anchor="middle" font-size="9" font-weight="700" fill="#F0E4DA" transform="rotate(-90 429 1210)">18</text>
+
+  <!-- the door starts on each panel edge: no gap, no overlap -->
+  <line x1="132.6" y1="856" x2="132.6" y2="870" stroke="#A8D8FF" stroke-width="1.5"/>
+  <line x1="422.4" y1="856" x2="422.4" y2="870" stroke="#A8D8FF" stroke-width="1.5"/>
+  <text x="277" y="1424" text-anchor="middle" font-size="10" font-weight="700" fill="#A8D8FF">الباب يبدأ وينتهي على حافة كل ضلفة — لا فاصل ولا تراكب</text>
+
+  <!-- controls -->
+  <g transform="translate(500,866)">
+    <rect x="0" y="0" width="396" height="300" rx="14" fill="#F7F5F2" opacity="0.97"/>
+    <text x="374" y="32" text-anchor="end" font-size="13" font-weight="700" fill="#3E2B24">التحكم في اللوحة</text>
+    <text x="374" y="60" text-anchor="end" font-size="11.5" font-weight="700" fill="#2E6B4A">تلقائي · بلا ضلفة · اليسرى · اليمنى · الجهتان</text>
+    <text x="374" y="84" text-anchor="end" font-size="11" fill="#4A423A">تلقائي = جهة الزاوية 19.5 (مع الأدراج) وحدها</text>
+    <text x="374" y="106" text-anchor="end" font-size="11" fill="#4A423A">بلا ضلفة = الواجهة تأخذ عرض الذراع كاملاً</text>
+    <text x="374" y="128" text-anchor="end" font-size="11" fill="#4A423A">اليسرى / اليمنى = ضلفة واحدة على الجهة المختارة</text>
+    <text x="374" y="150" text-anchor="end" font-size="11" fill="#4A423A">الجهتان = ضلفتان بنفس العرض الواحد</text>
+    <line x1="22" y1="172" x2="374" y2="172" stroke="#CFC4B6" stroke-width="1"/>
+    <text x="374" y="196" text-anchor="end" font-size="11" fill="#4A423A">العرض: من سُمك الباب إلى 50 مم — واحد للضلفتين</text>
+    <text x="374" y="218" text-anchor="end" font-size="11" fill="#4A423A">الأبواب والأبرونات ولوحات الأجهزة تبدأ عند الضلفتين</text>
+    <text x="374" y="240" text-anchor="end" font-size="11" fill="#4A423A">كل ضلفة تبقى في القص والتسعير و BOM و3D</text>
+    <text x="374" y="262" text-anchor="end" font-size="11" fill="#4A423A">الذراع 450 دائماً — لا شيء يتحرّك على الجدار</text>
+    <text x="374" y="284" text-anchor="end" font-size="11" font-weight="700" fill="#2E6B4A">للجمال: الضلفة اليمنى تسدّد نهاية الذراع أمام الجارة</text>
+  </g>
+
+  <text x="874" y="1360" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">الضلفة الجمالية ليست بديلاً عن ضلفة الزاوية: هذه تُغلق فراغ الأدراج،</text>
+  <text x="874" y="1378" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">وتلك تُغلق نهاية الذراع الأخرى أو تُستخدم وحدها على ذراع أبواب.</text>
+  <text x="874" y="1396" text-anchor="end" font-size="10" fill="#DDE3E9" opacity="0.9">ويمكن جمعهما: L + R بنفس العرض ⇒ 30 + 390 + 30 = 450.</text>
+</svg>

@@ -20,6 +20,7 @@ import { LIMITS, PANEL, SPLIT } from './constants';
 import { clampInt } from './utils';
 import { golaSlotsOf } from './gola';
 import { APPLIANCES, isOpenCarcase, zonesOf } from './zones';
+import { BackPanelMode, backPanelModeOf } from './backPanel';
 import { COLUMN_FILLS, canSplitZone, frontHardwareNeeds } from './columns';
 import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templates';
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
@@ -65,6 +66,10 @@ export interface CabinetDraft {
   preferLift?: boolean;
   /** What a floor unit stands on (math/base.ts). Missing = a legacy cabinet: nothing drawn, 4 legs counted as before. */
   base?: CabinetBase;
+  /** What closes the back (math/backPanel.ts): HDF sheet, two carcase rails, or a full carcase board. Missing = HDF. */
+  backPanel?: BackPanelMode;
+  /** RAILS only: depth of each rail up the back (mm). Missing = the default. */
+  backRailDepthMm?: number;
 }
 
 /** The base as the form keeps it: a known type, numbers as whole millimetres. The limits themselves are applied by math/base.ts. */
@@ -304,6 +309,8 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     dividerBoards: d.dividerBoards === 2 ? 2 : undefined,
     frontStyle: d.frontStyle,
     ...(d.base ? { base: { ...d.base } } : {}),
+    ...(d.backPanel && d.backPanel !== 'HDF' ? { backPanel: d.backPanel } : {}),
+    ...(d.backPanel === 'RAILS' && d.backRailDepthMm !== undefined ? { backRailDepthMm: d.backRailDepthMm } : {}),
   };
 }
 
@@ -338,6 +345,8 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     hardwareItemId: hasDoors ? c.frontConfig.hardwareItemId : '',
     drawerHardwareItemId: hasDrawers ? c.frontConfig.drawerHardwareItemId ?? (hasDoors ? '' : c.frontConfig.hardwareItemId) : '',
     ...(c.base ? { base: { ...c.base } } : {}),
+    backPanel: backPanelModeOf(c),
+    ...(c.backRailDepthMm !== undefined ? { backRailDepthMm: c.backRailDepthMm } : {}),
   };
 }
 

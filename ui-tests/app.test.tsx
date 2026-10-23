@@ -118,7 +118,7 @@ describe('installing a cabinet', () => {
     const view = await mount();
     await addBoard(view, 10);
     await inject(view);
-    const width = [...view.container.querySelectorAll('input')].find((i) => (i as HTMLInputElement).type === 'number' && (i as HTMLInputElement).value === '600') as HTMLInputElement;
+    const width = view.container.querySelector('input[aria-label="العرض"]') as HTMLInputElement;
     expect(width, 'the selected unit must show its width').toBeTruthy();
     fireEvent.change(width, { target: { value: '900' } });
     fireEvent.blur(width);

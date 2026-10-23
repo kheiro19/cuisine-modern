@@ -10,6 +10,7 @@
 // the facade sizes the BOM always produced for them.
 import { ApplianceKind, CabinetObject, CabinetZone } from '../types/flatma';
 import { LIMITS, PANEL, PULL_OUT, SPLIT } from './constants';
+import { cornerFillers } from './cornerFiller';
 import { SplitLayout, ZoneColumn, frontStripOf, splitLayoutOf } from './columns';
 import { golaSlotsOfZone } from './gola';
 import { APPLIANCES, OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
@@ -273,7 +274,7 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number, opts: { inse
 
 export interface Facade {
   zoneIndex: number;
-  kind: 'DOOR' | 'DRAWER' | 'APRON' | 'PANEL';
+  kind: 'DOOR' | 'DRAWER' | 'APRON' | 'PANEL' | 'FILLER';
   /** Position inside its zone. For drawers 0 = the TOP drawer (the numbering Gola slots use). */
   index: number;
   count: number;
@@ -323,7 +324,7 @@ export interface FrontPlanOptions {
   frontThMm?: number;
 }
 
-export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> & Partial<Pick<CabinetObject, 'frontThickness' | 'frontSetbackSides'>>, layout: ZoneLayout, opts: FrontPlanOptions = {}): FrontPlan {
+export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> & Partial<Pick<CabinetObject, 'frontThickness' | 'frontSetbackSides' | 'cornerSide' | 'cornerFillerMm' | 'cornerFillerSides'>>, layout: ZoneLayout, opts: FrontPlanOptions = {}): FrontPlan {
   const facades: Facade[] = [];
   const golaSkipped: number[] = [];
   const channels: GolaChannel[] = [];
@@ -337,6 +338,16 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
   const setback = frontTh + PANEL.FRONT_GAP_BETWEEN_MM;
   const setLeft = cab.frontSetbackSides?.includes('LEFT') ? setback : 0;
   const setRight = cab.frontSetbackSides?.includes('RIGHT') ? setback : 0;
+  // The FIXED filler panels of an L-corner box (math/cornerFiller.ts): one on the side that faces the other arm — needed as
+  // soon as a front slides out there, or the drawer passes through the plane of the neighbour's closed door — and optionally
+  // one on the far side, for looks alone. They are INSIDE the box: every front starts on the panel's edge, no seam of its own,
+  // so the front never covers the filler and the box never grows. (A door keeps its own rule above: a door swings.)
+  const fillers = cornerFillers(cab, layout.bands.map((b) => b.zone), frontTh);
+  const drawerSetLeft = fillers.left;
+  const drawerSetRight = fillers.right;
+  // Doors, aprons and appliance panels start after a panel too (a door is hung on the board behind the filler edge).
+  const doorSetLeft = Math.max(setLeft, fillers.left);
+  const doorSetRight = Math.max(setRight, fillers.right);
 
   // Where Gola channels may exist is decided in rules/openings.ts (canUseGola).
   const golaOn = cab.frontConfig.hasGolaProfile && canUseGola(cab.category, layout.bands.map((b) => b.zone));
@@ -367,7 +378,13 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
       const y = channelBelow ? yLo + PANEL.GOLA_OFFSET_MM : yLo;
       const outer = (col: ZoneColumn): 'LEFT' | 'RIGHT' => (col.frontLoMm <= 0 ? 'LEFT' : 'RIGHT');
       const base = (col: ZoneColumn, role: 'MAIN' | 'FILL') => ({ zoneIndex: i, column: role, innerLoMm: col.innerLoMm, innerHiMm: col.innerHiMm });
-      const mainStrip = frontStripOf(sp.main, cab.width);
+      // A strip that reaches the edge of the box stops at the filler panel instead.
+      const edge = PANEL.FRONT_GAP_TOTAL_MM / 2;
+      const trimStrip = (strip: { loMm: number; hiMm: number }) => ({
+        loMm: strip.loMm <= edge + 0.001 ? Math.max(strip.loMm, fillers.left) : strip.loMm,
+        hiMm: strip.hiMm >= cab.width - edge - 0.001 ? Math.min(strip.hiMm, cab.width - fillers.right) : strip.hiMm,
+      });
+      const mainStrip = trimStrip(frontStripOf(sp.main, cab.width));
       if (z.kind === 'DOORS') {
         const count = Math.max(1, Math.round(z.count ?? 1));
         const edge = (j: number) => (j === 0 ? mainStrip.loMm : j === count ? mainStrip.hiMm : round2(mainStrip.loMm + (j * (mainStrip.hiMm - mainStrip.loMm)) / count));
@@ -380,7 +397,7 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
       } else if (z.kind === 'APPLIANCE' && z.panelFront) {
         facades.push({ ...base(sp.main, 'MAIN'), kind: 'PANEL', index: 0, count: 1, widthMm: mainStrip.hiMm - mainStrip.loMm, heightMm: extent, xMm: mainStrip.loMm, yMm: yLo });
       }
-      const fillStrip = frontStripOf(sp.fill, cab.width);
+      const fillStrip = trimStrip(frontStripOf(sp.fill, cab.width));
       const fillBase = { ...base(sp.fill, 'FILL'), index: 0, count: 1, widthMm: fillStrip.hiMm - fillStrip.loMm, heightMm: stack, xMm: fillStrip.loMm, yMm: y };
       if (sp.fill.fill === 'PULL_OUT') facades.push({ ...fillBase, kind: 'DOOR', kinematic: 'PULL_OUT_FRAME', levels: PULL_OUT.DEFAULT_LEVELS });
       else if (sp.fill.fill === 'DOOR') facades.push({ ...fillBase, kind: 'DOOR', hingeSide: outer(sp.fill) });
@@ -401,8 +418,8 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
       const outer = count === 1 ? PANEL.FRONT_GAP_TOTAL_MM / 2 : PANEL.FRONT_ROW_OUTER_REVEAL_MM;
       const hinges = hingeSidesOf(count, z.hingeSide, z.hingeSides); // several doors always carry their side: the hinge boards (layoutZones) stand behind it
       for (let k = 0; k < count; k++) {
-        const lo = Math.max(cut(k) + (k === 0 ? outer : gapHalf), k === 0 ? setLeft : 0);
-        const hi = Math.min(cut(k + 1) - (k === count - 1 ? outer : gapHalf), k === count - 1 ? cab.width - setRight : cab.width);
+        const lo = Math.max(cut(k) + (k === 0 ? outer : gapHalf), k === 0 ? doorSetLeft : 0);
+        const hi = Math.min(cut(k + 1) - (k === count - 1 ? outer : gapHalf), k === count - 1 ? cab.width - doorSetRight : cab.width);
         facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(count > 1 || z.hingeSide || (z.hingeSides?.[0] && z.hingeSides[0] !== 'AUTO') ? { hingeSide: hinges[k] } : {}), ...mark });
       }
       if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
@@ -419,18 +436,39 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
         const touchesAbove = p < count - 1 && !slots.includes(k);
         const lo = cut(p) + (touchesBelow ? gapHalf : 0);
         const hi = cut(p + 1) - (touchesAbove ? gapHalf : 0);
-        facades.push({ zoneIndex: i, kind: 'DRAWER', index: k, count, widthMm: fullWidth, heightMm: hi - lo, xMm: x0, yMm: yLo + channelsBelow + lo, ...mark });
+        // The drawer front spans the box; on the side that faces the other arm of the corner its edge stops at exactly
+        // (front thickness + CORNER.DRAWER_CLEARANCE_MM) from the box edge (19.5 mm for an 18 mm door), the usual reveal
+        // on that side no longer applying — the neighbour's door is there, not the carcase edge.
+        const dLo = Math.max(x0, drawerSetLeft);
+        const dHi = Math.min(cab.width - x0, cab.width - drawerSetRight);
+        facades.push({ zoneIndex: i, kind: 'DRAWER', index: k, count, widthMm: Math.max(0, dHi - dLo), heightMm: hi - lo, xMm: dLo, yMm: yLo + channelsBelow + lo, ...mark });
         if (slots.includes(k)) {
           channels.push({ zoneIndex: i, slot: k, yMm: yLo + channelsBelow + cut(p + 1), heightMm: PANEL.GOLA_OFFSET_MM });
           channelsBelow += PANEL.GOLA_OFFSET_MM;
         }
       }
     } else if (z.kind === 'APRON') {
-      facades.push({ zoneIndex: i, kind: 'APRON', index: 0, count: 1, widthMm: fullWidth, heightMm: extent, xMm: x0, yMm: yLo });
+      const lo = Math.max(x0, fillers.left), hi = Math.min(cab.width - x0, cab.width - fillers.right);
+      facades.push({ zoneIndex: i, kind: 'APRON', index: 0, count: 1, widthMm: Math.max(0, hi - lo), heightMm: extent, xMm: lo, yMm: yLo });
     } else if (z.kind === 'APPLIANCE' && z.panelFront) {
-      facades.push({ zoneIndex: i, kind: 'PANEL', index: 0, count: 1, widthMm: fullWidth, heightMm: extent, xMm: x0, yMm: yLo });
+      const lo = Math.max(x0, fillers.left), hi = Math.min(cab.width - x0, cab.width - fillers.right);
+      facades.push({ zoneIndex: i, kind: 'PANEL', index: 0, count: 1, widthMm: Math.max(0, hi - lo), heightMm: extent, xMm: lo, yMm: yLo });
     }
   });
+
+  // The fixed fillers: one flat panel per side, from the bottom of the carcase to the top, as thick and as finished as the
+  // fronts. On the corner side it is what the client sees instead of the void in front of the neighbouring door; on the far
+  // side it is there for looks (an end panel at the end of a run).
+  const pushFiller = (side: 'LEFT' | 'RIGHT', widthMm: number) => {
+    if (widthMm <= 0) return;
+    facades.push({
+      zoneIndex: 0, kind: 'FILLER', index: side === 'LEFT' ? 0 : 1, count: 1,
+      widthMm, heightMm: cab.height,
+      xMm: side === 'LEFT' ? 0 : cab.width - widthMm, yMm: 0,
+    });
+  };
+  pushFiller('LEFT', fillers.left);
+  pushFiller('RIGHT', fillers.right);
 
   const plan: FrontPlan = golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
   return opts.inset ? insetPlan(cab, layout, plan) : plan;
@@ -447,7 +485,8 @@ function insetPlan(cab: SizedCabinet, layout: ZoneLayout, plan: FrontPlan): Fron
   const sides = carcaseSidesOf(cab, th);
   const half = (v: number) => Math.floor(2 * v) / 2; // never round a front up into its neighbour
   const groups = new Map<string, Facade[]>();
-  plan.facades.forEach((f) => { const k = `${f.zoneIndex}:${f.column ?? ''}:${f.kind}`; groups.set(k, [...(groups.get(k) ?? []), f]); });
+  // A FILLER is screwed flat against the corner side, not hung in an opening: inset mode leaves it exactly where planFronts put it.
+  plan.facades.filter((f) => f.kind !== 'FILLER').forEach((f) => { const k = `${f.zoneIndex}:${f.column ?? ''}:${f.kind}`; groups.set(k, [...(groups.get(k) ?? []), f]); });
   const rect = new Map<Facade, Pick<Facade, 'xMm' | 'yMm' | 'widthMm' | 'heightMm'>>();
   groups.forEach((list) => {
     const first = list[0];
@@ -471,7 +510,7 @@ function insetPlan(cab: SizedCabinet, layout: ZoneLayout, plan: FrontPlan): Fron
     }
   });
   return {
-    facades: plan.facades.map((f) => ({ ...f, ...rect.get(f)! })),
+    facades: plan.facades.map((f) => (f.kind === 'FILLER' ? f : { ...f, ...rect.get(f)! })),
     channels: [],
     ...(plan.channels.length > 0 ? { golaDroppedByInset: true } : {}),
   };

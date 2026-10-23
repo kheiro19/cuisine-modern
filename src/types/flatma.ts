@@ -213,6 +213,48 @@ export interface CabinetObject {
    * one at a right angle (the two arms of an L corner) is not hit by it: the other door runs past, this one butts against it.
    */
   frontSetbackSides?: Array<'LEFT' | 'RIGHT'>;
+  /**
+   * The side of this box that faces the OTHER arm of its L corner. Drawer fronts on that side stop short by the neighbour's
+   * front thickness + CORNER.DRAWER_CLEARANCE_MM (math/constants.ts), otherwise they cannot be pulled out while that door is shut.
+   * Doors are not affected: their row keeps its own rule (frontSetbackSides).
+   */
+  cornerSide?: 'LEFT' | 'RIGHT';
+  /**
+   * How much of `width` was ADDED to the designed arm because it carries drawers (front thickness + CORNER.DRAWER_CLEARANCE_MM).
+   * Kept so the panel can widen / un-widen the arm on every save without ever adding the extension twice.
+   */
+  cornerExtensionMm?: number;
+  /**
+   * Width of the FIXED filler panel that closes the corner side of an arm (math/cornerFiller.ts). Missing = automatic:
+   * front thickness + CORNER.DRAWER_CLEARANCE_MM. The panel lets the user choose 0 … CORNER.FILLER_MAX_MM.
+   */
+  cornerFillerMm?: number;
+  /**
+   * Sides of this box that carry a fixed filler panel (math/cornerFiller.ts). Missing = automatic: the corner side, and
+   * only when a front slides out there. `[]` = none. Both sides may carry one — the far side is for looks (an end panel).
+   */
+  cornerFillerSides?: Array<'LEFT' | 'RIGHT'>;
+
+  /**
+   * What closes the back of this cabinet (math/backPanel.ts): 'HDF' = a 3 mm hardboard sheet on the rear face (default),
+   * 'RAILS' = two battens cut from the carcase board (one at the top, one at the bottom), 'PANEL' = a full carcase board
+   * fitted inside the rear. Missing = HDF, the way every saved cabinet was built.
+   */
+  backPanel?: 'HDF' | 'RAILS' | 'PANEL';
+  /** RAILS only: depth of each rail up the back (mm). Missing = BACK.RAIL_DEPTH_MM (100). */
+  backRailDepthMm?: number;
+
+  /**
+   * What this box is inside its L corner (math/lCorner.ts): the square where the two walls meet, or one of the two arms.
+   * Written when the corner is built; a box without it falls back to its size.
+   */
+  cornerRole?: 'SQUARE' | 'ARM_A' | 'ARM_B';
+  /**
+   * L corner: the three boxes stand on ONE bottom board, cut in an L (the way a real corner is built). The same value sits on
+   * all three boxes of the group; the SQUARE cuts the piece, the two arms skip their own deck. Missing or null = the three
+   * boxes cannot share it (different depth or board), so each cuts its own deck as before.
+   */
+  cornerGroupDeckMm?: { armAMm: number; armBMm: number };
 
   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
   frontTextureOverride?: FrontTextureOverride;

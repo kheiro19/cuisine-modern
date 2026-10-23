@@ -14,7 +14,9 @@ import { textureCatalog } from '../data/textureCatalog';
 import type { TextureEntry } from '../data/textureCatalog';
 import { onlineTextureCatalog, makeOnlineTextureEntry } from '../data/onlineTextures';
 import { LAYOUT } from '../math/constants';
-import { computeCountertopOutline } from '../math/countertop';
+import { computeCountertopOutline, carriesCountertop, countertopDepthMm, COUNTERTOP_DEFAULT } from '../math/countertop';
+import { DEFAULT_PALETTE, gridColoursOf } from '../math/palette';
+import type { CountertopSettings } from '../math/countertop';
 
 interface Kitchen3DCanvasProps {
   cabinets: CabinetObject[];
@@ -22,6 +24,8 @@ interface Kitchen3DCanvasProps {
   showFronts: boolean;
   isXRayMode: boolean;
   countertopPath: { x: number; zOffset: number }[];
+  /** The worktop slab: shown or hidden, thickness and depth typed by the user (never priced). */
+  countertop?: CountertopSettings;
   /** Straight, L or U: where each wall is (math/kitchenLayout.ts). Missing = a straight kitchen. */
   layout?: KitchenLayout;
   woodPanels: InjectedWoodMaterial[];
@@ -33,12 +37,16 @@ interface Kitchen3DCanvasProps {
   onDeleteCabinet: (cabinetId: string) => void;
 }
 
+/** The room behind the kitchen: the colour and the two grid tones derived from it (math/palette.ts). */
+const ROOM = { ...DEFAULT_PALETTE.background, grid: gridColoursOf(DEFAULT_PALETTE.background.color) };
+
 export default function Kitchen3DCanvas({
   cabinets,
   hardware,
   showFronts,
   isXRayMode,
   countertopPath,
+  countertop = COUNTERTOP_DEFAULT,
   layout = DEFAULT_LAYOUT,
   woodPanels,
   hardwareItems,
@@ -102,7 +110,7 @@ export default function Kitchen3DCanvas({
   };
 
   // Floor units that carry the worktop (tall / pantry units do not).
-  const isCounter = (c: CabinetObject) => c.category === 'BASE_UNIT' && c.height <= LAYOUT.COUNTERTOP_MAX_UNIT_HEIGHT_MM;
+  const isCounter = (c: CabinetObject) => carriesCountertop(c);
   const counterCabinets = useMemo(() => cabinets.filter(isCounter), [cabinets]);
   const baseHeightMm = useMemo(
     () => (counterCabinets.length > 0 ? Math.max(...counterCabinets.map(c => c.height)) : LAYOUT.DEFAULT_BASE_HEIGHT_MM),
@@ -132,6 +140,7 @@ export default function Kitchen3DCanvas({
   // start where it ends, so the three slabs meet without overlapping (two coplanar slabs would flicker).
   const countertopGeometries = useMemo(() => {
     const out: Partial<Record<RunId, THREE.BufferGeometry>> = {};
+    if (!countertop.visible) return out;
     const frontA = (() => {
       const a = framed.A.filter(isCounter);
       return a.length > 0 ? Math.max(...a.map(c => c.depth + c.frontThickness - c.positionZ)) + LAYOUT.COUNTERTOP_FRONT_OVERHANG_MM : null;
@@ -146,15 +155,17 @@ export default function Kitchen3DCanvas({
       if (!(xEnd - xStart > 1)) return;
       const zBack = Math.min(...list.map(c => -c.positionZ));
       const zFront = Math.max(...list.map(c => c.depth + c.frontThickness - c.positionZ)) + LAYOUT.COUNTERTOP_FRONT_OVERHANG_MM;
-      const outline = computeCountertopOutline(run === 'A' ? countertopPath : [], xStart, xEnd, zBack, zFront);
+      // The slab the user asked for, stretched when it would stop before the front it covers.
+      const { depthMm } = countertopDepthMm(countertop.depthMm, zFront - zBack);
+      const outline = computeCountertopOutline(run === 'A' ? countertopPath : [], xStart, xEnd, zBack, zBack + depthMm);
       if (outline.length < 3) return;
       const shape = new THREE.Shape(outline.map(([x, z]) => new THREE.Vector2(x / 1000, -z / 1000)));
-      const geometry = new THREE.ExtrudeGeometry(shape, { depth: LAYOUT.COUNTERTOP_THICKNESS_MM / 1000, bevelEnabled: false });
+      const geometry = new THREE.ExtrudeGeometry(shape, { depth: countertop.thicknessMm / 1000, bevelEnabled: false });
       geometry.rotateX(-Math.PI / 2); // (x, -z) extruded along +Z  ->  (x, up, z)
       out[run] = geometry;
     });
     return out;
-  }, [framed, runs, countertopPath]);
+  }, [framed, runs, countertopPath, countertop.visible, countertop.thicknessMm, countertop.depthMm]);
 
   useEffect(() => () => { (Object.values(countertopGeometries) as Array<THREE.BufferGeometry | undefined>).forEach(g => g?.dispose()); }, [countertopGeometries]);
 
@@ -171,7 +182,7 @@ export default function Kitchen3DCanvas({
   }, [accessories, cabinets]);
 
   // Wall units hang above the worktop (its thickness included), whatever the real base height is.
-  const wallElevationMeters = (baseHeightMm + LAYOUT.COUNTERTOP_THICKNESS_MM + hardware.wallSplashHeight) / 1000;
+  const wallElevationMeters = (baseHeightMm + countertop.thicknessMm + hardware.wallSplashHeight) / 1000;
 
   return (
     <div className="w-full h-full min-h-[580px] bg-[#FAF9F6] rounded-xl overflow-hidden relative flex flex-col shadow-inner select-none">
@@ -188,6 +199,8 @@ export default function Kitchen3DCanvas({
       {/* 🧊 Three.js Spatial Layer Viewport */}
       <div className="flex-1 w-full h-full relative">
         <Canvas camera={{ position: layout.type === 'STRAIGHT' ? [sceneWidthMeters / 2, 1.2, 2.5] : [0, 2.6, sceneWidthMeters * 0.9 + 1.5], fov: 40 }} shadows gl={{ antialias: true }} className="w-full h-full absolute inset-0">
+          {/* Cold slate room: without it the canvas is transparent and the scene floats on the white panel. */}
+          <color attach="background" args={[ROOM.color]} />
           <ambientLight intensity={0.65} />
           <directionalLight position={[sceneWidthMeters / 2, 5, 3]} intensity={0.85} castShadow shadow-bias={-0.00005} />
 
@@ -238,7 +251,7 @@ export default function Kitchen3DCanvas({
           </Center>
 
           <OrbitControls makeDefault enableDamping dampingFactor={0.05} maxPolarAngle={Math.PI / 2} minDistance={0.4} maxDistance={8.0} />
-          <Grid position={[0, -0.4, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor="#E5E5E5" sectionSize={0.5} sectionColor="#D4D4D4" />
+          <Grid position={[0, -0.4, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />
         </Canvas>
       </div>
 

@@ -104,6 +104,8 @@ export class TextureEngine {
         texture.rotation = 0;
       }
       material.map = texture;
+      // A loaded image carries its own colour: white keeps it from being tinted by the palette.
+      material.color.set('#FFFFFF');
       material.needsUpdate = true;
     });
   }
@@ -118,7 +120,9 @@ export class TextureEngine {
     isXRayMode: boolean,
     fallbackColor: string,
     grainDirection: 'vertical' | 'horizontal' = 'vertical',
-    override?: { path: string; finishType?: string }
+    override?: { path: string; finishType?: string },
+    /** Sheen used only when no sheet is picked (the palette knows its own finish). */
+    fallbackFinish?: { roughness: number; metalness: number }
   ): THREE.MeshStandardMaterial {
 
     if (isXRayMode) {
@@ -133,8 +137,8 @@ export class TextureEngine {
 
     const baseConfig: PBRMaterialConfig = {
       color: fallbackColor,
-      roughness: 0.5,
-      metalness: 0.0
+      roughness: fallbackFinish ? fallbackFinish.roughness : 0.5,
+      metalness: fallbackFinish ? fallbackFinish.metalness : 0.0
     };
 
     let texturePath: string | null = null;
@@ -145,7 +149,8 @@ export class TextureEngine {
       const properties = this.evaluateSchemaFinishes(material.type);
       baseConfig.roughness = properties.roughness;
       baseConfig.metalness = properties.metalness;
-      baseConfig.color = "#FFFFFF"; // Pure neutralization allows texture mapping images to pop naturally
+      // The colour stays the one the caller asked for (the workshop palette). It is neutralised to white only when a
+      // texture really attaches (see applyTextureAsync): a board whose file does not exist must NOT render white.
 
       // 2. Resolve the texture file from the brand (strict filename convention: no spaces / brackets / hyphens)
       const isWood = material.type.toLowerCase().includes('wood') || material.type.toLowerCase().includes('timber');
@@ -166,7 +171,6 @@ export class TextureEngine {
       const properties = this.evaluateSchemaFinishes(override.finishType ?? material?.type ?? '');
       baseConfig.roughness = properties.roughness;
       baseConfig.metalness = properties.metalness;
-      baseConfig.color = "#FFFFFF";
       texturePath = override.path;
       rotateGrain = grainDirection === 'horizontal';
     }

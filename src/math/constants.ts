@@ -173,15 +173,54 @@ export const LIMITS = {
   PRICE_MAX_DA: 100000000,
 } as const;
 
+/**
+ * The place two boxes of an L corner meet at a right angle (math/lCorner.ts). The door of one arm stands in the plane the other
+ * arm's DRAWERS must slide through: a drawer front that reaches the corner hits that door and cannot come out.
+ * So the drawer fronts stop short of the corner by the neighbour's front thickness + this clearance.
+ */
+export const CORNER = {
+  /** Free play between a drawer front and the closed door of the other arm, besides the door's own thickness. */
+  DRAWER_CLEARANCE_MM: 1.5,
+  /** The most the user may widen the corner side of an arm (a fixed filler panel closes whatever is added). */
+  FILLER_MAX_MM: 50,
+} as const;
+
+/**
+ * The back of a cabinet (math/backPanel.ts). Three ways, chosen per cabinet: a 3 mm HDF sheet on the rear face (the default),
+ * two battens cut from the carcase board (one at the top, one at the bottom of the back), or a full board like the other
+ * carcase parts. These numbers cover the two non-sheet ways.
+ */
+export const BACK = {
+  /** Depth of each rail, measured up the back: one at the top and one at the bottom. */
+  RAIL_DEPTH_MM: 100,
+  /** What a user may ask for: a 5 cm batten up to a 20 cm one. */
+  RAIL_DEPTH_RANGE_MM: [50, 200] as [number, number],
+} as const;
+
 export const COMMERCIAL = {
   DEFAULT_LABOR_PERCENT: 20,
   DEFAULT_PROFIT_PERCENT: 30,
 } as const;
 
+/**
+ * The worktop the customer buys separately: it is drawn and dimensioned, never priced (no line in the BOM, no cost).
+ * The user turns it on or off and types its thickness / depth; both are clamped to what a real slab comes in.
+ */
+export const COUNTERTOP = {
+  THICKNESS_MM: [20, 40] as [number, number],
+  DEFAULT_THICKNESS_MM: 40,
+  /** Depth measured from the wall (a 600 mm slab over a 560 mm carcase + 18 mm door = 22 mm nosing). */
+  DEPTH_MM: [580, 650] as [number, number],
+  DEFAULT_DEPTH_MM: 600,
+  /** A slab narrower than the front it covers is stretched to it: the worktop never stops at the door. */
+  MIN_OVER_FRONT_MM: 0,
+} as const;
+
 export const LAYOUT = {
   /** Base height used for wall-unit elevation when no base unit exists yet. */
   DEFAULT_BASE_HEIGHT_MM: 720,
-  COUNTERTOP_THICKNESS_MM: 40,
+  /** The factory default of the slab (the user may change it, see COUNTERTOP). */
+  COUNTERTOP_THICKNESS_MM: COUNTERTOP.DEFAULT_THICKNESS_MM,
   COUNTERTOP_FRONT_OVERHANG_MM: 20,
   /** Floor units taller than this (tall / pantry) do not carry the countertop. */
   COUNTERTOP_MAX_UNIT_HEIGHT_MM: 1000,

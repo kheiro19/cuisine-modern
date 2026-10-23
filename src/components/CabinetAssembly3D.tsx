@@ -18,6 +18,7 @@ import { applianceLookOf } from '../math/applianceModels';
 import { modelPrims } from '../math/accessoryModels';
 import { FINISHES } from '../data/accessoryCatalog';
 import { Shapes } from './PrimShapes';
+import { DEFAULT_PALETTE } from '../math/palette';
 
 interface CabinetAssembly3DProps {
   cabinet: CabinetObject;
@@ -88,11 +89,11 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   };
 
   const sideMaterial = useMemo(
-    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.depth, body.height, ghost, '#E2E8F0', 'vertical'),
+    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.depth, body.height, ghost, DEFAULT_PALETTE.carcase.color, 'vertical', undefined, DEFAULT_PALETTE.carcase),
     [carcaseMat, cabinet.depth, body.height, ghost],
   );
   const boardMaterial = useMemo(
-    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.width, cabinet.depth, ghost, '#E2E8F0', 'horizontal'),
+    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.width, cabinet.depth, ghost, DEFAULT_PALETTE.carcase.color, 'horizontal', undefined, DEFAULT_PALETTE.carcase),
     [carcaseMat, cabinet.width, cabinet.depth, ghost],
   );
   // One front material per distinct facade size, so the grain / texture scale follows each facade.
@@ -105,7 +106,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
     const out: Record<string, ReturnType<typeof TextureEngine.compileProceduralMaterial>> = {};
     (facadeSig ? facadeSig.split('|') : []).forEach((key) => {
       const { widthMm, heightMm, grain } = parseMaterialKey(key);
-      out[key] = TextureEngine.compileProceduralMaterial(frontMat, widthMm, heightMm, ghost, '#FAFAFA', grain, cabinet.frontTextureOverride);
+      out[key] = TextureEngine.compileProceduralMaterial(frontMat, widthMm, heightMm, ghost, DEFAULT_PALETTE.front.color, grain, cabinet.frontTextureOverride, DEFAULT_PALETTE.front);
     });
     return out;
   }, [facadeSig, frontMat, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps

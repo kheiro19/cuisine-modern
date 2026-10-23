@@ -15,6 +15,7 @@ import type { CabinetCategory, CabinetObject, CabinetZone, RunId } from '../type
 import { FAMILIES } from '../rules/families';
 import { CabinetDraft, draftToNewCabinet, resolveDraft } from './cabinetPresets';
 import type { EdgeBandRoll, InjectedHardwareItem, InjectedWoodMaterial } from '../types/flatma';
+import { cornerFillers } from './cornerFiller';
 
 export type CornerRole = 'SQUARE' | 'ARM_A' | 'ARM_B';
 
@@ -62,6 +63,90 @@ export function lCornerBoxes(p: LCornerParams): LCornerBox[] {
   ];
 }
 
+// ---- the drawer side of an arm: a fixed filler, the arm keeps its width ------------------------------------------
+//
+// The rule itself lives in math/cornerFiller.ts (zones.ts reads it too, for the fronts). The arm is NOT widened: 19.5 mm more
+// would push its far end into the neighbour on the same wall, or past the end of a short wall. The filler takes its width out
+// of the arm's own 450, which leaves the drawer front 430 — the same place it had before, now behind a flat panel instead of
+// a visible void.
+
+export { autoCornerFillerMm, clampCornerFillerMm, cornerFillerWidthMm, cornerFillers, zoneSlidesOut } from './cornerFiller';
+
+// ---- the one L bottom of a corner -------------------------------------------------------------------------------
+//
+// A real corner does not set three little decks side by side: the three boxes stand on ONE board cut in an L, so the bottom
+// is continuous through the corner, with no seam and no second thickness where two boxes meet. The piece belongs to the
+// group, not to a box: `cornerDeckOf` works out whether the three boxes can share it, and the square (the box where the two
+// walls meet) is the one that cuts it — the two arms cut no deck at all (math/partsEngine.ts).
+
+export interface CornerDeckFit {
+  /** Width of each arm (mm); with the square's own depth they give the piece: an L (depth + arm − 2 × board) at both ends. */
+  armAMm: number;
+  armBMm: number;
+}
+
+type DeckBox = {
+  width: number;
+  depth: number;
+  category: CabinetCategory;
+  carcaseThickness?: number;
+  cornerRole?: 'SQUARE' | 'ARM_A' | 'ARM_B';
+};
+
+/** The square is the box whose width is the corner itself; a saved corner says so, an older one is read from its size. */
+const roleOf = (c: DeckBox): 'SQUARE' | 'ARM_A' | 'ARM_B' => c.cornerRole ?? (Math.abs(c.width - c.depth) < 0.5 ? 'SQUARE' : 'ARM_A');
+
+/**
+ * The L bottom of a corner group: the two arm widths, or `null` when the three boxes cannot share one board (they are not
+ * three, they have different depths, different carcase boards, or an arm is not wider than the board). Everything the piece
+ * needs is in this answer, and the same value is written on all three boxes, so no engine has to look at a neighbour.
+ */
+export function cornerDeckOf(cabs: ReadonlyArray<DeckBox>): CornerDeckFit | null {
+  if (cabs.length !== 3) return null;
+  const squares = cabs.filter((c) => roleOf(c) === 'SQUARE');
+  if (squares.length !== 1) return null;
+  const depth = squares[0].depth;
+  const board = squares[0].carcaseThickness ?? 18;
+  if (cabs.some((c) => Math.abs(c.depth - depth) > 0.5)) return null;
+  if (cabs.some((c) => Math.abs((c.carcaseThickness ?? 18) - board) > 0.5)) return null;
+  const arms = cabs.filter((c) => roleOf(c) !== 'SQUARE');
+  if (arms.length !== 2) return null;
+  if (arms.some((a) => a.width <= board + 1)) return null;
+  return { armAMm: Math.round(arms[0].width * 10) / 10, armBMm: Math.round(arms[1].width * 10) / 10 };
+}
+
+export interface CornerExtension {
+  /** The arm's width: the one it was designed with. A filler never widens it. */
+  width: number;
+  /** The arm's own start; the stored one, unless an older save had widened it leftwards. */
+  positionX: number;
+  /** Always 0: kept so a cabinet saved by an earlier version is un-widened on its next save. */
+  cornerExtensionMm: number;
+  /** The fixed filler panel on each side of the box, in mm (0 = none). Either side, or both. */
+  cornerFillers: { left: number; right: number };
+}
+
+/**
+ * The arm worth of the zones it holds today: its designed width, with the corner side closed by a FIXED filler
+ * (`cab.cornerFillerMm`, 0 … CORNER.FILLER_MAX_MM, automatic = front thickness + 1.5 mm). Idempotent: a width that an older
+ * version had widened is given back (`width − cornerExtensionMm`), so the arm returns to what was designed once and stays
+ * there, and going back to doors leaves no filler at all.
+ */
+export function withCornerExtension(
+  cab: { width: number; positionX: number; run?: RunId; cornerSide?: 'LEFT' | 'RIGHT'; cornerExtensionMm?: number; cornerFillerMm?: number; cornerFillerSides?: Array<'LEFT' | 'RIGHT'> },
+  zones: ReadonlyArray<CabinetZone>,
+  frontThMm: number,
+): CornerExtension {
+  const added = cab.cornerExtensionMm ?? 0;
+  const width = cab.width - added; // the width the arm was designed with, whatever an older save did to it
+  // Only a box of a corner has a corner side to close: a cabinet on a plain wall keeps its fronts, filler and all, out of it.
+  if (!cab.cornerSide) return { width, positionX: cab.positionX, cornerExtensionMm: 0, cornerFillers: { left: 0, right: 0 } };
+  // An older save grew the arm of a right-hand corner leftwards; give that start back.
+  const grewLeft = (cab.run ?? 'A') === 'A' && cab.cornerSide === 'RIGHT';
+  const positionX = grewLeft ? cab.positionX + added : cab.positionX;
+  return { width, positionX, cornerExtensionMm: 0, cornerFillers: cornerFillers(cab, zones, frontThMm) };
+}
+
 export const CORNER_ROLE_LABELS: Record<CornerRole, string> = { SQUARE: 'مربع الزاوية', ARM_A: 'ذراع الجدار الخلفي', ARM_B: 'ذراع الجدار الجانبي' };
 
 export interface LCornerBuild {
@@ -80,7 +165,7 @@ type NewCabinet = Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 
 /** The three boxes ready to add, one after the other, with the same materials and hinges as the draft. */
 export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[] {
   const family = p.category === 'WALL_UNIT' ? FAMILIES.WALL : FAMILIES.BASE;
-  return lCornerBoxes(p).map((box) => {
+  const made = lCornerBoxes(p).map((box) => {
     const zones: CabinetZone[] = box.role === 'SQUARE'
       ? [{ kind: 'OPEN', shelves: 0 }]
       : [{ kind: 'DOORS', count: 1, shelves: 0, ...(box.hingeSide ? { hingeSide: box.hingeSide } : {}) }];
@@ -98,8 +183,36 @@ export function lCornerCabinets(p: LCornerParams, b: LCornerBuild): NewCabinet[]
       golaSlots: [],
     }, b.woods, b.hardware, b.edgeRolls);
     const base = draftToNewCabinet(resolved, { id: b.newId(), name: `${b.name} — ${CORNER_ROLE_LABELS[box.role]}`, positionX: box.positionX });
+    const front = b.woods.find((m) => m.id === resolved.frontMaterialId);
+    const cornerSide = box.omitSides[0];
+    // The corner is built with doors, so this adds nothing today; the moment a template (or a preset) opens an arm with
+    // drawers, the arm is born already wide enough and the two rules can never disagree.
+    const ext = withCornerExtension(
+      { width: base.width, positionX: base.positionX, run: box.run, cornerSide },
+      resolved.zones,
+      front ? front.thickness : 18,
+    );
     // The arm along the side wall stops its door short at the corner, so the door of the arm along the back wall runs past it
     // instead of the two doors (each stands one front thickness in front of its box) going through each other.
-    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides, ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}) };
+    // Every box also records WHICH side faces the other arm: a drawers zone on that side has to stop short of the neighbour's
+    // door (front thickness + 1.5 mm), otherwise the drawer cannot be pulled out while that door is shut. The side is the one
+    // the box does not close (omitSides) — the same face the two arms share.
+    const built = {
+      ...base,
+      width: ext.width,
+      positionX: ext.positionX,
+      ...(Math.max(ext.cornerFillers.left, ext.cornerFillers.right) > 0 ? { cornerFillerMm: Math.max(ext.cornerFillers.left, ext.cornerFillers.right) } : {}),
+      run: box.run,
+      groupId: b.groupId,
+      omitSides: box.omitSides,
+      cornerSide,
+      ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}),
+      cornerRole: box.role,
+    };
+    return built;
   });
+  // The three boxes stand on ONE L bottom: the same value on all of them, so the square cuts the piece and the arms skip
+  // theirs (math/partsEngine.ts). It is worked out from the boxes that were just built, so an edit made later is re-read.
+  const deck = cornerDeckOf(made);
+  return deck ? made.map((c) => ({ ...c, cornerGroupDeckMm: deck })) : made;
 }

@@ -109,15 +109,29 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     });
   });
 
-  // ---- back panel: screws round the perimeter, into the rear edges of the sides, bottom and top
-  const back = geo.boxes.find((b) => b.kind === 'back');
-  if (back) {
-    const zc = -D / 2 - back.sizeMm[2] + FASTENER.BACK_SCREW_LEN_MM / 2;
-    const pitch = FASTENER.BACK_SCREW_PITCH_MM;
-    const put = (x: number, y: number) => out.push(cyl('BACK_SCREW', 'z', [x, y, zc], FASTENER.BACK_SCREW_DIA_MM, FASTENER.BACK_SCREW_LEN_MM, back.key));
-    spread(30, H - 30, pitch).forEach((y) => { put(th / 2, y); put(W - th / 2, y); });
-    spread(th + 30, W - th - 30, pitch).forEach((x) => { put(x, th / 2); put(x, H - th / 2); });
-  }
+  // ---- back: screws round the perimeter of the sheet (from behind) or of the full panel (from the boards around it),
+  //      and one row along each back rail. Whatever closes the back is screwed, whichever way the user built it.
+  const screw = (axis: 'x' | 'y' | 'z', at: [number, number, number], parent: string) =>
+    out.push(cyl('BACK_SCREW', axis, at, FASTENER.BACK_SCREW_DIA_MM, FASTENER.BACK_SCREW_LEN_MM, parent));
+  const pitch = FASTENER.BACK_SCREW_PITCH_MM;
+  const len = FASTENER.BACK_SCREW_LEN_MM;
+  geo.boxes.filter((b) => b.kind === 'back').forEach((back) => {
+    const zc = -D / 2 - back.sizeMm[2] + len / 2; // driven from behind, through the sheet
+    spread(30, H - 30, pitch).forEach((y) => { screw('z', [th / 2, y, zc], back.key); screw('z', [W - th / 2, y, zc], back.key); });
+    spread(th + 30, W - th - 30, pitch).forEach((x) => { screw('z', [x, th / 2, zc], back.key); screw('z', [x, H - th / 2, zc], back.key); });
+  });
+  geo.boxes.filter((b) => b.kind === 'backpanel').forEach((panel) => {
+    // The full board is held between the sides and between the deck and the roof: screws sideways into the sides,
+    // up and down into the boards above and below it.
+    const x0 = panel.centerMm[0] - panel.sizeMm[0] / 2, x1 = panel.centerMm[0] + panel.sizeMm[0] / 2;
+    const y0 = panel.centerMm[1] - panel.sizeMm[1] / 2, y1 = panel.centerMm[1] + panel.sizeMm[1] / 2;
+    spread(y0 + 30, y1 - 30, pitch).forEach((y) => { screw('x', [x0 + len / 2, y, panel.centerMm[2]], panel.key); screw('x', [x1 - len / 2, y, panel.centerMm[2]], panel.key); });
+    spread(x0 + 30, x1 - 30, pitch).forEach((x) => { screw('y', [x, y0 + len / 2, panel.centerMm[2]], panel.key); screw('y', [x, y1 - len / 2, panel.centerMm[2]], panel.key); });
+  });
+  geo.boxes.filter((b) => b.kind === 'backrail').forEach((rail) => {
+    spread(rail.centerMm[0] - rail.sizeMm[0] / 2 + 30, rail.centerMm[0] + rail.sizeMm[0] / 2 - 30, pitch)
+      .forEach((x) => screw('z', [x, rail.centerMm[1], rail.centerMm[2]], rail.key));
+  });
 
   // ---- facades: hinges, lift kits, drawer runners
   geo.facades.forEach((f: FacadeGeo) => {
@@ -217,6 +231,7 @@ export function explodeOffsets(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
     else if (b.key === 'rail-front') o = [0, v, 0.35 * u];
     else if (b.key === 'rail-rear') o = [0, v, -0.35 * u];
     else if (b.kind === 'back') o = [0, 0, -1.4 * u];
+    else if (b.kind === 'backpanel' || b.kind === 'backrail') o = [0, 0, -1.1 * u];
     else if (b.kind === 'divider' || b.kind === 'vdivider' || b.kind === 'shelf') o = [0, rel(y) * v * 0.9, 0];
     out[b.key] = clean(o);
   });

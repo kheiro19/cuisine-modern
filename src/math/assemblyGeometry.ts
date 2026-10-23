@@ -8,6 +8,7 @@ import { ApplianceKind, CabinetObject } from '../types/flatma';
 import { PANEL, PULL_OUT } from './constants';
 import { FacadeMotion, dividerBoardsOf, motionOf, topOf } from '../rules';
 import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
+import { backBoxesOf, backInsideMm } from './backPanel';
 import { APPLIANCES, Facade, GolaChannel, backPanelBottomMm, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { frontStripOf, shelfSpansOf } from './columns';
 import { carcaseSidesOf } from './carcaseSides';
@@ -15,7 +16,7 @@ import { BaseBox, baseBoxes, bodyView } from './base';
 
 export interface BoxGeo {
   key: string;
-  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'shelf';
+  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'backpanel' | 'backrail' | 'shelf';
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
 }
@@ -93,6 +94,9 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   const layout = layoutZones(cab, th, { inset: o.inset });
   const plan = planFronts(cab, layout, { inset: o.inset, frontThMm: frontTh });
   const boxes: BoxGeo[] = [];
+  // A full back panel is fitted inside the rear (math/backPanel.ts): what runs from the back to the front stops at it.
+  const backIn = backInsideMm(cab, th);
+  const zBackBoard = backIn / 2; // middle of the shortened boards, measured from the middle of the depth
 
   if (sides.left) boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
   if (sides.right) boxes.push({ key: 'side-right', kind: 'side', sizeMm: [th, H, D], centerMm: [W - th / 2, H / 2, 0] });
@@ -101,7 +105,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   {
     const boards = dividerBoardsOf(cab);
     layout.dividerBottomsMm.forEach((y, i) => {
-      for (let b = 0; b < boards; b++) boxes.push({ key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider', sizeMm: [inner, th, D], centerMm: [cx, y + b * th + th / 2, 0] });
+      for (let b = 0; b < boards; b++) boxes.push({ key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider', sizeMm: [inner, th, D - backIn], centerMm: [cx, y + b * th + th / 2, zBackBoard] });
     });
   }
 
@@ -110,7 +114,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   {
     layout.bands.forEach((band) => {
       if (!band.split) return;
-      boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+      boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D - backIn], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, zBackBoard] });
     });
     // The hinge boards of a row of several doors (zones.ts partitions): same height and depth as a vertical board.
     layout.bands.forEach((band) => {
@@ -118,7 +122,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
         // One box per board: two doors hung on the same edge have a board each, back to back (a stack of `boards` boards).
         const each = p.widthMm / p.boards;
         for (let i = 0; i < p.boards; i++) {
-          boxes.push({ key: `vpart-${band.index}-${p.edge}${p.boards > 1 ? `-${i + 1}` : ''}`, kind: 'vdivider', sizeMm: [each, band.openingHeightMm, D], centerMm: [p.xLoMm + (i + 0.5) * each, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+          boxes.push({ key: `vpart-${band.index}-${p.edge}${p.boards > 1 ? `-${i + 1}` : ''}`, kind: 'vdivider', sizeMm: [each, band.openingHeightMm, D - backIn], centerMm: [p.xLoMm + (i + 0.5) * each, band.openingBottomMm + band.openingHeightMm / 2, zBackBoard] });
         }
       });
     });
@@ -133,12 +137,20 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
     boxes.push({ key: 'roof', kind: 'roof', sizeMm: [inner, th, D], centerMm: [cx, H - th / 2, 0] });
   }
 
-  // The back is an overlay glued on the rear face (the BOM cuts it width x length), not inside the carcase. Behind an open bay it
-  // is not drawn at all: the panel covers only what is closed above the bay.
+  // The back of the closed part — HDF sheet, two carcase rails or a full carcase board, whoever the user picked
+  // (math/backPanel.ts, the same numbers the cutting list uses). Behind an open bay it is not drawn at all.
   {
     const backBottom = backPanelBottomMm(layout);
-    const backLen = H - backBottom;
-    if (backLen > 0.5) boxes.push({ key: 'back', kind: 'back', sizeMm: [W, backLen, PANEL.BACK_THICKNESS_MM], centerMm: [W / 2, backBottom + backLen / 2, -D / 2 - PANEL.BACK_THICKNESS_MM / 2] });
+    backBoxesOf(cab, {
+      bottomMm: backBottom,
+      closedHeightMm: H - backBottom,
+      widthMm: W,
+      innerWidthMm: inner,
+      centerXMm: cx,
+      carcaseThMm: th,
+      bottomBoardMm: backBottom > 0 || !open ? th : 0,
+      topBoardMm: th, // the roof, or the two stretchers of a base unit: the back stops under them
+    }, D).forEach((b) => boxes.push({ key: b.key, kind: b.kind, sizeMm: b.sizeMm, centerMm: b.centerMm }));
   }
 
   // Columns with pull-out frames carry baskets, not fixed shelves (the BOM skips them too: math/columns.ts shelfSpansOf).
@@ -151,7 +163,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
         const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
         const tag = `${span.column === 'ALL' ? '' : span.column === 'FILL' ? 'f-' : 'm-'}${span.part !== undefined ? `p${span.part}-` : ''}`;
         const key = `shelf-${band.index}-${tag}${k}`;
-        boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM], centerMm: [(span.loMm + span.hiMm) / 2, y, -PANEL.SHELF_DEPTH_INSET_MM / 2] });
+        boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM - backIn], centerMm: [(span.loMm + span.hiMm) / 2, y, (backIn - PANEL.SHELF_DEPTH_INSET_MM) / 2] });
       }
     });
   });
