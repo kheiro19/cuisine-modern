@@ -14,7 +14,7 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { BASE, EDGE, FASTENER_STOCK, PANEL } from './constants';
+import { BASE, CORNER, EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
 import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, backPanelBottomMm, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
@@ -229,6 +229,13 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     else if (f.kind === 'FILLER') partType = `Corner Filler Panel${tag}`;
     else partType = f.column === 'FILL' ? `Fixed Filler Panel${tag}` : `Appliance Front Panel${tag}`;
     parts.push({ partType, role: 'front', thicknessMm: frontTh, widthMm: f.widthMm, lengthMm: f.heightMm, quantity: list.length, grain, edge: 'ALL' });
+    // The corner filler is an L, not a flap: the return leg behind it is cut apart, from the cabinet's own board (the same
+    // board and the same place as the box assemblyGeometry draws). It is what the drawer runners are fixed to.
+    if (f.kind === 'FILLER') {
+      // Between the bottom board (absent on an appliance bay) and the top, like every other vertical board of the carcase.
+      const retH = Math.max(0, cab.height - (open ? 0 : carcaseTh) - carcaseTh);
+      parts.push(carcase('Corner Filler Return', Math.min(CORNER.FILLER_RETURN_MM, cab.depth), retH, 1, 'vertical', 'NONE'));
+    }
   });
 
   // Drawer boxes: one per drawer that slides on runners (a pull-out frame is a metal set, it has no box). Equal drawers of a
@@ -240,14 +247,21 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     // The drawers of one zone are NOT always the same height: the remainder of the division lands on the last fronts
     // (four drawers in an 834 mm stack: 183 / 182.5 / 182.5 / 182). Group by box height so the cutting list is exactly
     // the box the 3D draws — rounding every box to the first drawer's height would cut 0.5 mm off two boxes.
-    const groups = new Map<number, { frontHeightMm: number; n: number }>();
-    list.forEach((f) => {
-      const h = drawerBoxDims(f.heightMm, cab, carcaseTh).heightMm;
-      const g = groups.get(h);
-      if (g) g.n += 1; else groups.set(h, { frontHeightMm: f.heightMm, n: 1 });
+    const groups = new Map<number, { frontHeightMm: number; n: number; spanMm: { loMm: number; hiMm: number } }>();
+    // The room the box really has: the carcase interior AND the width the front covers (an L corner arm is open on one side
+    // and a fixed filler takes the first 19.5 mm; the same span as assemblyGeometry, so the cut box is the drawn box).
+    const spanOf = (f: Facade) => ({
+      loMm: Math.max(sides.loMm, f.innerLoMm ?? sides.loMm, f.xMm),
+      hiMm: Math.min(sides.hiMm, f.innerHiMm ?? sides.hiMm, f.xMm + f.widthMm),
     });
-    groups.forEach(({ frontHeightMm, n }) => {
-      const b = drawerBoxDims(frontHeightMm, cab, carcaseTh);
+    list.forEach((f) => {
+      const spanMm = spanOf(f);
+      const h = drawerBoxDims(f.heightMm, cab, carcaseTh, spanMm).heightMm;
+      const g = groups.get(h);
+      if (g) g.n += 1; else groups.set(h, { frontHeightMm: f.heightMm, n: 1, spanMm });
+    });
+    groups.forEach(({ frontHeightMm, n, spanMm }) => {
+      const b = drawerBoxDims(frontHeightMm, cab, carcaseTh, spanMm);
       parts.push(carcase(`Drawer Box Side (Left/Right)${tag}`, b.heightMm, b.depthMm, 2 * n, 'horizontal', 'FRONT'));
       parts.push(carcase(`Drawer Box Inner Front${tag}`, b.heightMm, b.innerWidthMm, n, 'horizontal', 'FRONT'));
       parts.push(carcase(`Drawer Box Back${tag}`, b.heightMm, b.innerWidthMm, n, 'horizontal', 'FRONT'));

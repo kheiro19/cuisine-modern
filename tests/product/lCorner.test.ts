@@ -378,6 +378,56 @@ test('L corner: editing an arm in the panel keeps the corner side, the filler an
   assert.equal(frontsOf(saved, 'DRAWER')[0].widthMm, 430);
 });
 
+test('L corner: the drawer front covers its box on BOTH sides — the filler side included', () => {
+  const [, armA] = build().cabs;
+  const cab = withZones(armA, [{ kind: 'DRAWERS', count: 3 }]);
+  const drawn = { ...cab, ...withCornerExtension(cab, cab.zones, 18) };
+  const geo = geoOf(drawn);
+  const front = geo.facades.find((f) => f.kind === 'DRAWER');
+  const box = front.box;
+  const x0 = (b) => b.centerMm[0] - b.sizeMm[0] / 2;
+  const x1 = (b) => b.centerMm[0] + b.sizeMm[0] / 2;
+  // the front spans 19.5 … 449.5; the box must sit strictly inside that span
+  assert.ok(Math.abs(front.xMm - 19.5) < 0.01);
+  box.forEach((b) => {
+    assert.ok(x0(b) >= front.xMm - 0.01, `${b.key} starts under the front, not beside the filler`);
+    assert.ok(x1(b) <= front.xMm + front.widthMm - 0.5, `${b.key} ends under the front`);
+  });
+  // and it is symmetric: 13 mm of runner clearance on each side of the room it has
+  const roomLo = 19.5, roomHi = 432;
+  assert.ok(Math.abs(x0(box.find((b) => b.key === 'side-left')) - (roomLo + 13)) < 0.01, '13 mm off the filler');
+  assert.ok(Math.abs(x1(box.find((b) => b.key === 'side-right')) - (roomHi - 13)) < 0.01, '13 mm off the carcase side');
+});
+
+test('L corner: the filler has a small return behind it on the drawer side — cut, drawn and priced', () => {
+  const [, armA] = build().cabs;
+  const cab = withZones(armA, [{ kind: 'DRAWERS', count: 3 }]);
+  const drawn = { ...cab, ...withCornerExtension(cab, cab.zones, 18) };
+  const parts = E.modelCabinet(drawn, 18, 18).parts;
+  const ret = parts.filter((p) => p.partType === 'Corner Filler Return');
+  assert.equal(ret.length, 1, 'one return per filler');
+  assert.deepEqual([ret[0].widthMm, ret[0].lengthMm, ret[0].thicknessMm, ret[0].role], [100, 734, 18, 'carcase'], '100 deep, between the bottom board and the top');
+  const box = geoOf(drawn).boxes.find((b) => b.kind === 'fillerreturn');
+  assert.ok(box, 'and the 3D draws it');
+  // flush with the filler's inner face (19.5), from the cabinet's own board, 100 mm deep behind the front
+  const inner = box.centerMm[0] + box.sizeMm[0] / 2;
+  assert.ok(Math.abs(inner - 19.5) < 0.01, 'its inner face is the filler edge: the drawer starts there');
+  assert.equal(box.sizeMm[2], 100);
+  const front = geoOf(drawn).facades.find((f) => f.kind === 'DRAWER');
+  assert.ok(box.centerMm[2] + box.sizeMm[2] / 2 <= front.zMm - 9 + 0.01, 'behind the front, not through it');
+  // no filler, no return
+  const plain = withZones(armA, [{ kind: 'DOORS', count: 1 }]);
+  assert.equal(E.modelCabinet(plain, 18, 18).parts.filter((p) => p.partType === 'Corner Filler Return').length, 0);
+});
+
+test('L corner: a plain cabinet keeps the box it always had', () => {
+  const cab = { ...withZones(build().cabs[1], [{ kind: 'DRAWERS', count: 3 }]), omitSides: undefined, cornerSide: undefined };
+  const geo = geoOf(cab);
+  const front = geo.facades[0];
+  const box = front.box;
+  assert.equal(box.find((b) => b.key === 'bottom').sizeMm[0], 450 - 2 * 18 - 2 * 13, 'still centred on the width');
+});
+
 test('L corner PARITY holds for a drawer arm too, and the filler is cut like every other front', () => {
   const [, armA] = build().cabs;
   const cab = withZones(armA, [{ kind: 'DRAWERS', count: 3 }]);
@@ -393,9 +443,11 @@ test('L corner PARITY holds for a drawer arm too, and the filler is cut like eve
   // every front the 3D draws is a priced part, the filler included
   const front = pr.parts.filter((p) => p.role === 'front').flatMap((p) => Array.from({ length: p.quantity }, () => key(18, p.widthMm, p.lengthMm)));
   assert.deepEqual(geo.facades.map((f) => key(18, f.widthMm, f.heightMm)).sort(), front.sort(), 'fronts + filler');
-  // the box behind the 430 mm front: 450 - 2 x 18 (sides) - 2 x 13 (runners) = 388
+  // The box now lives exactly BEHIND its front instead of being centred on the closed arm: the front starts at 19.5 (the
+  // filler), the carcase ends at 432, so the room is 412.5 and the box 412.5 - 2 x 13 = 386.5. Before this fix the box was
+  // centred on the full width (388 wide, 31 … 419), i.e. 9 mm off, and its near side was seen from the open corner.
   const bottoms = pr.parts.filter((p) => p.partType.startsWith('Drawer Box Bottom'));
   assert.ok(bottoms.length > 0);
-  bottoms.forEach((p) => assert.equal(p.widthMm, 388, 'the box follows the arm, which did not change'));
+  bottoms.forEach((p) => assert.equal(p.widthMm, 386.5, 'the box follows the front, filler included'));
   assert.ok(pr.totalDA > 0);
 });

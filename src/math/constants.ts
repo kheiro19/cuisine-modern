@@ -183,6 +183,12 @@ export const CORNER = {
   DRAWER_CLEARANCE_MM: 1.5,
   /** The most the user may widen the corner side of an arm (a fixed filler panel closes whatever is added). */
   FILLER_MAX_MM: 50,
+  /**
+   * Depth of the RETURN behind a corner filler: the filler is not a flat flap, it is an L — the front leg plus this leg going
+   * back inside. The return is what the drawer runners are fixed to, and it closes the gap the client would see behind the
+   * panel; it also keeps the box of a drawer away from the open corner side.
+   */
+  FILLER_RETURN_MM: 100,
 } as const;
 
 /**

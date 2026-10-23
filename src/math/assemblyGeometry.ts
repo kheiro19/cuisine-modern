@@ -8,6 +8,7 @@ import { ApplianceKind, CabinetObject } from '../types/flatma';
 import { PANEL, PULL_OUT } from './constants';
 import { FacadeMotion, dividerBoardsOf, motionOf, topOf } from '../rules';
 import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
+import { CORNER } from './constants';
 import { backBoxesOf, backInsideMm } from './backPanel';
 import { APPLIANCES, Facade, GolaChannel, backPanelBottomMm, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { frontStripOf, shelfSpansOf } from './columns';
@@ -16,7 +17,7 @@ import { BaseBox, baseBoxes, bodyView } from './base';
 
 export interface BoxGeo {
   key: string;
-  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'backpanel' | 'backrail' | 'shelf';
+  kind: 'side' | 'bottom' | 'divider' | 'vdivider' | 'rail' | 'roof' | 'back' | 'backpanel' | 'backrail' | 'fillerreturn' | 'shelf';
   sizeMm: [number, number, number];
   centerMm: [number, number, number];
 }
@@ -137,6 +138,22 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
     boxes.push({ key: 'roof', kind: 'roof', sizeMm: [inner, th, D], centerMm: [cx, H - th / 2, 0] });
   }
 
+  // A corner filler is an L in plan, not a flat flap: behind the front leg stands a RETURN, from the cabinet's own board,
+  // flush with the filler's inner face and CORNER.FILLER_RETURN_MM deep. It is what the drawer runners are fixed to, and it
+  // closes the gap a client would otherwise see between the filler and the box of a drawer.
+  plan.facades.filter((f) => f.kind === 'FILLER').forEach((f) => {
+    const innerFace = f.xMm < 1 ? f.widthMm : f.xMm;          // left filler: face at +width; right filler: face at xMm
+    const t = th;
+    const d = Math.min(CORNER.FILLER_RETURN_MM, D);
+    // It stands between the bottom board (none over an appliance bay) and the top board, like the other vertical boards.
+    const y0 = open ? 0 : th, y1 = H - th;
+    boxes.push({
+      key: `filler-return-${f.xMm < 1 ? 'left' : 'right'}`, kind: 'fillerreturn',
+      sizeMm: [t, Math.max(0, y1 - y0), d],
+      centerMm: [(f.xMm < 1 ? innerFace - t / 2 : innerFace + t / 2), (y0 + y1) / 2, D / 2 - d / 2],
+    });
+  });
+
   // The back of the closed part — HDF sheet, two carcase rails or a full carcase board, whoever the user picked
   // (math/backPanel.ts, the same numbers the cutting list uses). Behind an open bay it is not drawn at all.
   {
@@ -169,15 +186,23 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   });
 
   const frontZ = o.inset ? D / 2 - frontTh / 2 : D / 2 + frontTh / 2;
+  // The room a front really has behind it: the carcase between its sides AND the width the front itself covers. In an L corner
+  // arm one side is open and a fixed filler takes the first 19.5 mm, so the box must start where the front starts — otherwise
+  // it pokes out beside the filler and is seen from the open side of the corner (the front would not cover it).
+  const roomOf = (f: { xMm: number; widthMm: number; innerLoMm?: number; innerHiMm?: number }) => ({
+    loMm: Math.max(sides.loMm, f.innerLoMm ?? sides.loMm, f.xMm),
+    hiMm: Math.min(sides.hiMm, f.innerHiMm ?? sides.hiMm, f.xMm + f.widthMm),
+  });
   const facades: FacadeGeo[] = plan.facades.map((f) => {
     const motion: FacadeMotion = motionOf(f.kind, { lift: o.lift, kinematic: f.kinematic });
     const geo: FacadeGeo = { ...f, motion, hinge: motion === 'SWING' ? (f.hingeSide ?? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT')) : null, zMm: frontZ };
-    if (motion === 'SLIDE') geo.box = drawerBoxBoards(f, cab, { carcaseTh: th, frontBackZMm: frontZ - frontTh / 2 });
+    if (motion === 'SLIDE') geo.box = drawerBoxBoards(f, cab, { carcaseTh: th, frontBackZMm: frontZ - frontTh / 2, spanMm: roomOf(f) });
     if (motion === 'PULL_OUT') {
       // One frame per front, between the runners: a door zone shares the inner width among its fronts, drawers use all of it.
       // In a split zone the frame sits in its own column (between the side board and the vertical board).
       const columns = f.kind === 'DOOR' ? Math.max(1, f.count) : 1;
-      const lo = f.innerLoMm ?? th, hi = f.innerHiMm ?? W - th;
+      const room = roomOf(f);
+      const lo = room.loMm, hi = room.hiMm;
       const column = (hi - lo) / columns;
       const w = Math.max(50, column - 2 * PULL_OUT.RUNNER_SPACE_MM);
       const h = Math.max(100, f.heightMm - 2 * PULL_OUT.VERTICAL_MARGIN_MM);

@@ -207,7 +207,9 @@ export default function App() {
       resolved.zones,
       frontTh,
     );
-    return { ...base, width: ext.width, cornerSide: editing.cornerSide, cornerFillerMm, cornerFillerSides };
+    // The open side, the role and the shared L bottom belong to the preview too: without them the 3D showed a closed box and
+    // a drawer box centred on the full width — a picture the save would never produce.
+    return { ...base, width: ext.width, cornerSide: editing.cornerSide, cornerFillerMm, cornerFillerSides, omitSides: editing.omitSides, cornerRole: editing.cornerRole, cornerGroupDeckMm: editing.cornerGroupDeckMm, run: editing.run };
   }, [resolved, woods, isCornerBuilder, armA, cornerDepth, editing, cornerFillerMm, cornerFillerSides]);
 
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).

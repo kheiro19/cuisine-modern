@@ -1,6 +1,6 @@
 # الحزمة الحالية — 2026-10-23 (مساءً)
 
-الملف: **`cuisine-modern-main-2026-10-23-final.zip`** (بلا `node_modules` ولا `dist` — يُبنى محلياً).
+الملف: **`cuisine-modern-main-2026-10-23-final2.zip`** (بلا `node_modules` ولا `dist` — يُبنى محلياً).
 
 > هذا الملف يلخّص **كل** ما أُنجز اليوم، وانطلاقاً من الحزمة الصباحية أُضيف: سطح العمل · اللوحة اللونية ·
 > زاوية L (ضلفة الزاوية · الضلفة على الجهتين) · خلفية الخزانة بثلاث طرق · قاعدة الزاوية L قطعة واحدة.
@@ -28,14 +28,15 @@
 | زاوية L: **الضلفة على كلتا الجهتين** (أدراج أو للجمال فقط) | `cornerFiller.ts` · `zones.ts` · `lCorner.ts` · `docs/corner-drawers.svg` | `17` |
 | خلفية الخزانة: **HDF / عارضتان / لوح الهيكل** لكل خزانة + تعميم | `src/math/backPanel.ts` · `docs/back-options.svg` | `19` |
 | قاعدة الزاوية L: **قطعة واحدة مقصوصة على شكل L** | `src/math/cornerDeck.ts` · `docs/corner-deck.svg` | `20` |
+| **تصحيح:** صندوق الدرج تحت واجهته + **رجوع الضلفة 100 مم** | `src/math/drawerBox.ts` · `assemblyGeometry.ts` · `docs/corner-filler-return.svg` | `17` |
 
 ## الأرقام المقيسة
 
 ```
-npm test                 306 / 306      (tests/product 262 على 22 ملفاً · tests/compat 37 على 6 ملفات · حرّاس 7)
+npm test                 309 / 309      (tests/product 265 على 22 ملفاً · tests/compat 37 على 6 ملفات · حرّاس 7)
 npm run test:ui           54 / 54       (7 ملفات Vitest)
 typecheck (src + tests + ui)  ✓ 0 أخطاء
-npm run build             ✓ 8.46s
+npm run build             ✓ 9.15s
 ```
 
 ## ⚠️ ثلاث حزم يجب حذفها من نسختك القديمة
@@ -49,7 +50,7 @@ tests/fixtures/corpus.ts
 tests/compat/catalogue.test.ts
 ```
 
-بعد حذفها: `npm install && npm test` يجب أن يعطي **306/306** و`npm run test:ui` يعطي **54/54**.
+بعد حذفها: `npm install && npm test` يجب أن يعطي **309/309** و`npm run test:ui` يعطي **54/54**.
 
 ## الأصول (خارج الـZIP، عندك)
 
