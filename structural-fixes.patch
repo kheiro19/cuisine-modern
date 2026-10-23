@@ -1,0 +1,1009 @@
+diff -ruN -x node_modules -x public ./audit_cabinets.ts /home/claude/proj/cuisine-modern-main/audit_cabinets.ts
+--- ./audit_cabinets.ts	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/audit_cabinets.ts	2026-10-22 03:36:31.876809496 +0000
+@@ -0,0 +1,222 @@
++// @ts-nocheck
++// Structural + dimensional audit of every cabinet the engine can build. Run: npx tsx audit_cabinets.ts
++import * as P from './src/math/cabinetPresets';
++import * as E from './src/math/partsEngine';
++import { assemblyGeometry, facadeKey } from './src/math/assemblyGeometry';
++import { buildFasteners } from './src/math/fasteners';
++import { lCornerCabinets, lCornerBoxes } from './src/math/lCorner';
++import { footprintOf, toFrame } from './src/math/kitchenLayout';
++import { carcaseSidesOf } from './src/math/carcaseSides';
++import { PANEL, LAYOUT, DRAWER_BOX } from './src/math/constants';
++import { SUBTYPES } from './src/rules/templates';
++
++const wood = (id, th, type = 'MDF Melamine Matt', price = 15000) => ({ id, brand: id, type, thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: price });
++const hw = (id, category, modelType = 'x', price = 300, qty = 100) => ({ id, category, brand: 'B', modelType, pricePerUnitDA: price, availableQty: qty });
++const WOODS = [wood('hdf', 3, 'HDF Standard 3mm', 4000), wood('mel', 18), wood('mel16', 16)];
++const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('slide', 'Drawer Slide Systems', 'Tandem'), hw('lift', 'Overhead Lift Systems', 'Aventos HK', 2500), hw('legs', 'Assembly & Fixing', 'Adjustable Kitchen Legs', 120), hw('hang', 'Assembly & Fixing', 'Cabinet Hanger Plates', 200), hw('push', 'Push-Open Systems', 'Tip-On', 450), hw('gola', 'Gola & Handle Profiles', 'Gola C', 1800), hw('cam', 'Assembly & Fixing', 'Cam Lock', 10), hw('dow', 'Assembly & Fixing', 'Wooden Dowel', 2), hw('scr', 'Assembly & Fixing', 'Back Panel Screw', 1), hw('pin', 'Assembly & Fixing', 'Shelf Support Pin', 1)];
++const HW_INSET = HW.map((h) => (h.id === 'hinge' ? { ...h, modelType: 'Inset Hinge (Cranked)' } : h));
++const ROLLS = [{ id: 'e1', brand: 'PVC', thickness: 1, width: 22, totalLengthMeters: 100, rollPriceDA: 3000 }];
++
++const found: Record<string, { n: number; ex: any[] }> = {};
++const note = (code: string, info: any) => { const f = (found[code] ??= { n: 0, ex: [] }); f.n++; if (f.ex.length < 3) f.ex.push(info); };
++
++const bx = (b) => ({ x0: b.centerMm[0] - b.sizeMm[0] / 2, x1: b.centerMm[0] + b.sizeMm[0] / 2, y0: b.centerMm[1] - b.sizeMm[1] / 2, y1: b.centerMm[1] + b.sizeMm[1] / 2, z0: b.centerMm[2] - b.sizeMm[2] / 2, z1: b.centerMm[2] + b.sizeMm[2] / 2 });
++const gap1 = (a0, a1, b0, b1) => Math.max(a0, b0) - Math.min(a1, b1); // <=0 overlap, >0 gap
++const dist = (A, B) => Math.max(gap1(A.x0, A.x1, B.x0, B.x1), gap1(A.y0, A.y1, B.y0, B.y1), gap1(A.z0, A.z1, B.z0, B.z1));
++const fxBox = (f, th) => ({ x0: f.xMm, x1: f.xMm + f.widthMm, y0: f.yMm, y1: f.yMm + f.heightMm, z0: f.zMm - th / 2, z1: f.zMm + th / 2 });
++const fastBox = (f) => {
++  if (f.shape === 'box') return bx({ centerMm: f.centerMm, sizeMm: f.sizeMm });
++  const [d, l] = f.sizeMm; const s = [d, d, d]; s[{ x: 0, y: 1, z: 2 }[f.axis]] = l;
++  return bx({ centerMm: f.centerMm, sizeMm: s });
++};
++
++function auditCabinet(cab, label, hwSet = HW) {
++  const th = cab.carcaseThickness, fth = cab.frontThickness;
++  const doorHw = E.pickFrontHardware(cab, 'DOORS', hwSet);
++  const opt = { lift: E.isLiftItem(doorHw), inset: !!doorHw && doorHw.modelType.includes('Inset Hinge') };
++  let pr; try { pr = E.priceCabinet(cab, WOODS, hwSet, ROLLS); } catch (e) { note('THROW', { label, e: String(e) }); return; }
++  if (pr.issues.some((i) => i.code === 'ZONES_TOO_TALL')) return;
++  const geo = assemblyGeometry(cab, { carcaseTh: th, frontTh: fth, ...opt });
++  pr.issues.filter((i) => ['LIFT_ZONE_NOT_TOP', 'DOORS_TOO_NARROW'].includes(i.code)).forEach((i) => note('ENGINE_WARNS_' + i.code, { label }));
++  const fasts = buildFasteners(geo, cab, { carcaseTh: th, frontTh: fth });
++  const W = cab.width, H = cab.height, D = cab.depth;
++  const boxes = new Map(geo.boxes.map((b) => [b.key, b]));
++  const sides = carcaseSidesOf(cab, th);
++
++  // 1. floating boards: connectivity (touch tolerance 1.6 mm: shelves keep 1 mm clearance)
++  const list = geo.boxes.map((b) => ({ k: b.key, b: bx(b) }));
++  const seen = new Set([list[0]?.k]); const q = [list[0]];
++  while (q.length) { const c = q.pop(); list.forEach((o) => { if (!seen.has(o.k) && dist(c.b, o.b) <= 1.6) { seen.add(o.k); q.push(o); } }); }
++  list.forEach((o) => { if (!seen.has(o.k)) note('FLOATING_BOARD', { label, key: o.k }); });
++
++  // 2. every connector must touch the board / facade that carries it
++  const fmap = new Map(geo.facades.map((f) => [facadeKey(f), fxBox(f, fth)]));
++  fasts.forEach((f) => {
++    const parent = boxes.has(f.parent) ? bx(boxes.get(f.parent)) : fmap.get(f.parent);
++    if (!parent) { note('FASTENER_PARENT_MISSING', { label, kind: f.kind, parent: f.parent }); return; }
++    const d = dist(fastBox(f), parent);
++    if (d > 2) note('FASTENER_IN_AIR_' + f.kind, { label, parent: f.parent, distMm: Math.round(d * 10) / 10, at: f.centerMm.map(Math.round) });
++  });
++
++  // 3. every opening facade must be carried: swing -> plates on a board that exists; fixed panels -> some connector
++  geo.facades.forEach((f) => {
++    const key = facadeKey(f);
++    const mine = fasts.filter((x) => x.parent === key || (x.kind === 'HINGE_PLATE' && false));
++    if (f.motion === 'SWING') {
++      const plates = fasts.filter((x) => x.kind === 'HINGE_PLATE' && Math.abs(x.centerMm[0] - (f.hinge === 'LEFT' ? f.xMm : f.xMm + f.widthMm)) < 80);
++      if (plates.length === 0) note('DOOR_NO_HINGE_PLATE', { label, key });
++    }
++    if (f.kind === 'APRON' || f.kind === 'PANEL') {
++      if (mine.length === 0) note('FIXED_PANEL_NO_FASTENER', { label, key, kind: f.kind, w: f.widthMm, h: f.heightMm });
++    }
++    // drawer front: has runners on the cabinet sides that actually exist
++    if (f.motion === 'SLIDE' && !sides.left && !sides.right) note('DRAWER_NO_SIDE_FOR_RUNNERS', { label, key });
++    if (f.motion === 'SLIDE' && (!sides.left || !sides.right)) note('DRAWER_ON_OMITTED_SIDE', { label, key, omit: cab.omitSides });
++  });
++
++  // 4. hinge side must have a carcase board behind the hinge edge
++  geo.facades.filter((f) => f.motion === 'SWING').forEach((f) => {
++    const hx = f.hinge === 'LEFT' ? f.xMm : f.xMm + f.widthMm;
++    const behind = geo.boxes.filter((b) => (b.kind === 'side' || b.kind === 'vdivider') && (() => { const A = bx(b); return hx >= A.x0 - 3 && hx <= A.x1 + 3 && A.y0 <= f.yMm + f.heightMm / 2 && A.y1 >= f.yMm + f.heightMm / 2; })());
++    if (behind.length === 0) note('DOOR_HINGE_EDGE_NOT_ON_A_BOARD', { label, key: facadeKey(f), hinge: f.hinge, hx, omit: cab.omitSides });
++  });
++
++  // 5. drawer boxes inside the carcase
++  geo.facades.forEach((f) => (f.box ?? []).forEach((b) => {
++    const A = bx(b);
++    if (A.x0 < sides.loMm - 0.01 || A.x1 > sides.hiMm + 0.01) note('DRAWER_BOX_OUTSIDE_SIDES', { label, key: facadeKey(f), x: [A.x0, A.x1], inner: [sides.loMm, sides.hiMm], omit: cab.omitSides });
++    if (A.z0 < -D / 2 - 0.01) note('DRAWER_BOX_BEHIND_BACK', { label, key: facadeKey(f), z0: A.z0, D, runner: b.sizeMm });
++    geo.boxes.filter((o) => ['bottom', 'divider', 'rail', 'roof', 'shelf', 'vdivider'].includes(o.kind)).forEach((o) => { const Bx = bx(o); if (dist(A, Bx) < -0.01 && !pr.issues.some((i) => i.code === 'DRAWER_BOX_TOO_LOW')) note('DRAWER_BOX_HITS_' + o.kind.toUpperCase(), { label, key: facadeKey(f), board: o.key }); });
++  }));
++
++  // 6. appliance niche really inside the carcase
++  geo.appliances.forEach((a) => {
++    const A = bx(a);
++    if (A.x0 < sides.loMm - 0.01 || A.x1 > sides.hiMm + 0.01 || A.z0 < -D / 2 - 0.01) note('APPLIANCE_OUTSIDE_CARCASE', { label, z0: A.z0, D });
++  });
++
++  // 7. shelves stay inside the opening of their zone
++  const bands = pr.model.layout.bands;
++  geo.boxes.filter((b) => b.kind === 'shelf').forEach((b) => {
++    const zi = Number(/^shelf-(\d+)/.exec(b.key)?.[1]); const band = bands[zi]; const A = bx(b);
++    if (band && (A.y0 < band.openingBottomMm - 0.01 || A.y1 > band.openingBottomMm + band.openingHeightMm + 0.01)) note('SHELF_OUTSIDE_OPENING', { label, key: b.key });
++  });
++
++  // 8. standard-size rules the engine never warns about
++  geo.facades.filter((f) => f.kind === 'DOOR').forEach((f) => {
++    if (f.widthMm > 600 && !f.frame) note('DOOR_WIDER_THAN_600_NO_WARNING', { label, w: f.widthMm, h: f.heightMm });
++    if (f.heightMm > 2000 && f.widthMm > 500) note('DOOR_HEAVY_TALL_NO_WARNING', { label, w: f.widthMm, h: f.heightMm });
++  });
++  geo.boxes.filter((b) => b.kind === 'shelf').forEach((b) => { if (b.sizeMm[0] > 800) note('SHELF_SPAN_OVER_800_UNSUPPORTED', { label, spanMm: b.sizeMm[0], th }); });
++  geo.facades.filter((f) => f.kind === 'DRAWER').forEach((f) => { if (f.widthMm > 1000) note('DRAWER_FRONT_OVER_1000', { label, w: f.widthMm }); });
++  if (pr.model.plan.facades.some((f) => f.kind === 'DOOR') && W - 2 * th > 1000 && !pr.model.layout.bands.some((b) => b.split)) note('WIDE_CARCASE_NO_CENTRE_PARTITION', { label, W });
++
++  // 9. base unit stands on the floor: no plinth / leg height anywhere in the geometry
++  if (cab.category === 'BASE_UNIT') {
++    const bottom = geo.boxes.find((b) => b.kind === 'bottom'); const lowFront = Math.min(...geo.facades.map((f) => f.yMm));
++    if (bottom && bx(bottom).y0 < 1) note('BASE_BOTTOM_ON_FLOOR_NO_PLINTH_NO_LEGS', { label, bottomY0: bx(bottom).y0, lowestFrontY: lowFront });
++  }
++
++  // 11. a facade / basket frame must not occupy the same space as a board
++  const pen = (A, B) => Math.min(A.x1, B.x1) - Math.max(A.x0, B.x0) > 0.5 && Math.min(A.y1, B.y1) - Math.max(A.y0, B.y0) > 0.5 && Math.min(A.z1, B.z1) - Math.max(A.z0, B.z0) > 0.5;
++  geo.facades.forEach((f) => {
++    const F = fxBox(f, fth);
++    geo.boxes.filter((b) => b.kind !== 'back').forEach((b) => { if (pen(F, bx(b))) note('FACADE_PENETRATES_BOARD' + (opt.inset ? '_INSET' : ''), { label, facade: facadeKey(f), board: b.key }); });
++    if (f.frame) geo.boxes.filter((b) => b.kind !== 'back').forEach((b) => { if (pen(bx(f.frame), bx(b))) note('PULL_OUT_FRAME_HITS_BOARD', { label, facade: facadeKey(f), board: b.key }); });
++  });
++  // 12. lift doors only make sense on the TOP zone (a lower lift door would swing up through the zone above)
++  const lifts = geo.facades.filter((f) => f.motion === 'LIFT');
++  if (lifts.some((l) => l.zoneIndex !== pr.model.layout.bands.length - 1) || (lifts.length && geo.facades.some((f) => f.kind === 'DOOR' && f.zoneIndex !== lifts[0].zoneIndex))) note('LIFT_DOOR_BELOW_ANOTHER_ZONE', { label });
++  // 13. hinge arm length (standard hinge: cup -> plate is ~ 10-16 mm)
++  fasts.filter((q) => q.kind === 'HINGE_ARM').forEach((q) => { if (q.sizeMm[0] > 40) note('HINGE_ARM_LONGER_THAN_40MM', { label, armMm: Math.round(q.sizeMm[0]), parent: q.parent }); });
++  // 10. back overlay sits outside the carcase depth (inside the wall plane)
++  const back = geo.boxes.find((b) => b.kind === 'back');
++  if (back) note('BACK_PANEL_BEHIND_WALL_PLANE', { label, extraMm: back.sizeMm[2] });
++}
++
++// ---------------- build the matrix
++let id = 0;
++const mk = (d, over = {}, hwSet = HW) => {
++  const r = P.resolveDraft({ ...d, ...over }, WOODS, hwSet, ROLLS);
++  const cab = { ...P.draftToNewCabinet(r, { id: 'c' + id++, name: 'c' + id, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
++  return cab;
++};
++const z = {
++  doors: (n, s = 0, h) => ({ kind: 'DOORS', count: n, shelves: s, ...(h ? { heightMm: h } : {}) }),
++  drawers: (n, h) => ({ kind: 'DRAWERS', count: n, ...(h ? { heightMm: h } : {}) }),
++  open: (s) => ({ kind: 'OPEN', shelves: s }),
++  app: (a, h, panel = false) => ({ kind: 'APPLIANCE', appliance: a, panelFront: panel, ...(h ? { heightMm: h } : {}) }),
++  apron: (h) => ({ kind: 'APRON', heightMm: h }),
++};
++const zoneStacks = [
++  [z.doors(1)], [z.doors(2, 2)], [z.doors(3, 1)], [z.drawers(3)], [z.drawers(1)], [z.open(3)],
++  [z.drawers(2, 300), z.doors(2, 1)], [z.apron(120), z.doors(2)], [z.apron(120), z.drawers(3)],
++  [z.app('OVEN', 600), z.drawers(2)], [z.app('OVEN', 600), z.doors(2, 1)], [z.doors(2, 1, 600), z.app('MICROWAVE', 400), z.doors(2)],
++  [z.app('DISHWASHER', undefined, true)], [z.app('DISHWASHER')], [z.app('FRIDGE')], [z.app('WASHER')],
++  [z.drawers(1, 200), z.drawers(1, 200), z.doors(2)], [z.doors(2, 3, 900), z.doors(2, 3)],
++  [{ ...z.doors(1, 0), split: { mainSide: 'LEFT', fill: 'PULL_OUT' } }], [{ ...z.app('OVEN', 600), split: { mainSide: 'RIGHT', fill: 'DOOR' } }, z.drawers(2)],
++  [{ ...z.doors(1), kinematic: 'PULL_OUT_FRAME' }], [{ ...z.drawers(2), kinematic: 'PULL_OUT_FRAME' }],
++  [z.apron(80), z.app('OVEN', 600), z.apron(80), z.doors(2)],
++];
++const dimsets = { BASE_UNIT: [[300, 870, 560], [450, 870, 560], [600, 870, 600], [800, 720, 560], [900, 870, 600], [1000, 870, 600], [1200, 870, 600], [600, 2100, 600], [600, 2300, 600]], WALL_UNIT: [[300, 720, 350], [600, 720, 350], [800, 900, 350], [1000, 720, 350], [600, 1200, 320]] };
++const modes = ['HANDLE', 'GOLA', 'PUSH'];
++let count = 0;
++for (const category of ['BASE_UNIT', 'WALL_UNIT']) {
++  const base = P.draftFromPreset(category === 'BASE_UNIT' ? 'Standard_Base' : 'Standard_Wall');
++  for (const zones of zoneStacks) for (const [w, h, d] of dimsets[category]) for (const openingMode of modes) for (const inset of [false, true]) for (const lift of category === 'WALL_UNIT' ? [false, true] : [false]) for (const dividerBoards of [1, 2]) {
++    if (inset && lift) continue;
++    const hwSet = inset ? HW_INSET : HW;
++    if (dividerBoards === 2 && zones.length === 1) continue;
++    const cab = mk(base, { zones: zones.map((x) => ({ ...x })), width: w, height: h, depth: d, openingMode, dividerBoards, category, ...(lift ? { preferLift: true } : {}) }, hwSet);
++    auditCabinet(cab, `${category} ${w}x${h}x${d} ${openingMode}${inset ? ' inset' : ''}${lift ? ' lift' : ''} ${zones.map((q) => q.kind[0] + (q.count ?? '')).join('+')}`, hwSet);
++    count++;
++  }
++}
++
++// ---------------- L corners
++let corners = 0;
++for (const category of ['BASE_UNIT', 'WALL_UNIT']) for (const wall of ['B', 'C']) for (const [aA, aB] of [[300, 300], [600, 600], [700, 400], [450, 700]]) {
++  const depthMm = category === 'WALL_UNIT' ? 350 : 600;
++  const draft = P.resolveDraft(P.draftFromPreset(category === 'WALL_UNIT' ? 'L_Corner_Wall' : 'L_Corner_Base'), WOODS, HW, ROLLS);
++  const p = { category, wall, roomWidthMm: 3600, depthMm, armAMm: aA, armBMm: aB };
++  let n = 0;
++  const cabs = lCornerCabinets(p, { draft, woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g', newId: () => 'k' + n++, name: 'L' }).map((c) => ({ ...c, carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 }));
++  cabs.forEach((c) => auditCabinet(c, `L ${category} wall${wall} arms ${aA}/${aB} ${c.name.split('—')[1]}`));
++  corners++;
++
++  // world-space collision between the doors of the three boxes (run frames of kitchenLayout.ts)
++  const worldFacades = [];
++  cabs.forEach((c) => {
++    const run = c.run ?? 'A';
++    const th = 18;
++    const geo = assemblyGeometry(c, { carcaseTh: th, frontTh: th, lift: false, inset: false });
++    const fc = toFrame(c, run);
++    geo.facades.forEach((f) => {
++      const F = fxBox(f, th);
++      // cabinet-local -> run frame: x + positionX, z + depth/2 - positionZ
++      const x0 = F.x0 + fc.positionX, x1 = F.x1 + fc.positionX, z0 = F.z0 + c.depth / 2 - c.positionZ, z1 = F.z1 + c.depth / 2 - c.positionZ;
++      let wb;
++      if (run === 'A') wb = { x0, x1, z0, z1 };
++      else if (run === 'B') wb = { x0: z0, x1: z1, z0: -x1, z1: -x0 };
++      else wb = { x0: 3600 - z1, x1: 3600 - z0, z0: x0, z1: x1 };
++      worldFacades.push({ name: c.name.split('—')[1].trim() + ' ' + facadeKey(f), y0: F.y0, y1: F.y1, ...wb });
++    });
++  });
++  for (let i = 0; i < worldFacades.length; i++) for (let j = i + 1; j < worldFacades.length; j++) {
++    const a = worldFacades[i], b = worldFacades[j];
++    const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0), oy = Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0);
++    if (ox > 0.01 && oz > 0.01 && oy > 0.01) note('L_CORNER_DOORS_INTERPENETRATE', { category, wall, arms: [aA, aB], a: a.name, b: b.name, overlapMm: [Math.round(ox * 10) / 10, Math.round(oz * 10) / 10] });
++  }
++  // group footprint: boxes must tile an L without overlap and without gap
++  const lay = { type: 'L', widthMm: 3600, lSide: wall === 'B' ? 'LEFT' : 'RIGHT' };
++  const rects = cabs.map((c) => footprintOf(c, lay));
++  for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
++    const a = rects[i], b = rects[j];
++    const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
++    if (ox > 0.5 && oz > 0.5) note('L_BOXES_OVERLAP_ON_FLOOR', { category, wall, i, j, ox, oz });
++    if (ox < -0.5 || oz < -0.5) note('L_BOXES_GAP_ON_FLOOR', { category, wall, i, j, ox, oz });
++  }
++}
++
++console.log(`\ncabinets audited: ${count} straight + ${corners} L corners (x3 boxes)\n`);
++Object.entries(found).sort((a, b) => b[1].n - a[1].n).forEach(([k, v]) => console.log(String(v.n).padStart(6), k, '\n        ', JSON.stringify(v.ex[0]).slice(0, 330)));
+diff -ruN -x node_modules -x public ./src/App.tsx /home/claude/proj/cuisine-modern-main/src/App.tsx
+--- ./src/App.tsx	2026-10-21 10:53:06.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/App.tsx	2026-10-22 03:34:04.454997268 +0000
+@@ -37,7 +37,7 @@
+ import { OPEN_BAY_APPLIANCES } from './rules/appliances';
+ import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
+ import { priceCabinet } from './math/partsEngine';
+-import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, templatesOf } from './rules';
++import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, canUseGola, kinematicOfHardware, liftZoneIsTop, templatesOf } from './rules';
+ 
+ // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
+ // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
+@@ -163,7 +163,7 @@
+   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
+   const hasDoorZone = needs.doors;
+   const hasDrawerZone = needs.drawers;
+-  const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category));
++  const doorOptions = hardwareItems.filter((h) => doorHardwareCategories(resolved.category).includes(h.category) && (liftZoneIsTop(resolved.zones) || h.category !== 'Overhead Lift Systems')); // a lift only fits the top doors zone
+   const drawerOptions = hardwareItems.filter((h) => drawerHardwareCategories().includes(h.category));
+   const isLift = kinematicOfHardware(hardwareItems.find((h) => h.id === resolved.hardwareItemId))?.id === 'LIFT';
+   const golaAllowed = canUseGola(resolved.category, resolved.zones); // rules/openings.ts
+@@ -179,7 +179,7 @@
+     };
+     return { front: info('front', previewCabinet.frontEdgeRollId), carcase: info('carcase', previewCabinet.carcaseEdgeRollId) };
+   }, [previewPricing, previewCabinet, edgeRolls]);
+-  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
++  const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'DOORS_TOO_NARROW', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'GOLA_NOT_WITH_INSET', 'LIFT_ZONE_NOT_TOP', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
+   const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
+ 
+   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));
+diff -ruN -x node_modules -x public ./src/math/assemblyGeometry.ts /home/claude/proj/cuisine-modern-main/src/math/assemblyGeometry.ts
+--- ./src/math/assemblyGeometry.ts	2026-10-21 05:50:28.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/assemblyGeometry.ts	2026-10-22 03:36:06.576205116 +0000
+@@ -85,8 +85,8 @@
+   const cx = sides.centerMm; // middle of the boards between the sides
+   const zones = zonesOf(cab);
+   const open = isOpenCarcase(zones);
+-  const layout = layoutZones(cab, th);
+-  const plan = planFronts(cab, layout);
++  const layout = layoutZones(cab, th, { inset: o.inset });
++  const plan = planFronts(cab, layout, { inset: o.inset, frontThMm: frontTh });
+   const boxes: BoxGeo[] = [];
+ 
+   if (sides.left) boxes.push({ key: 'side-left', kind: 'side', sizeMm: [th, H, D], centerMm: [th / 2, H / 2, 0] });
+@@ -106,6 +106,12 @@
+       if (!band.split) return;
+       boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
+     });
++    // The hinge boards of a row of several doors (zones.ts partitions): same height and depth as a vertical board.
++    layout.bands.forEach((band) => {
++      (band.partitions ?? []).forEach((p) => {
++        boxes.push({ key: `vpart-${band.index}-${p.edge}`, kind: 'vdivider', sizeMm: [p.widthMm, band.openingHeightMm, D], centerMm: [p.xLoMm + p.widthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, 0] });
++      });
++    });
+   }
+ 
+   if (topOf(cab) === 'RAILS') {
+@@ -125,10 +131,11 @@
+     const count = Math.max(0, Math.round(band.zone.shelves ?? 0));
+     if (count === 0) return;
+     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
+-    shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets).forEach((span) => {
++    shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets, band.partitions).forEach((span) => {
+       for (let k = 0; k < count; k++) {
+         const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
+-        const key = span.column === 'ALL' ? `shelf-${band.index}-${k}` : `shelf-${band.index}-${span.column === 'FILL' ? 'f' : 'm'}-${k}`;
++        const tag = `${span.column === 'ALL' ? '' : span.column === 'FILL' ? 'f-' : 'm-'}${span.part !== undefined ? `p${span.part}-` : ''}`;
++        const key = `shelf-${band.index}-${tag}${k}`;
+         boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM], centerMm: [(span.loMm + span.hiMm) / 2, y, -PANEL.SHELF_DEPTH_INSET_MM / 2] });
+       }
+     });
+diff -ruN -x node_modules -x public ./src/math/cabinetPresets.ts /home/claude/proj/cuisine-modern-main/src/math/cabinetPresets.ts
+--- ./src/math/cabinetPresets.ts	2026-10-21 10:38:11.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/cabinetPresets.ts	2026-10-21 20:13:29.779675318 +0000
+@@ -22,7 +22,7 @@
+ import { COLUMN_FILLS, canSplitZone, frontHardwareNeeds } from './columns';
+ import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templates';
+ import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
+-import { openingModeOf, resolveOpeningMode } from '../rules/openings';
++import { liftZoneIsTop, openingModeOf, resolveOpeningMode } from '../rules/openings';
+ import { dividerBoardsOf } from '../rules/construction';
+ import { OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
+ import { getAccessory } from '../data/accessoryCatalog';
+@@ -205,7 +205,9 @@
+ 
+   // Hardware: hinges / lift for the doors, runners for the drawers.
+   const preferLift = !!(d.preferLift ?? SUBTYPE_PRESETS[d.subtype]?.preferLift);
+-  const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category));
++  // An overhead lift only fits a doors zone that is the top (and only) one: otherwise its door would sweep through the zone above.
++  const liftFits = liftZoneIsTop(zones);
++  const doorOptions = hardware.filter((h) => doorHardwareCategories(d.category).includes(h.category) && (liftFits || h.category !== 'Overhead Lift Systems'));
+   const drawerOptions = hardware.filter((h) => drawerHardwareCategories().includes(h.category));
+   d.hardwareItemId = !needs.doors ? ''
+     : (doorOptions.find((h) => h.id === d.hardwareItemId)
+diff -ruN -x node_modules -x public ./src/math/columns.ts /home/claude/proj/cuisine-modern-main/src/math/columns.ts
+--- ./src/math/columns.ts	2026-10-21 06:31:26.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/columns.ts	2026-10-21 20:13:08.274616333 +0000
+@@ -147,12 +147,25 @@
+   column: 'ALL' | 'MAIN' | 'FILL';
+   loMm: number;
+   hiMm: number;
++  /** Compartment number, left to right, when hinge boards (zones.ts partitions) cut the run into several. */
++  part?: number;
++}
++
++/** A run [lo, hi] cut by vertical boards into the compartments between them. Compartments narrower than a column are dropped. */
++function compartments(lo: number, hi: number, boards: ReadonlyArray<{ xLoMm: number; widthMm: number }>): Array<[number, number]> {
++  const cuts = [...boards].sort((a, b) => a.xLoMm - b.xLoMm);
++  const out: Array<[number, number]> = [];
++  let from = lo;
++  cuts.forEach((b) => { out.push([from, b.xLoMm]); from = b.xLoMm + b.widthMm; });
++  out.push([from, hi]);
++  return out.filter(([a, b]) => b - a >= SPLIT.MIN_COLUMN_MM);
+ }
+ 
+ /**
+  * Where a zone's fixed shelves go. An unsplit DOORS / OPEN zone has one run across the interior (nothing when it carries baskets).
+  * In a split zone every column that is a shelf compartment gets the zone's shelf count: the doors column (unless it carries
+- * baskets) and a small-door or open filler. A pull-out or a panel column has none. BOM and 3D both read this.
++ * baskets) and a small-door or open filler. A pull-out or a panel column has none. A run that hinge boards cross is cut into one
++ * span per compartment, so no shelf passes through a board. BOM and 3D both read this.
+  */
+ export function shelfSpansOf(
+   zone: CabinetZone,
+@@ -160,13 +173,18 @@
+   th: number,
+   cabinetWidthMm: number,
+   mainHasBaskets: boolean,
++  partitions: ReadonlyArray<{ xLoMm: number; widthMm: number }> = [],
+ ): ShelfSpan[] {
++  const run = (column: ShelfSpan['column'], lo: number, hi: number, boards: ReadonlyArray<{ xLoMm: number; widthMm: number }> = []): ShelfSpan[] => {
++    const parts = compartments(lo, hi, boards);
++    return parts.map(([a, b], n) => ({ column, loMm: a, hiMm: b, ...(boards.length > 0 ? { part: n } : {}) }));
++  };
+   if (!split) {
+     if (zone.kind !== 'DOORS' && zone.kind !== 'OPEN') return [];
+-    return mainHasBaskets ? [] : [{ column: 'ALL', loMm: th, hiMm: cabinetWidthMm - th }];
++    return mainHasBaskets ? [] : run('ALL', th, cabinetWidthMm - th, partitions);
+   }
+   const out: ShelfSpan[] = [];
+-  if (zone.kind === 'DOORS' && !mainHasBaskets) out.push({ column: 'MAIN', loMm: split.main.innerLoMm, hiMm: split.main.innerHiMm });
+-  if (split.fill.fill === 'DOOR' || split.fill.fill === 'OPEN') out.push({ column: 'FILL', loMm: split.fill.innerLoMm, hiMm: split.fill.innerHiMm });
++  if (zone.kind === 'DOORS' && !mainHasBaskets) out.push(...run('MAIN', split.main.innerLoMm, split.main.innerHiMm, partitions));
++  if (split.fill.fill === 'DOOR' || split.fill.fill === 'OPEN') out.push(...run('FILL', split.fill.innerLoMm, split.fill.innerHiMm));
+   return out;
+ }
+diff -ruN -x node_modules -x public ./src/math/constants.ts /home/claude/proj/cuisine-modern-main/src/math/constants.ts
+--- ./src/math/constants.ts	2026-10-21 06:31:26.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/constants.ts	2026-10-21 20:11:47.128924788 +0000
+@@ -35,6 +35,11 @@
+    * like a wall unit: a channel at the top of a 2.2 m tower cannot be reached. Lower doors keep it at the top.
+    */
+   GOLA_REACH_MM: 1500,
++  /**
++   * Inset (flush) fronts sit INSIDE the carcase opening: this reveal is left on every edge, between neighbouring doors / drawers
++   * and against the sides, the dividers, the bottom and the top (typical 2-3 mm for inset hinges).
++   */
++  INSET_GAP_MM: 2,
+   /** Used only when a cabinet references a material that is not in stock. */
+   DEFAULT_THICKNESS_MM: 18,
+   /**
+diff -ruN -x node_modules -x public ./src/math/fasteners.ts /home/claude/proj/cuisine-modern-main/src/math/fasteners.ts
+--- ./src/math/fasteners.ts	2026-10-21 05:50:41.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/fasteners.ts	2026-10-22 03:36:06.577833328 +0000
+@@ -26,6 +26,7 @@
+ }
+ 
+ type Vec = [number, number, number];
++const span = (b: BoxGeo) => ({ x0: b.centerMm[0] - b.sizeMm[0] / 2, x1: b.centerMm[0] + b.sizeMm[0] / 2, y0: b.centerMm[1] - b.sizeMm[1] / 2, y1: b.centerMm[1] + b.sizeMm[1] / 2 });
+ const cyl = (kind: FastenerKind, axis: Fastener['axis'], c: Vec, dia: number, len: number, parent: string): Fastener =>
+   ({ kind, shape: 'cyl', axis, centerMm: c, sizeMm: [dia, len, 0], parent });
+ const box = (kind: FastenerKind, c: Vec, size: Vec, parent: string): Fastener =>
+@@ -94,12 +95,17 @@
+     const [cx, cy, cz] = b.centerMm;
+     const y = cy - b.sizeMm[1] / 2 - FASTENER.SHELF_PIN_DIA_MM / 2;
+     const zs = [cz + b.sizeMm[2] / 2 - FASTENER.SHELF_PIN_SETBACK_MM, cz - b.sizeMm[2] / 2 + FASTENER.SHELF_PIN_SETBACK_MM];
+-    const vdiv = `vdiv-${/^shelf-(\d+)/.exec(b.key)?.[1] ?? 0}`;
+     const reach = (b.sizeMm[0] + PANEL.SHELF_WIDTH_CLEARANCE_MM) / 2; // the shelf plus its clearance: up to the board it rests against
+-    [{ xFace: cx - reach, dir: 1 as const, side: 'side-left' }, { xFace: cx + reach, dir: -1 as const, side: 'side-right' }].forEach((e) => {
+-      const onSide = Math.abs(e.xFace - (e.dir === 1 ? th : W - th)) < 0.6;
+-      if (onSide && !geo.boxes.some((x) => x.key === e.side)) return; // that side is not cut (L corner): no pins in thin air
+-      zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, onSide ? e.side : vdiv)));
++    [{ xFace: cx - reach, dir: 1 as const }, { xFace: cx + reach, dir: -1 as const }].forEach((e) => {
++      // The board that really stands at this end of the shelf: a side, a vertical board or a hinge board. None (an L corner leaves one
++      // side out) = no pins in thin air.
++      const holder = geo.boxes.find((o) => {
++        if (o.kind !== 'side' && o.kind !== 'vdivider') return false;
++        const r = span(o);
++        return Math.abs((e.dir === 1 ? r.x1 : r.x0) - e.xFace) < 0.6 && cy >= r.y0 && cy <= r.y1;
++      });
++      if (!holder) return;
++      zs.forEach((z) => out.push(cyl('SHELF_PIN', 'x', [e.xFace + e.dir * FASTENER.SHELF_PIN_LEN_MM / 2, y, z], FASTENER.SHELF_PIN_DIA_MM, FASTENER.SHELF_PIN_LEN_MM, holder.key)));
+     });
+   });
+ 
+@@ -120,10 +126,17 @@
+     if (f.motion === 'SWING' && f.hinge) {
+       const left = f.hinge === 'LEFT';
+       const xCup = left ? f.xMm + FASTENER.HINGE_CUP_EDGE_MM : f.xMm + f.widthMm - FASTENER.HINGE_CUP_EDGE_MM;
+-      // In a split zone the plate sits on the board at the outer edge of the door's column (a side or the vertical board).
++      // The mounting plate sits on the face of the board the hinge edge hangs on: a side, the zone's vertical board or a hinge board
++      // between two doors (zones.ts partitions). It is looked up in the drawing itself, so a hinge is never mounted on nothing.
++      const hx = left ? f.xMm : f.xMm + f.widthMm;
++      const cyDoor = f.yMm + f.heightMm / 2;
++      const reach = (b: BoxGeo) => { const r = span(b); return hx < r.x0 ? r.x0 - hx : hx > r.x1 ? hx - r.x1 : 0; }; // 0 = the edge is over the board; an inset door stands a reveal off it
++      const holder = geo.boxes
++        .filter((b) => (b.kind === 'side' || b.kind === 'vdivider') && cyDoor >= span(b).y0 && cyDoor <= span(b).y1 && reach(b) <= PANEL.INSET_GAP_MM + 1)
++        .sort((a, b) => reach(a) - reach(b))[0];
+       const colLo = f.innerLoMm ?? th, colHi = f.innerHiMm ?? W - th;
+-      const xPlate = left ? colLo + 4 : colHi - 4;
+-      const plateParent = left ? (colLo <= th + 0.5 ? 'side-left' : `vdiv-${f.zoneIndex}`) : (colHi >= W - th - 0.5 ? 'side-right' : `vdiv-${f.zoneIndex}`);
++      const xPlate = holder ? (left ? span(holder).x1 + 4 : span(holder).x0 - 4) : (left ? colLo + 4 : colHi - 4);
++      const plateParent = holder ? holder.key : left ? 'side-left' : 'side-right';
+       const n = hingesPerDoor(f.heightMm);
+       const lo = f.yMm + Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
+       const hi = f.yMm + f.heightMm - Math.min(FASTENER.HINGE_END_OFFSET_MM, f.heightMm / 4);
+@@ -134,8 +147,14 @@
+         out.push(box('HINGE_PLATE', [xPlate, y, zRear - 22], [8, 40, 35], plateParent));
+       });
+     } else if (f.motion === 'LIFT') {
+-      const parent = geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
+-      out.push(box('LIFT_KIT', [f.xMm + f.widthMm / 2, f.yMm + f.heightMm - 55, zRear - 40], [Math.min(f.widthMm * 0.6, 320), 40, 60], parent));
++      // The kit hangs against the underside of the board above the door (the roof, or the divider over its zone), touching it.
++      const top = f.yMm + f.heightMm, mid = f.xMm + f.widthMm / 2, kitH = 40;
++      const above = geo.boxes
++        .filter((b) => (b.kind === 'roof' || b.kind === 'divider' || b.kind === 'rail') && span(b).y1 >= top - 0.5 && mid >= span(b).x0 && mid <= span(b).x1)
++        .sort((a, b) => span(a).y0 - span(b).y0)[0];
++      const parent = above ? above.key : geo.boxes.some((b) => b.key === 'roof') ? 'roof' : 'rail-front';
++      const yTop = above ? span(above).y0 : top - 35;
++      out.push(box('LIFT_KIT', [mid, yTop - kitH / 2, zRear - 40], [Math.min(f.widthMm * 0.6, 320), kitH, 60], parent));
+     } else if (f.motion === 'SLIDE') {
+       const len = runnerLengthMm(D);
+       const y = f.yMm + f.heightMm * 0.35;
+diff -ruN -x node_modules -x public ./src/math/lCorner.ts /home/claude/proj/cuisine-modern-main/src/math/lCorner.ts
+--- ./src/math/lCorner.ts	2026-10-21 10:51:57.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/lCorner.ts	2026-10-21 20:13:59.884827793 +0000
+@@ -98,6 +98,8 @@
+       golaSlots: [],
+     }, b.woods, b.hardware, b.edgeRolls);
+     const base = draftToNewCabinet(resolved, { id: b.newId(), name: `${b.name} — ${CORNER_ROLE_LABELS[box.role]}`, positionX: box.positionX });
+-    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides };
++    // The arm along the side wall stops its door short at the corner, so the door of the arm along the back wall runs past it
++    // instead of the two doors (each stands one front thickness in front of its box) going through each other.
++    return { ...base, run: box.run, groupId: b.groupId, omitSides: box.omitSides, ...(box.role === 'ARM_B' ? { frontSetbackSides: box.omitSides } : {}) };
+   });
+ }
+diff -ruN -x node_modules -x public ./src/math/partsEngine.ts /home/claude/proj/cuisine-modern-main/src/math/partsEngine.ts
+--- ./src/math/partsEngine.ts	2026-10-21 05:50:28.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/partsEngine.ts	2026-10-22 03:36:06.577200513 +0000
+@@ -16,7 +16,7 @@
+ } from '../types/flatma';
+ import { EDGE, FASTENER_STOCK, PANEL } from './constants';
+ import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
+-import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, openingModeOf } from '../rules';
++import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
+ import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
+ import { bandPricePerMeterDA } from './edgeBand';
+ import { frontHardwareNeeds, shelfSpansOf } from './columns';
+@@ -68,8 +68,11 @@
+     | 'APPLIANCE_ZONE_TOO_SHORT'
+     | 'APPLIANCE_ZONE_WIDE'
+     | 'SPLIT_NO_ROOM'
++    | 'DOORS_TOO_NARROW'
+     | 'SHELVES_TOO_CLOSE'
+-    | 'GOLA_ZONE_TOO_SHORT';
++    | 'GOLA_ZONE_TOO_SHORT'
++    | 'GOLA_NOT_WITH_INSET'
++    | 'LIFT_ZONE_NOT_TOP';
+   severity: 'error' | 'warning';
+   message: string;
+ }
+@@ -108,10 +111,10 @@
+ }
+ 
+ /** Layout + fronts + the list of parts, from the cabinet and the two board thicknesses. Pure geometry. */
+-export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean } = {}): CabinetModel {
++export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean } = {}): CabinetModel {
+   const zones = zonesOf(cab);
+-  const layout = layoutZones(cab, carcaseTh);
+-  const plan = planFronts(cab, layout);
++  const layout = layoutZones(cab, carcaseTh, { inset: opts.inset });
++  const plan = planFronts(cab, layout, { inset: opts.inset, frontThMm: frontTh });
+   const sides = carcaseSidesOf(cab, carcaseTh);
+   const inner = sides.innerMm;
+   const open = isOpenCarcase(zones);
+@@ -129,6 +132,12 @@
+     if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
+   });
+ 
++  // Hinge boards of a row of several doors (zones.ts partitions): as deep as the cabinet, as tall as the zone's opening.
++  layout.bands.forEach((band) => {
++    const n = band.partitions?.length ?? 0;
++    if (n > 0) parts.push(carcase(`Door Hinge Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, cab.depth, band.openingHeightMm, n, 'vertical', 'FRONT'));
++  });
++
+   if (topOf(cab) === 'RAILS') {
+     parts.push(carcase('Top Stretcher Rail (Traverse)', PANEL.TRAVERSE_DEPTH_MM, inner, 2, 'horizontal', 'NONE'));
+   } else {
+@@ -146,7 +155,7 @@
+     const n = Math.max(0, Math.round(band.zone.shelves ?? 0));
+     if (n === 0) return;
+     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
+-    shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets).forEach((s) => {
++    shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets, band.partitions).forEach((s) => {
+       const w = s.hiMm - s.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM;
+       shelfRows.set(w, (shelfRows.get(w) ?? 0) + n);
+     });
+@@ -198,7 +207,9 @@
+ ): HardwareRequirement[] {
+   const th = dims?.carcaseTh ?? (cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM);
+   const fTh = dims?.frontTh ?? (cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
+-  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th));
++  const doorHwForPlan = pickFrontHardware(cab, 'DOORS', items);
++  const insetHw = !!doorHwForPlan && doorHwForPlan.modelType.includes('Inset Hinge');
++  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th, { inset: insetHw }), { inset: insetHw, frontThMm: fTh });
+   const out: HardwareRequirement[] = [];
+   const add = (item: InjectedHardwareItem | undefined, quantity: number, group: HardwareGroup) => {
+     if (!item || quantity <= 0) return;
+@@ -335,7 +346,8 @@
+   }
+ 
+   const doorHw = pickFrontHardware(cab, 'DOORS', hardwareItems);
+-  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw) });
++  const inset = !!doorHw && doorHw.modelType.includes('Inset Hinge');
++  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw), inset });
+ 
+   model.layout.issues.forEach((i) => issues.push({ code: i.code, severity: i.code === 'ZONES_TOO_TALL' ? 'error' : 'warning', message: `Cabinet "${name}": ${i.message}` }));
+   if (!carcaseMat) issues.push({ code: 'NO_CARCASE_MATERIAL', severity: 'error', message: `Cabinet "${name}": carcase material is not in stock — carcase not priced` });
+@@ -345,6 +357,8 @@
+   if (needs.drawers && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
+   if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
+   if (model.plan.golaSkipped?.length) issues.push({ code: 'GOLA_ZONE_TOO_SHORT', severity: 'warning', message: `Cabinet "${name}": zone ${model.plan.golaSkipped.map((i) => i + 1).join(', ')} too short for a Gola channel plus fronts of at least ${PANEL.GOLA_MIN_FRONT_MM} mm: no channel there` });
++  if (model.plan.golaDroppedByInset) issues.push({ code: 'GOLA_NOT_WITH_INSET', severity: 'warning', message: `Cabinet "${name}": inset hinges put the fronts inside the carcase, where a Gola channel cannot go: no channel is drawn or priced` });
++  if (isLiftItem(doorHw) && !liftZoneIsTop(zones)) issues.push({ code: 'LIFT_ZONE_NOT_TOP', severity: 'error', message: `Cabinet "${name}": an overhead lift opens upward through everything above it, so it only fits the doors zone that is the top one and the only one with doors: use hinges here` });
+   if (model.plan.channels.length > 0 && !hardwareItems.some((h) => h.id === cab.frontConfig.golaProfileItemId || h.category === OPENING_HARDWARE.GOLA.hardwareCategory)) issues.push({ code: 'NO_GOLA_ITEM', severity: 'warning', message: `Cabinet "${name}": Gola channels but no "Gola & Handle Profiles" item in stock — profile not priced` });
+   if (model.plan.facades.some((f) => f.kind === 'DRAWER' && f.kinematic !== 'PULL_OUT_FRAME' && f.heightMm < minDrawerFrontMm())) {
+     issues.push({ code: 'DRAWER_BOX_TOO_LOW', severity: 'warning', message: `Cabinet "${name}": a drawer front is lower than ${minDrawerFrontMm()} mm, too low for a drawer box: use fewer drawers or a taller cabinet` });
+diff -ruN -x node_modules -x public ./src/math/zones.ts /home/claude/proj/cuisine-modern-main/src/math/zones.ts
+--- ./src/math/zones.ts	2026-10-21 05:50:41.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/math/zones.ts	2026-10-22 03:36:06.573418524 +0000
+@@ -15,6 +15,7 @@
+ import { APPLIANCES, OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
+ import { canUseGola } from '../rules/openings';
+ import { dividerBoardsOf } from '../rules/construction';
++import { carcaseSidesOf } from './carcaseSides';
+ import { KinematicId, validKinematic } from '../rules/kinematics';
+ 
+ export { APPLIANCES, nicheOf } from '../rules/appliances';
+@@ -45,7 +46,7 @@
+ }
+ 
+ export interface ZoneIssue {
+-  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SHELVES_TOO_CLOSE';
++  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SHELVES_TOO_CLOSE' | 'DOORS_TOO_NARROW';
+   message: string;
+ }
+ 
+@@ -60,6 +61,18 @@
+   bandTopMm: number;
+   /** The two columns when a vertical board splits this zone (math/columns.ts); missing = one column, the whole width. */
+   split?: SplitLayout;
++  /**
++   * Doors zones with several swinging doors: the vertical boards the hinges hang on. A hinge needs a board behind it, so every hinge
++   * that is not on a side (or on the zone's own vertical board) gets one: neighbouring doors hinged on the same edge share it.
++   */
++  partitions?: ZonePartition[];
++}
++
++/** One hinge board inside a doors zone: `edge` = the index of the door edge it stands behind (1 = between door 0 and door 1). */
++export interface ZonePartition {
++  edge: number;
++  xLoMm: number;
++  widthMm: number;
+ }
+ 
+ export interface ZoneLayout {
+@@ -67,11 +80,57 @@
+   /** Bottom edge of each divider board (n - 1 of them), measured from the cabinet bottom. */
+   dividerBottomsMm: number[];
+   issues: ZoneIssue[];
++  /** Board thickness the layout was made with (the partitions and the inset fronts need it). */
++  thicknessMm?: number;
++}
++
++/**
++ * The hinge side of every door of a row. A zone that states a side hangs all its doors on it; otherwise they alternate
++ * (door 0 on the left) so the neighbours open towards each other.
++ */
++export function hingeSidesOf(count: number, forced?: 'LEFT' | 'RIGHT'): Array<'LEFT' | 'RIGHT'> {
++  return Array.from({ length: Math.max(0, count) }, (_, k) => forced ?? (k % 2 === 0 ? 'LEFT' : 'RIGHT'));
++}
++
++/** The count + 1 edges of a row of doors, left to right: the nominal cuts of the cabinet width, or the strip of a column. All to the half millimetre. */
++export function doorEdgesOf(count: number, widthMm: number, strip?: { loMm: number; hiMm: number }): number[] {
++  return Array.from({ length: count + 1 }, (_, j) => (strip
++    ? (j === 0 ? strip.loMm : j === count ? strip.hiMm : Math.round(2 * (strip.loMm + (j * (strip.hiMm - strip.loMm)) / count)) / 2)
++    : Math.round((2 * j * widthMm) / count) / 2));
++}
++
++/**
++ * A row of INSET doors between two walls [loMm, hiMm]: the hinge boards (one per entry of `boardEdges`, see hingeEdgesOf) cut the row
++ * into compartments and the doors sit inside them, `g` clear of every board and of each other, all the same width. Returns the doors
++ * (x, width, left to right) and the x of the left face of each board. layoutZones cuts the boards from this and insetPlan hangs the
++ * doors in it, so a door never stands where a board is.
++ */
++export function insetRowOf(count: number, boardEdges: ReadonlyArray<number>, loMm: number, hiMm: number, boardMm: number, g: number): { doors: Array<{ xMm: number; widthMm: number }>; boards: Array<{ edge: number; xLoMm: number }> } {
++  const cuts = [0, ...boardEdges, count];
++  const compartments = cuts.length - 1;
++  const w = Math.max(0, Math.floor(2 * ((hiMm - loMm - boardEdges.length * boardMm - (count + compartments) * g) / count)) / 2);
++  const doors: Array<{ xMm: number; widthMm: number }> = [];
++  const boards: Array<{ edge: number; xLoMm: number }> = [];
++  let x = loMm;
++  for (let c = 0; c < compartments; c++) {
++    x += g;
++    for (let k = cuts[c]; k < cuts[c + 1]; k++) { doors.push({ xMm: x, widthMm: w }); x += w + (k < cuts[c + 1] - 1 ? g : 0); }
++    x += g;
++    if (c < compartments - 1) { boards.push({ edge: cuts[c + 1], xLoMm: x }); x += boardMm; }
++  }
++  return { doors, boards };
++}
++
++/** The inner door edges a hinge hangs on (0 and `count` are the carcase / column boundary, which is already a board). */
++export function hingeEdgesOf(count: number, sides: ReadonlyArray<'LEFT' | 'RIGHT'>): number[] {
++  const edges = new Set<number>();
++  sides.forEach((side, k) => { const e = side === 'LEFT' ? k : k + 1; if (e > 0 && e < count) edges.add(e); });
++  return [...edges].sort((a, b) => a - b);
+ }
+ 
+ type SizedCabinet = ZonedCabinet & Pick<CabinetObject, 'width' | 'height' | 'depth'>;
+ 
+-export function layoutZones(cab: SizedCabinet, thicknessMm: number): ZoneLayout {
++export function layoutZones(cab: SizedCabinet, thicknessMm: number, opts: { inset?: boolean } = {}): ZoneLayout {
+   const zones = zonesOf(cab);
+   const n = zones.length;
+   const th = thicknessMm;
+@@ -127,6 +186,31 @@
+     if (s.layout) b.split = s.layout;
+     if (s.issue) issues.push(s.issue);
+   });
++  // Hinge boards: a door can only hang on a board. With three or more doors in a row (or all hinges on one side) some hinges fall
++  // between two doors, where there is nothing: a board is cut for each of those edges, and the doors hang on it.
++  bands.forEach((b) => {
++    const z = b.zone;
++    if (z.kind !== 'DOORS' || open || z.kinematic === 'PULL_OUT_FRAME') return;
++    const count = Math.max(1, Math.round(z.count ?? 1));
++    if (count < 2) return;
++    const edgeIdx = hingeEdgesOf(count, hingeSidesOf(count, b.split ? undefined : z.hingeSide));
++    if (edgeIdx.length === 0) return;
++    const inSides = carcaseSidesOf(cab, th);
++    const inLo = b.split ? b.split.main.innerLoMm : inSides.loMm, inHi = b.split ? b.split.main.innerHiMm : inSides.hiMm;
++    // Overlay doors: the board stands behind the gap between two doors. Inset doors: they sit in the compartments between the boards.
++    const edges = doorEdgesOf(count, cab.width, b.split ? frontStripOf(b.split.main, cab.width) : undefined);
++    const boards = opts.inset
++      ? insetRowOf(count, edgeIdx, inLo, inHi, th, PANEL.INSET_GAP_MM).boards.map((p) => ({ edge: p.edge, xLoMm: p.xLoMm, widthMm: th }))
++      : edgeIdx.map((e) => ({ edge: e, xLoMm: edges[e] - th / 2, widthMm: th }));
++    // The boards must leave a real compartment between them and the sides: doors so narrow that a board does not fit are reported instead.
++    const walls = [inLo, ...boards.flatMap((p) => [p.xLoMm, p.xLoMm + p.widthMm]), inHi];
++    const room = Math.min(...Array.from({ length: boards.length + 1 }, (_, n) => walls[2 * n + 1] - walls[2 * n])); // the compartments between the walls
++    if (room < SPLIT.MIN_COLUMN_MM) {
++      issues.push({ code: 'DOORS_TOO_NARROW', message: `Zone ${b.index + 1}: ${count} doors are too narrow for the hinge boards they hang on (${Math.round(Math.max(0, room))} mm left between boards): use fewer doors` });
++      return;
++    }
++    b.partitions = boards;
++  });
+   bands.forEach((b) => {
+     if (b.zone.kind !== 'APPLIANCE' || !b.zone.appliance) return;
+     const spec = APPLIANCES[b.zone.appliance];
+@@ -138,7 +222,7 @@
+     if (b.openingHeightMm < n.h) issues.push({ code: 'APPLIANCE_ZONE_TOO_SHORT', message: `${spec.label}: ارتفاع القسم ${Math.round(b.openingHeightMm)} مم أقل من الفتحة المطلوبة ${n.h} مم.` });
+   });
+ 
+-  return { bands, dividerBottomsMm, issues };
++  return { bands, dividerBottomsMm, issues, thicknessMm: th };
+ }
+ 
+ export interface Facade {
+@@ -182,9 +266,18 @@
+   channels: GolaChannel[];
+   /** Zones too short for a Gola channel plus fronts of a usable height: they got no channel. */
+   golaSkipped?: number[];
++  /** Inset fronts sit inside the opening, where a Gola channel (an overlay profile) cannot be: the channels were dropped. */
++  golaDroppedByInset?: boolean;
+ }
+ 
+-export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'>, layout: ZoneLayout): FrontPlan {
++export interface FrontPlanOptions {
++  /** Inset hinges: the fronts sit INSIDE the carcase opening (see PANEL.INSET_GAP_MM) instead of in front of it. */
++  inset?: boolean;
++  /** Real thickness of the front sheet (mm); missing = the one cached on the cabinet. */
++  frontThMm?: number;
++}
++
++export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> & Partial<Pick<CabinetObject, 'frontThickness' | 'frontSetbackSides'>>, layout: ZoneLayout, opts: FrontPlanOptions = {}): FrontPlan {
+   const facades: Facade[] = [];
+   const golaSkipped: number[] = [];
+   const channels: GolaChannel[] = [];
+@@ -193,6 +286,11 @@
+   const half = PANEL.FRONT_HEIGHT_CLEARANCE_MM / 2;
+   const reveal = PANEL.FRONT_REVEAL_MM / 2;
+   const gapHalf = PANEL.FRONT_GAP_BETWEEN_MM / 2;
++  // A box whose door row stops short on a side (the arm of an L corner whose neighbour's door runs past): one front thickness + the gap.
++  const frontTh = opts.frontThMm ?? (cab.frontThickness && cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
++  const setback = frontTh + PANEL.FRONT_GAP_BETWEEN_MM;
++  const setLeft = cab.frontSetbackSides?.includes('LEFT') ? setback : 0;
++  const setRight = cab.frontSetbackSides?.includes('RIGHT') ? setback : 0;
+ 
+   // Where Gola channels may exist is decided in rules/openings.ts (canUseGola).
+   const golaOn = cab.frontConfig.hasGolaProfile && canUseGola(cab.category, layout.bands.map((b) => b.zone));
+@@ -230,7 +328,7 @@
+         for (let k = 0; k < count; k++) {
+           const lo = edge(k) + (k > 0 ? gapHalf : 0);
+           const hi = edge(k + 1) - (k < count - 1 ? gapHalf : 0);
+-          facades.push({ ...base(sp.main, 'MAIN'), kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: y, ...(count === 1 ? { hingeSide: outer(sp.main) } : {}), ...mark });
++          facades.push({ ...base(sp.main, 'MAIN'), kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: y, hingeSide: count === 1 ? outer(sp.main) : hingeSidesOf(count)[k], ...mark });
+         }
+         if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
+       } else if (z.kind === 'APPLIANCE' && z.panelFront) {
+@@ -255,10 +353,11 @@
+       // A lone door keeps the outer reveal on both sides (599 on a 600 cabinet); a row of several doors uses FRONT_ROW_OUTER_REVEAL_MM.
+       const cut = (j: number) => Math.round((2 * j * cab.width) / count) / 2;
+       const outer = count === 1 ? PANEL.FRONT_GAP_TOTAL_MM / 2 : PANEL.FRONT_ROW_OUTER_REVEAL_MM;
++      const hinges = hingeSidesOf(count, z.hingeSide); // several doors always carry their side: the hinge boards (layoutZones) stand behind it
+       for (let k = 0; k < count; k++) {
+-        const lo = cut(k) + (k === 0 ? outer : gapHalf);
+-        const hi = cut(k + 1) - (k === count - 1 ? outer : gapHalf);
+-        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(z.hingeSide ? { hingeSide: z.hingeSide } : {}), ...mark });
++        const lo = Math.max(cut(k) + (k === 0 ? outer : gapHalf), k === 0 ? setLeft : 0);
++        const hi = Math.min(cut(k + 1) - (k === count - 1 ? outer : gapHalf), k === count - 1 ? cab.width - setRight : cab.width);
++        facades.push({ zoneIndex: i, kind: 'DOOR', index: k, count, widthMm: hi - lo, heightMm: stack, xMm: lo, yMm: doorsY, ...(count > 1 || z.hingeSide ? { hingeSide: hinges[k] } : {}), ...mark });
+       }
+       if (slots.length > 0) channels.push({ zoneIndex: i, slot: 0, yMm: channelBelow ? yLo : yLo + stack, heightMm: PANEL.GOLA_OFFSET_MM });
+     } else if (z.kind === 'DRAWERS') {
+@@ -287,5 +386,47 @@
+     }
+   });
+ 
+-  return golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
++  const plan: FrontPlan = golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
++  return opts.inset ? insetPlan(cab, layout, plan) : plan;
++}
++
++/**
++ * Inset fronts: every front is laid inside the free opening of its zone (or of its column), with PANEL.INSET_GAP_MM on every edge and
++ * between neighbours, instead of in front of the carcase. A front as wide as the cabinet would run through the side boards.
++ * Doors share the opening left to right, drawers share it top to bottom (index 0 = the top one), a lone panel fills it.
++ */
++function insetPlan(cab: SizedCabinet, layout: ZoneLayout, plan: FrontPlan): FrontPlan {
++  const g = PANEL.INSET_GAP_MM;
++  const th = layout.thicknessMm ?? PANEL.DEFAULT_THICKNESS_MM;
++  const sides = carcaseSidesOf(cab, th);
++  const half = (v: number) => Math.floor(2 * v) / 2; // never round a front up into its neighbour
++  const groups = new Map<string, Facade[]>();
++  plan.facades.forEach((f) => { const k = `${f.zoneIndex}:${f.column ?? ''}:${f.kind}`; groups.set(k, [...(groups.get(k) ?? []), f]); });
++  const rect = new Map<Facade, Pick<Facade, 'xMm' | 'yMm' | 'widthMm' | 'heightMm'>>();
++  groups.forEach((list) => {
++    const first = list[0];
++    const band = layout.bands[first.zoneIndex];
++    const lo = (first.innerLoMm ?? sides.loMm) + g;
++    const hi = (first.innerHiMm ?? sides.hiMm) - g;
++    const yLo = band.openingBottomMm + g;
++    const yHi = band.openingBottomMm + band.openingHeightMm - g;
++    const n = list.length;
++    const height = Math.max(0, yHi - yLo);
++    if (first.kind === 'DOOR') {
++      // The doors hang between the hinge boards of this row (layoutZones), so they share the compartments, not the whole opening.
++      const boardEdges = (band.partitions ?? []).map((p) => p.edge);
++      const row = insetRowOf(n, boardEdges, lo - g, hi + g, th, g);
++      list.forEach((f) => rect.set(f, { xMm: row.doors[f.index].xMm, widthMm: row.doors[f.index].widthMm, yMm: yLo, heightMm: height }));
++    } else if (first.kind === 'DRAWER') {
++      const h = half(Math.max(0, (height - (n - 1) * g) / n));
++      list.forEach((f) => rect.set(f, { xMm: lo, widthMm: Math.max(0, hi - lo), yMm: yHi - (f.index + 1) * h - f.index * g, heightMm: h }));
++    } else {
++      list.forEach((f) => rect.set(f, { xMm: lo, widthMm: Math.max(0, hi - lo), yMm: yLo, heightMm: height }));
++    }
++  });
++  return {
++    facades: plan.facades.map((f) => ({ ...f, ...rect.get(f)! })),
++    channels: [],
++    ...(plan.channels.length > 0 ? { golaDroppedByInset: true } : {}),
++  };
+ }
+diff -ruN -x node_modules -x public ./src/rules/openings.ts /home/claude/proj/cuisine-modern-main/src/rules/openings.ts
+--- ./src/rules/openings.ts	2026-10-21 06:31:26.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/rules/openings.ts	2026-10-22 03:38:33.801503455 +0000
+@@ -29,3 +29,13 @@
+ /** طريقة فتح خزانة محفوظة (الخزائن القديمة بلا openingMode تُقرأ من علم Gola). */
+ export const openingModeOf = (cab: Pick<CabinetObject, 'openingMode' | 'frontConfig'>): OpeningMode =>
+   cab.openingMode ?? (cab.frontConfig.hasGolaProfile ? 'GOLA' : 'HANDLE');
++
++/**
++ * An overhead lift swings its door UP through everything above it, so it only fits when the doors are in the top zone and in no other
++ * (a lower lift door would sweep through the zone above; hinged doors below need a second hardware item). A zone also carries a door
++ * when it is split and its filler column is, or may become (AUTO), a small door beside an appliance.
++ */
++export function liftZoneIsTop(zones: ReadonlyArray<{ kind: ZoneKind; split?: { fill?: string } }>): boolean {
++  const bearing = zones.map((z, i) => (z.kind === 'DOORS' || (!!z.split && (z.split.fill === undefined || z.split.fill === 'DOOR' || z.split.fill === 'AUTO')) ? i : -1)).filter((i) => i >= 0);
++  return bearing.length === 0 || (bearing.length === 1 && bearing[0] === zones.length - 1);
++}
+diff -ruN -x node_modules -x public ./src/types/flatma.ts /home/claude/proj/cuisine-modern-main/src/types/flatma.ts
+--- ./src/types/flatma.ts	2026-10-21 05:49:35.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/src/types/flatma.ts	2026-10-21 20:11:47.129834525 +0000
+@@ -173,6 +173,11 @@
+   groupId?: string;
+   /** Sides that are not cut because the neighbouring box of the same group is open to this one (the interior of an L corner is continuous). */
+   omitSides?: Array<'LEFT' | 'RIGHT'>;
++  /**
++   * Edges where the door row stops short by one front thickness + the gap, so the door of a neighbouring box that meets this
++   * one at a right angle (the two arms of an L corner) is not hit by it: the other door runs past, this one butts against it.
++   */
++  frontSetbackSides?: Array<'LEFT' | 'RIGHT'>;
+ 
+   // Look-only texture chosen in the showcase (kept apart from frontMaterialId, which must stay a stock id)
+   frontTextureOverride?: FrontTextureOverride;
+diff -ruN -x node_modules -x public ./tests/structure.test.ts /home/claude/proj/cuisine-modern-main/tests/structure.test.ts
+--- ./tests/structure.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ /home/claude/proj/cuisine-modern-main/tests/structure.test.ts	2026-10-22 03:38:33.801971329 +0000
+@@ -0,0 +1,166 @@
++// @ts-nocheck  (tests are plain node:test files, run with: npm test)
++// Structural guards found by the cabinet audit: a hinge is never mounted on nothing, the two doors of an L corner never go through
++// each other, an inset door never goes through a board, and an overhead lift only sits where it can open.
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import * as P from '../src/math/cabinetPresets';
++import * as E from '../src/math/partsEngine';
++import * as Z from '../src/math/zones';
++import { assemblyGeometry, facadeKey } from '../src/math/assemblyGeometry';
++import { buildFasteners } from '../src/math/fasteners';
++import { lCornerCabinets } from '../src/math/lCorner';
++import { toFrame } from '../src/math/kitchenLayout';
++
++const wood = (id, th, type = 'MDF Melamine Matt', price = 15000) => ({ id, brand: id, type, thickness: th, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 10, averagePriceDA: price });
++const hw = (id, category, modelType = 'x', price = 300, qty = 100) => ({ id, category, brand: 'B', modelType, pricePerUnitDA: price, availableQty: qty });
++const WOODS = [wood('hdf', 3, 'HDF Standard 3mm', 4000), wood('mel', 18)];
++const HW = [hw('hinge', 'Cabinet Hinges', 'Clip Top'), hw('slide', 'Drawer Slide Systems', 'Tandem'), hw('lift', 'Overhead Lift Systems', 'Aventos HK', 2500), hw('gola', 'Gola & Handle Profiles', 'Gola C', 1800)];
++const HW_INSET = HW.map((h) => (h.id === 'hinge' ? { ...h, modelType: 'Inset Hinge (Cranked)' } : h));
++const ROLLS = [{ id: 'e1', brand: 'PVC', thickness: 1, width: 22, totalLengthMm: 0, totalLengthMeters: 100, rollPriceDA: 3000 }];
++
++let n = 0;
++const make = (category, w, h, d, zones, extra = {}, items = HW) => {
++  const r = P.resolveDraft({ ...P.draftFromPreset(category === 'BASE_UNIT' ? 'Standard_Base' : 'Standard_Wall'), width: w, height: h, depth: d, zones, ...extra }, WOODS, items, ROLLS);
++  return { ...P.draftToNewCabinet(r, { id: 'c' + n++, name: 'c' + n, positionX: 0 }), carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 };
++};
++const optsOf = (cab, items = HW) => { const hwItem = E.pickFrontHardware(cab, 'DOORS', items); return { lift: E.isLiftItem(hwItem), inset: !!hwItem && hwItem.modelType.includes('Inset Hinge') }; };
++const geoOf = (cab, items = HW) => assemblyGeometry(cab, { carcaseTh: 18, frontTh: 18, ...optsOf(cab, items) });
++const box = (b) => ({ x0: b.centerMm[0] - b.sizeMm[0] / 2, x1: b.centerMm[0] + b.sizeMm[0] / 2, y0: b.centerMm[1] - b.sizeMm[1] / 2, y1: b.centerMm[1] + b.sizeMm[1] / 2, z0: b.centerMm[2] - b.sizeMm[2] / 2, z1: b.centerMm[2] + b.sizeMm[2] / 2 });
++const fbox = (f, th = 18) => ({ x0: f.xMm, x1: f.xMm + f.widthMm, y0: f.yMm, y1: f.yMm + f.heightMm, z0: f.zMm - th / 2, z1: f.zMm + th / 2 });
++const overlap = (a, b, tol = 0.5) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > tol && Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0) > tol && Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0) > tol;
++
++test('hinge boards: every hinge of a row of doors hangs on a board, whatever the number of doors', () => {
++  for (const count of [2, 3, 4, 5, 6]) for (const width of [900, 1200, 1500]) {
++    const cab = make('BASE_UNIT', width, 870, 600, [{ kind: 'DOORS', count, shelves: 2 }]);
++    const geo = geoOf(cab);
++    const boards = geo.boxes.filter((b) => b.kind === 'side' || b.kind === 'vdivider').map(box);
++    geo.facades.filter((f) => f.motion === 'SWING').forEach((f) => {
++      const hx = f.hinge === 'LEFT' ? f.xMm : f.xMm + f.widthMm;
++      assert.ok(boards.some((b) => hx >= b.x0 - 0.5 && hx <= b.x1 + 0.5 && f.yMm + f.heightMm / 2 >= b.y0 && f.yMm + f.heightMm / 2 <= b.y1), `${count} doors in ${width}: the hinge of door ${f.index} at x=${hx} has no board behind it`);
++    });
++    const partitions = geo.boxes.filter((b) => b.key.startsWith('vpart-'));
++    assert.equal(partitions.length, Math.floor((count - 1) / 2), `${count} doors alternate their hinges: one board per pair of neighbours that share a hinge edge`);
++    const bom = E.priceCabinet(cab, WOODS, HW, ROLLS).parts.filter((p) => p.partType.startsWith('Door Hinge Board')).reduce((s, p) => s + p.quantity, 0);
++    assert.equal(bom, partitions.length, 'the cutting list has exactly the boards the drawing has');
++    // a hinge plate sits on the face of its board and the arm is a normal hinge arm, never a bar across the cabinet
++    buildFasteners(geo, cab, { carcaseTh: 18, frontTh: 18 }).filter((x) => x.kind === 'HINGE_ARM').forEach((a) => assert.ok(a.sizeMm[0] <= 40, `hinge arm of ${a.sizeMm[0]} mm`));
++    // no shelf passes through a board
++    geo.boxes.filter((b) => b.kind === 'shelf').forEach((s) => partitions.forEach((p) => assert.ok(!overlap(box(s), box(p)), `${s.key} crosses ${p.key}`)));
++  }
++});
++
++test('hinge boards: two doors need none, unless every hinge is forced to one side', () => {
++  assert.equal(geoOf(make('BASE_UNIT', 800, 870, 600, [{ kind: 'DOORS', count: 2 }])).boxes.filter((b) => b.key.startsWith('vpart-')).length, 0);
++  const cab = make('BASE_UNIT', 800, 870, 600, [{ kind: 'DOORS', count: 2, hingeSide: 'LEFT' }]);
++  const geo = geoOf(cab);
++  assert.equal(geo.boxes.filter((b) => b.key.startsWith('vpart-')).length, 1, 'door 1 hangs on its left edge, which is in the middle of the cabinet: a board is cut there');
++  assert.deepEqual(geo.facades.map((f) => f.hinge), ['LEFT', 'LEFT']);
++});
++
++test('hinge boards: doors too narrow for the boards are reported, not drawn through the sides', () => {
++  // five doors in a 60 mm column: the two hinge boards do not fit between the column's walls
++  const cab = make('BASE_UNIT', 300, 870, 600, [{ kind: 'DOORS', count: 5, split: { mainSide: 'RIGHT', mainWidthMm: 60, fill: 'PANEL' } }]);
++  const pr = E.priceCabinet(cab, WOODS, HW, ROLLS);
++  assert.ok(pr.issues.some((i) => i.code === 'DOORS_TOO_NARROW'));
++  assert.equal(geoOf(cab).boxes.filter((b) => b.key.startsWith('vpart-')).length, 0);
++});
++
++test('hinge boards: the doors of a split column hang on boards too', () => {
++  const cab = make('BASE_UNIT', 1000, 870, 600, [{ kind: 'DOORS', count: 3, shelves: 1, split: { mainSide: 'LEFT', mainWidthMm: 700, fill: 'PULL_OUT' } }]);
++  const geo = geoOf(cab);
++  const boards = geo.boxes.filter((b) => b.kind === 'side' || b.kind === 'vdivider').map(box);
++  geo.facades.filter((f) => f.motion === 'SWING').forEach((f) => {
++    const hx = f.hinge === 'LEFT' ? f.xMm : f.xMm + f.widthMm;
++    assert.ok(boards.some((b) => hx >= b.x0 - 0.5 && hx <= b.x1 + 0.5), `door ${f.index} hinge at ${hx}`);
++  });
++});
++
++test('L corner: the two doors never go through each other, and each keeps a millimetre off the other', () => {
++  for (const category of ['BASE_UNIT', 'WALL_UNIT']) for (const wall of ['B', 'C']) for (const [armA, armB] of [[300, 300], [600, 600], [700, 400], [450, 700]]) {
++    const depthMm = category === 'WALL_UNIT' ? 350 : 600;
++    const draft = P.resolveDraft(P.draftFromPreset(category === 'WALL_UNIT' ? 'L_Corner_Wall' : 'L_Corner_Base'), WOODS, HW, ROLLS);
++    let k = 0;
++    const cabs = lCornerCabinets({ category, wall, roomWidthMm: 3600, depthMm, armAMm: armA, armBMm: armB }, { draft, woods: WOODS, hardware: HW, edgeRolls: ROLLS, groupId: 'g', newId: () => 'k' + k++, name: 'L' })
++      .map((c) => ({ ...c, carcaseThickness: 18, frontThickness: 18, calculatedCostDA: 0 }));
++    const doors = [];
++    cabs.forEach((c) => {
++      const run = c.run ?? 'A';
++      const fc = toFrame(c, run);
++      assemblyGeometry(c, { carcaseTh: 18, frontTh: 18, lift: false, inset: false }).facades.forEach((f) => {
++        const F = fbox(f);
++        const x0 = F.x0 + fc.positionX, x1 = F.x1 + fc.positionX, z0 = F.z0 + c.depth / 2 - c.positionZ, z1 = F.z1 + c.depth / 2 - c.positionZ;
++        const w = run === 'A' ? { x0, x1, z0, z1 } : run === 'B' ? { x0: z0, x1: z1, z0: -x1, z1: -x0 } : { x0: 3600 - z1, x1: 3600 - z0, z0: x0, z1: x1 };
++        doors.push({ run, ...w, y0: F.y0, y1: F.y1 });
++      });
++    });
++    assert.equal(doors.length, 2, 'the square has no door: one door per arm');
++    const [a, b] = doors;
++    const ox = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0), oz = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
++    assert.ok(!(ox > 0 && oz > 0), `${category} wall ${wall} arms ${armA}/${armB}: the doors overlap ${ox} x ${oz} mm at the corner`);
++    // the arm along the side wall is the one that stops short: one front thickness + 1 mm, then its normal 0.5 mm reveal on the other end
++    const armBBox = cabs.find((c) => c.name.includes('ARM_B') || c.frontSetbackSides);
++    assert.ok(armBBox.frontSetbackSides?.length === 1, 'only the arm along the side wall carries the setback');
++    const armBDoor = assemblyGeometry(armBBox, { carcaseTh: 18, frontTh: 18, lift: false, inset: false }).facades[0];
++    assert.equal(armBDoor.widthMm, armB - 19 - 0.5, 'its door is 19 mm shorter at the corner end');
++  }
++});
++
++test('inset hinges: no front goes through a board, the reveal is 2 mm, and the cutting list uses the same fronts as the drawing', () => {
++  const stacks = [
++    [{ kind: 'DOORS', count: 1 }], [{ kind: 'DOORS', count: 2, shelves: 2 }], [{ kind: 'DOORS', count: 3, shelves: 1 }], [{ kind: 'DOORS', count: 5 }],
++    [{ kind: 'DRAWERS', count: 3 }], [{ kind: 'APRON', heightMm: 120 }, { kind: 'DOORS', count: 2 }], [{ kind: 'DRAWERS', count: 2, heightMm: 300 }, { kind: 'DOORS', count: 4, shelves: 1 }],
++    [{ kind: 'DOORS', count: 3, split: { mainSide: 'RIGHT', mainWidthMm: 500, fill: 'DOOR' } }],
++  ];
++  for (const zones of stacks) for (const width of [600, 900, 1200]) for (const openingMode of ['HANDLE', 'GOLA']) {
++    const cab = make('BASE_UNIT', width, 870, 600, zones, { openingMode }, HW_INSET);
++    const geo = geoOf(cab, HW_INSET);
++    assert.equal(optsOf(cab, HW_INSET).inset, zones.some((z) => z.kind === 'DOORS'), 'inset fronts follow the inset hinge (a drawers-only cabinet has no hinge)');
++    const boards = geo.boxes.filter((b) => b.kind !== 'back').map((b) => ({ key: b.key, ...box(b) }));
++    geo.facades.forEach((f) => boards.forEach((b) => assert.ok(!overlap(fbox(f), b), `${facadeKey(f)} goes through ${b.key} (${width}, ${JSON.stringify(zones)})`)));
++    const sideL = boards.find((b) => b.key === 'side-left'), sideR = boards.find((b) => b.key === 'side-right');
++    if (optsOf(cab, HW_INSET).inset) geo.facades.forEach((f) => assert.ok(f.xMm >= sideL.x1 + 2 - 1e-6 && f.xMm + f.widthMm <= sideR.x0 - 2 + 1e-6, `${facadeKey(f)} keeps its 2 mm reveal to the sides`));
++    const pr = E.priceCabinet(cab, WOODS, HW_INSET, ROLLS);
++    assert.deepEqual(pr.model.plan.facades.map((f) => [f.xMm, f.yMm, f.widthMm, f.heightMm]), geo.facades.map((f) => [f.xMm, f.yMm, f.widthMm, f.heightMm]), 'BOM and drawing read one plan');
++    // a Gola profile is an overlay profile: with inset fronts it is dropped (and the engine says so) wherever overlay fronts would have had one
++    const overlayHadChannels = Z.planFronts(cab, Z.layoutZones(cab, 18)).channels.length > 0;
++    assert.equal(pr.issues.some((i) => i.code === 'GOLA_NOT_WITH_INSET'), optsOf(cab, HW_INSET).inset && overlayHadChannels);
++    if (optsOf(cab, HW_INSET).inset) assert.equal(pr.model.plan.channels.length, 0);
++  }
++});
++
++test('overhead lift: only the top, only doors zone gets one, and its kit touches the board it hangs on', () => {
++  // single doors zone: the lift is picked and the kit sits right under the roof
++  const one = make('WALL_UNIT', 600, 720, 350, [{ kind: 'DOORS', count: 1 }], { preferLift: true });
++  assert.ok(E.isLiftItem(E.pickFrontHardware(one, 'DOORS', HW)));
++  const geoOne = geoOf(one);
++  const roof = geoOne.boxes.find((b) => b.key === 'roof');
++  const kit = buildFasteners(geoOne, one, { carcaseTh: 18, frontTh: 18 }).find((x) => x.kind === 'LIFT_KIT');
++  assert.equal(kit.parent, 'roof');
++  assert.ok(Math.abs(kit.centerMm[1] + kit.sizeMm[1] / 2 - box(roof).y0) < 0.5, 'the kit is flush under the roof, not hanging in the air');
++  // two door zones: a lift would sweep through the zone above, so the draft takes hinges instead
++  const two = make('WALL_UNIT', 600, 900, 350, [{ kind: 'DOORS', count: 1, heightMm: 300 }, { kind: 'DOORS', count: 1 }], { preferLift: true });
++  assert.ok(!E.isLiftItem(E.pickFrontHardware(two, 'DOORS', HW)), 'two door zones: hinges');
++  assert.ok(geoOf(two).facades.every((f) => f.motion === 'SWING'));
++  // a lift under another zone that was forced by hand is an error, and the zone helper says why
++  const forced = { ...two, frontConfig: { ...two.frontConfig, hardwareItemId: 'lift' } };
++  assert.ok(E.priceCabinet(forced, WOODS, HW, ROLLS).issues.some((i) => i.code === 'LIFT_ZONE_NOT_TOP' && i.severity === 'error'));
++  // a small filler door beside an appliance is a door too: it would be a second lift zone
++  const filler = make('WALL_UNIT', 800, 900, 350, [{ kind: 'APPLIANCE', appliance: 'OVEN', heightMm: 600, split: { mainSide: 'LEFT', fill: 'DOOR' } }, { kind: 'DOORS', count: 2 }], { preferLift: true });
++  assert.ok(!E.isLiftItem(E.pickFrontHardware(filler, 'DOORS', HW)), 'a filler door below the doors zone: hinges');
++  // an apron under a single doors zone is fine: the doors zone is still the top one
++  const apron = make('WALL_UNIT', 600, 900, 350, [{ kind: 'APRON', heightMm: 120 }, { kind: 'DOORS', count: 1 }], { preferLift: true });
++  assert.ok(E.isLiftItem(E.pickFrontHardware(apron, 'DOORS', HW)));
++});
++
++test('hinge helpers: edges, sides and the boards they need', () => {
++  assert.deepEqual(Z.hingeSidesOf(4), ['LEFT', 'RIGHT', 'LEFT', 'RIGHT']);
++  assert.deepEqual(Z.hingeSidesOf(2, 'RIGHT'), ['RIGHT', 'RIGHT']);
++  assert.deepEqual(Z.hingeEdgesOf(3, Z.hingeSidesOf(3)), [2]);
++  assert.deepEqual(Z.hingeEdgesOf(6, Z.hingeSidesOf(6)), [2, 4]);
++  assert.deepEqual(Z.hingeEdgesOf(2, Z.hingeSidesOf(2, 'LEFT')), [1]);
++  assert.deepEqual(Z.doorEdgesOf(3, 900), [0, 300, 600, 900]);
++  const row = Z.insetRowOf(3, [2], 18, 882, 18, 2); // 3 inset doors, a board before the third
++  assert.equal(row.doors.length, 3);
++  assert.equal(row.boards.length, 1);
++  assert.ok(row.doors[2].xMm >= row.boards[0].xLoMm + 18 + 2 - 1e-6 && row.doors[1].xMm + row.doors[1].widthMm <= row.boards[0].xLoMm - 2 + 1e-6, 'doors keep 2 mm off the board on both sides');
++});
