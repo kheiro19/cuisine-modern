@@ -61,6 +61,35 @@ export const EDGE = {
   WASTE_FACTOR: 1,
 } as const;
 
+/** Legs, plinth board and wooden frame under a floor unit (math/base.ts). All millimetres. */
+export const BASE = {
+  HEIGHT_MM: [40, 200] as [number, number],
+  DEFAULT_HEIGHT_MM: 100,
+  /** The body above the base never gets thinner than this: a base cannot eat the cabinet. */
+  MIN_BODY_MM: 100,
+  FRONT_SETBACK_MM: [0, 150] as [number, number],
+  DEFAULT_PLINTH_SETBACK_MM: 50,
+  BACK_SETBACK_MM: [0, 100] as [number, number],
+  DEFAULT_WOOD_BACK_SETBACK_MM: 20,
+  /** Legs: automatic count, the width above which it becomes the second one, and the range the user may ask for. */
+  LEGS_AUTO: 4,
+  LEGS_AUTO_WIDE: 6,
+  LEGS_WIDE_ABOVE_MM: 900,
+  LEGS_RANGE: [2, 12] as [number, number],
+  LEG_DIAMETER_MM: 40,
+  LEG_EDGE_INSET_MM: 60,
+  /** Distance of the legs from the front / back faces (the front ones sit behind a plinth board). */
+  LEG_DEPTH_INSET_MM: 50,
+  /** A plinth board stops this far above the floor (the rubber seal closes it). */
+  PLINTH_FLOOR_GAP_MM: 3,
+  PVC_THICKNESS_MM: 16,
+  PVC_KEYWORD: 'Plinth',
+  /** Cross supports inside a wooden frame: one every this many mm of width. */
+  WOOD_SUPPORT_STEP_MM: 600,
+  /** What the depth keeps for the frame at least. */
+  MIN_RING_DEPTH_MM: 150,
+} as const;
+
 export const HARDWARE_RULES = {
   LEGS_PER_BASE_UNIT: 4,
   HANGERS_PER_WALL_UNIT: 2,

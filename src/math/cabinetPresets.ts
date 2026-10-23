@@ -5,6 +5,7 @@
 import {
   ApplianceKind,
   CabinetCategory,
+  CabinetBase,
   CabinetObject,
   CabinetZone,
   EdgeBandRoll,
@@ -62,11 +63,27 @@ export interface CabinetDraft {
   drawerHardwareItemId: string;
   /** A template may ask for an overhead lift instead of hinges when none is picked (the old lift-up unit). Missing = hinges. */
   preferLift?: boolean;
+  /** What a floor unit stands on (math/base.ts). Missing = a legacy cabinet: nothing drawn, 4 legs counted as before. */
+  base?: CabinetBase;
+}
+
+/** The base as the form keeps it: a known type, numbers as whole millimetres. The limits themselves are applied by math/base.ts. */
+function normalizeBase(b: CabinetBase | undefined): CabinetBase | undefined {
+  if (!b || !['NONE', 'LEGS', 'PLINTH', 'WOOD'].includes(b.type)) return undefined;
+  const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : undefined);
+  const out: CabinetBase = { type: b.type };
+  const h = num(b.heightMm), f = num(b.frontSetbackMm), k = num(b.backSetbackMm), n = num(b.legCount);
+  if (h !== undefined) out.heightMm = h;
+  if (f !== undefined) out.frontSetbackMm = f;
+  if (k !== undefined) out.backSetbackMm = k;
+  if (n !== undefined && n > 0) out.legCount = n;
+  if (b.plinthMaterial === 'BOARD' || b.plinthMaterial === 'PVC') out.plinthMaterial = b.plinthMaterial;
+  return out;
 }
 
 export function draftFromPreset(
   subtype: CabinetSubtype,
-  keep?: Partial<Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId' | 'carcaseEdgeRollId' | 'frontEdgeRollId'>>,
+  keep?: Partial<Pick<CabinetDraft, 'carcaseMaterialId' | 'frontMaterialId' | 'carcaseEdgeRollId' | 'frontEdgeRollId' | 'base'>>,
 ): CabinetDraft {
   const p = SUBTYPE_PRESETS[subtype];
   return {
@@ -87,6 +104,8 @@ export function draftFromPreset(
     hardwareItemId: '', // re-picked automatically for the kind of fronts
     drawerHardwareItemId: '',
     ...(p.preferLift ? { preferLift: true } : {}),
+    // A floor unit stands on adjustable legs (100 mm) unless the user chooses otherwise; a wall unit hangs.
+    ...(p.category === 'BASE_UNIT' ? { base: keep?.base ?? { type: 'LEGS' as const } } : {}), // the base chosen so far survives a change of template
   };
 }
 
@@ -222,6 +241,7 @@ export function resolveDraft(
       ?? doorOptions[0])?.id ?? '';
   d.drawerHardwareItemId = !needs.drawers ? '' : (drawerOptions.find((h) => h.id === d.drawerHardwareItemId) ?? drawerOptions[0])?.id ?? '';
   d.frontStyle = needs.doors && d.frontStyle === 'GLASS' ? 'GLASS' : 'SOLID';
+  d.base = d.category === 'BASE_UNIT' ? normalizeBase(raw.base) : undefined; // only a floor unit has a base
 
   const fallback = defaultSheet(woods)?.id ?? '';
   d.carcaseMaterialId = woods.some((m) => m.id === d.carcaseMaterialId) ? d.carcaseMaterialId : fallback;
@@ -283,6 +303,7 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     openingMode: d.openingMode,
     dividerBoards: d.dividerBoards === 2 ? 2 : undefined,
     frontStyle: d.frontStyle,
+    ...(d.base ? { base: { ...d.base } } : {}),
   };
 }
 
@@ -316,6 +337,7 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     frontEdgeRollId: c.frontEdgeRollId ?? '',
     hardwareItemId: hasDoors ? c.frontConfig.hardwareItemId : '',
     drawerHardwareItemId: hasDrawers ? c.frontConfig.drawerHardwareItemId ?? (hasDoors ? '' : c.frontConfig.hardwareItemId) : '',
+    ...(c.base ? { base: { ...c.base } } : {}),
   };
 }
 

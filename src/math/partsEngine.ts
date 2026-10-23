@@ -14,7 +14,7 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
 } from '../types/flatma';
-import { EDGE, FASTENER_STOCK, PANEL } from './constants';
+import { BASE, EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
 import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
@@ -23,6 +23,7 @@ import { frontHardwareNeeds, shelfSpansOf } from './columns';
 import { hingesPerDoor } from './hinges';
 import { assemblyGeometry } from './assemblyGeometry';
 import { carcaseSidesOf } from './carcaseSides';
+import { baseHardwareOf, basePartsOf, bodyView } from './base';
 import { buildFasteners, fastenerCounts } from './fasteners';
 
 export type PartRole = 'carcase' | 'back' | 'front';
@@ -58,6 +59,7 @@ export interface CabinetIssue {
     | 'NO_GOLA_ITEM'
     | 'NO_PUSH_ITEM'
     | 'NO_LEGS_IN_STOCK'
+    | 'NO_PLINTH_IN_STOCK'
     | 'NO_HANGERS_IN_STOCK'
     | 'BACK_PRICED_AS_CARCASE'
     | 'ZONES_TOO_TALL'
@@ -111,7 +113,8 @@ export interface CabinetModel {
 }
 
 /** Layout + fronts + the list of parts, from the cabinet and the two board thicknesses. Pure geometry. */
-export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean } = {}): CabinetModel {
+export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean } = {}): CabinetModel {
+  const cab = bodyView(cabIn); // the body above the base (math/base.ts): the boards are cut for it, the base is cut apart below
   const zones = zonesOf(cab);
   const layout = layoutZones(cab, carcaseTh, { inset: opts.inset });
   const plan = planFronts(cab, layout, { inset: opts.inset, frontThMm: frontTh });
@@ -194,17 +197,21 @@ export function modelCabinet(cab: CabinetObject, carcaseTh: number, frontTh: num
     parts.push({ partType: `Drawer Box Bottom (HDF)${tag}`, role: 'back', thicknessMm: b.bottomThMm, widthMm: b.outerWidthMm, lengthMm: b.depthMm, quantity: n, grain: 'horizontal', edge: 'NONE' });
   });
 
+  // The base: the wooden frame, or a plinth board cut from the same sheet (a PVC plinth is hardware, see hardwareRequirements).
+  basePartsOf(cabIn, carcaseTh).forEach((p) => parts.push(carcase(p.partType, p.widthMm, p.lengthMm, p.quantity, 'vertical', p.partType === 'Plinth Board' ? 'ALL' : 'NONE')));
+
   return { layout, plan, parts };
 }
 
 // ---------------------------------------------------------------------------------------------- hardware
 
 export function hardwareRequirements(
-  cab: CabinetObject,
+  cabIn: CabinetObject,
   items: InjectedHardwareItem[],
   plan?: FrontPlan,
   dims?: { carcaseTh: number; frontTh: number },
 ): HardwareRequirement[] {
+  const cab = bodyView(cabIn); // fronts, connectors and runners belong to the body; the legs and the plinth to the base (below)
   const th = dims?.carcaseTh ?? (cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM);
   const fTh = dims?.frontTh ?? (cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
   const doorHwForPlan = pickFrontHardware(cab, 'DOORS', items);
@@ -253,9 +260,15 @@ export function hardwareRequirements(
   const counts = fastenerCounts(buildFasteners(geo, cab, { carcaseTh: th, frontTh: fTh }));
   FASTENER_STOCK.forEach((rule) => add(items.find((h) => h.modelType.includes(rule.keyword)), counts[rule.kind], 'Assembly Fixings'));
 
-  // Legs (base) or hanger plates (wall): rules/construction.ts.
+  // Legs (base) or hanger plates (wall): rules/construction.ts. A floor unit with a base of its own (math/base.ts) takes the legs that base
+  // asks for (none under a wooden frame or on the floor) and, for a PVC plinth, one board; a legacy cabinet keeps its 4 legs.
   const fixing = constructionOf(cab.category).fixing;
-  add(items.find((h) => h.modelType.includes(fixing.keyword)), fixing.perUnit, fixing.group);
+  const bh = baseHardwareOf(cabIn);
+  if (cab.category !== 'BASE_UNIT' || bh.legacy) add(items.find((h) => h.modelType.includes(fixing.keyword)), fixing.perUnit, fixing.group);
+  else {
+    add(items.find((h) => h.modelType.includes(fixing.keyword)), bh.legs, fixing.group);
+    if (bh.pvcPlinth) add(items.find((h) => h.modelType.includes(BASE.PVC_KEYWORD)), 1, fixing.group);
+  }
   return out;
 }
 
@@ -416,7 +429,10 @@ export function priceCabinet(
 
   const requirements = hardwareRequirements(cab, hardwareItems, model.plan, { carcaseTh, frontTh });
   const fixing = constructionOf(cab.category).fixing;
-  if (!requirements.some((r) => r.group === fixing.group)) issues.push({ code: fixing.missingCode, severity: 'warning', message: `No "${fixing.keyword}" item in stock — ${fixing.noun} are not priced` });
+  const baseHw = baseHardwareOf(cab);
+  const needsFixing = cab.category !== 'BASE_UNIT' || baseHw.legacy || baseHw.legs > 0; // a wooden frame or the floor needs no legs
+  if (needsFixing && !requirements.some((r) => r.item.modelType.includes(fixing.keyword))) issues.push({ code: fixing.missingCode, severity: 'warning', message: `No "${fixing.keyword}" item in stock — ${fixing.noun} are not priced` });
+  if (baseHw.pvcPlinth && !hardwareItems.some((h) => h.modelType.includes(BASE.PVC_KEYWORD))) issues.push({ code: 'NO_PLINTH_IN_STOCK', severity: 'warning', message: `Cabinet "${name}": no "${BASE.PVC_KEYWORD}" board in stock — the PVC plinth is not priced (or choose a plinth cut from the sheet)` });
   const hardware: PricedHardware[] = requirements.map((r) => ({ ...r, totalCostDA: Math.round(r.quantity * r.item.pricePerUnitDA) }));
 
   const appliances: ApplianceNote[] = zones.flatMap((z) => {

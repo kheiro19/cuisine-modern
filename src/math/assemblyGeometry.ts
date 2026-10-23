@@ -11,6 +11,7 @@ import { DrawerBoardGeo, drawerBoxBoards, runnerLengthMm } from './drawerBox';
 import { APPLIANCES, Facade, GolaChannel, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { frontStripOf, shelfSpansOf } from './columns';
 import { carcaseSidesOf } from './carcaseSides';
+import { BaseBox, baseBoxes, bodyView } from './base';
 
 export interface BoxGeo {
   key: string;
@@ -62,6 +63,8 @@ export interface AssemblyGeometry {
   facades: FacadeGeo[];
   channels: GolaChannel[];
   appliances: ApplianceGeo[];
+  /** The legs, plinth board or wooden frame under the body, in floor coordinates (math/base.ts). Empty when the cabinet has no base. */
+  base: BaseBox[];
 }
 
 export const facadeKey = (f: Pick<Facade, 'zoneIndex' | 'kind' | 'index' | 'column'>): string =>
@@ -77,8 +80,10 @@ export interface AssemblyOptions {
   inset: boolean;
 }
 
-export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): AssemblyGeometry {
+export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): AssemblyGeometry {
   const { carcaseTh: th, frontTh } = o;
+  // Everything below is the BODY of the cabinet (y from 0 = its bottom board); the base is returned apart, in floor coordinates (math/base.ts).
+  const cab = bodyView(cabIn);
   const W = cab.width, H = cab.height, D = cab.depth;
   const sides = carcaseSidesOf(cab, th);
   const inner = sides.innerMm;
@@ -197,5 +202,5 @@ export function assemblyGeometry(cab: CabinetObject, o: AssemblyOptions): Assemb
     appliances.push(geo);
   });
 
-  return { boxes, facades, channels: plan.channels, appliances };
+  return { boxes, facades, channels: plan.channels, appliances, base: baseBoxes(cabIn, th) };
 }

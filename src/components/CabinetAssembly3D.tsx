@@ -12,6 +12,7 @@ import { facadeMaterialSignature, materialKeyOf, parseMaterialKey } from '../mat
 import { useDisposeMaterials } from './useDisposeMaterials';
 import { ApplianceGeo, AssemblyGeometry, FacadeGeo, applianceKey, assemblyGeometry, facadeKey } from '../math/assemblyGeometry';
 import { FastenerKind, buildFasteners, explodeOffsets } from '../math/fasteners';
+import { baseOf, bodyView } from '../math/base';
 import { isGlassFront, isLiftItem, pickFrontHardware } from '../math/partsEngine';
 import { applianceLookOf } from '../math/applianceModels';
 import { modelPrims } from '../math/accessoryModels';
@@ -63,6 +64,10 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   const frontMat = useMemo(() => woodPanels.find((x) => x.id === cabinet.frontMaterialId), [woodPanels, cabinet.frontMaterialId]);
   const doorHardware = useMemo(() => pickFrontHardware(cabinet, 'DOORS', hardwareItems), [cabinet, hardwareItems]);
 
+  // The body stands on its base (legs, plinth, wooden frame): the body is drawn `shift` above the floor, the base from the floor up.
+  const base = useMemo(() => baseOf(cabinet), [cabinet]);
+  const body = useMemo(() => bodyView(cabinet), [cabinet]);
+  const shift = base.heightMm / 1000;
   const th = carcaseMat ? carcaseMat.thickness : cabinet.carcaseThickness || 18;
   const fTh = frontMat ? frontMat.thickness : cabinet.frontThickness || 18;
   const lift = isLiftItem(doorHardware);
@@ -75,16 +80,16 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
 
   // Ghost = see-through boards with outlines: X-ray, or whenever the fasteners are shown (they sit inside the boards).
   const ghost = isXRayMode || showFasteners;
-  const offsets = useMemo(() => explodeOffsets(geo, cabinet, explode), [geo, cabinet, explode]);
-  const fasteners = useMemo(() => (showFasteners ? buildFasteners(geo, cabinet, { carcaseTh: th, frontTh: fTh }) : []), [showFasteners, geo, cabinet, th, fTh]);
+  const offsets = useMemo(() => explodeOffsets(geo, body, explode), [geo, body, explode]);
+  const fasteners = useMemo(() => (showFasteners ? buildFasteners(geo, body, { carcaseTh: th, frontTh: fTh }) : []), [showFasteners, geo, body, th, fTh]);
   const off = (key: string): [number, number, number] => {
     const o = offsets[key] ?? [0, 0, 0];
     return [m(o[0]), m(o[1]), m(o[2])];
   };
 
   const sideMaterial = useMemo(
-    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.depth, cabinet.height, ghost, '#E2E8F0', 'vertical'),
-    [carcaseMat, cabinet.depth, cabinet.height, ghost],
+    () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.depth, body.height, ghost, '#E2E8F0', 'vertical'),
+    [carcaseMat, cabinet.depth, body.height, ghost],
   );
   const boardMaterial = useMemo(
     () => TextureEngine.compileProceduralMaterial(carcaseMat, cabinet.width, cabinet.depth, ghost, '#E2E8F0', 'horizontal'),
@@ -283,6 +288,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
 
   return (
     <group>
+      <group position={[0, shift, 0]}>
       {geo.boxes.map((b) => {
         const o = off(b.key);
         const position: [number, number, number] = [m(b.centerMm[0]) + o[0], m(b.centerMm[1]) + o[1], m(b.centerMm[2]) + o[2]];
@@ -332,6 +338,29 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
           <mesh key={`fastener-${i}`} position={position}>
             <boxGeometry args={[m(f.sizeMm[0]), m(f.sizeMm[1]), m(f.sizeMm[2])]} />
             <meshStandardMaterial color={st.color} metalness={st.metalness} roughness={st.roughness} />
+          </mesh>
+        );
+      })}
+      </group>
+
+      {/* The base, from the floor up: legs, the plinth board, or the boards of the wooden frame (math/base.ts) */}
+      {geo.base.map((b) => {
+        const position: [number, number, number] = [m(b.centerMm[0]), m(b.centerMm[1]), m(b.centerMm[2])];
+        const size: [number, number, number] = [m(b.sizeMm[0]), m(b.sizeMm[1]), m(b.sizeMm[2])];
+        if (b.kind === 'leg') {
+          return (
+            <mesh key={b.key} position={position} castShadow userData={{ partKey: b.key }}>
+              <cylinderGeometry args={[size[0] / 2, size[0] / 2, size[1], 18]} />
+              <meshStandardMaterial color="#9CA3AF" metalness={0.65} roughness={0.35} transparent={ghost} opacity={ghost ? 0.4 : 1.0} />
+            </mesh>
+          );
+        }
+        const pvc = b.kind === 'plinth' && base.plinthMaterial === 'PVC';
+        return (
+          <mesh key={b.key} position={position} castShadow receiveShadow material={pvc ? undefined : boardMaterial} userData={{ partKey: b.key }}>
+            <boxGeometry args={size} />
+            {pvc && <meshStandardMaterial color="#374151" roughness={0.6} transparent={ghost} opacity={ghost ? 0.4 : 1.0} />}
+            {ghost && <Edges threshold={15} color="#475569" />}
           </mesh>
         );
       })}

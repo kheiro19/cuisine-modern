@@ -32,7 +32,9 @@ import { L_CORNER_LIMITS, lCornerCabinets, lCornerSpan } from './math/lCorner';
 import { LIMITS, PANEL } from './math/constants';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { clampInt, uid } from './math/utils';
-import { ApplianceKind, CabinetCategory, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, RunId, ZoneKind } from './types/flatma';
+import { BASE_TYPE_LABELS, baseOf } from './math/base';
+import { BASE } from './math/constants';
+import { ApplianceKind, BaseType, CabinetBase, CabinetCategory, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, RunId, ZoneKind } from './types/flatma';
 import { APPLIANCES, ZONE_LABELS, hingeSidesOf, isOpenCarcase, sharedHingeEdgesOf, zonesOf } from './math/zones';
 import { OPEN_BAY_APPLIANCES } from './rules/appliances';
 import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
@@ -183,11 +185,15 @@ export default function App() {
   const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
 
   const patchDraft = (fields: Partial<CabinetDraft>) => setDraft((prev) => ({ ...prev, ...fields }));
+  // ---- the base under a floor unit: legs / plinth / wooden frame (math/base.ts) ----------------------------------------------
+  const setBase = (fields: Partial<CabinetBase>) => setDraft((prev) => ({ ...prev, base: { ...(prev.base ?? { type: 'NONE' as BaseType }), ...fields } }));
+  const setBaseType = (v: string) => setDraft((prev) => ({ ...prev, base: v === 'LEGACY' ? undefined : { ...(prev.base ?? {}), type: v as BaseType } }));
+  const numOrUndef = (v: string): number | undefined => (v.trim() === '' || !Number.isFinite(Number(v)) ? undefined : Number(v));
   const normalizeDraft = () => setDraft((prev) => resolveDraft(prev, woods, hardwareItems, edgeRolls));
 
   const handleSubtypeChange = (subtype: CabinetSubtype) =>
     setDraft((prev) =>
-      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId }),
+      draftFromPreset(subtype, { carcaseMaterialId: prev.carcaseMaterialId, frontMaterialId: prev.frontMaterialId, carcaseEdgeRollId: prev.carcaseEdgeRollId, frontEdgeRollId: prev.frontEdgeRollId, base: prev.base }),
     );
 
   // The three families (rules/families.ts): switching family loads that family's first ready template.
@@ -212,6 +218,13 @@ export default function App() {
   const canSave = woods.length > 0;
   // A design ERROR (zones taller than the cabinet...) would draw fronts outside the carcase and cut parts that do not fit.
   const blockingIssues = designIssues.filter((i) => i.severity === 'error');
+  const baseNow = useMemo(() => baseOf(previewCabinet), [previewCabinet]); // what the chosen base really is (limits, defaults, ignored)
+  const applyBaseToAll = () => {
+    const ids = cabinets.filter((c) => c.category === 'BASE_UNIT').map((c) => c.id);
+    if (ids.length === 0 || !resolved.base) return;
+    if (!window.confirm(`تطبيق هذه القاعدة على كل الخزائن السفلية (${ids.length})؟`)) return;
+    updateManyCabinets(ids, { base: { ...resolved.base } });
+  };
   const canInject = canSave && blockingIssues.length === 0;
   // A corner needs a wall that forms it (L or U layout) and no corner of this level already on that wall.
   const canAddNow = canInject && (!isCornerBuilder || (!!cornerWall && !cornerTaken(cornerWall)));
@@ -596,6 +609,62 @@ export default function App() {
               <div>D:<input type="number" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
             </div>
             </div>
+
+            {/* القاعدة: أرجل أو وزرة أو قاعدة خشبية تحت الخزانة السفلية. الارتفاع الكلي ثابت: القاعدة تُؤخذ منه */}
+            {resolved.category === 'BASE_UNIT' && (
+              <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
+                <div className="flex items-center justify-between gap-1">
+                  <span className="font-bold text-[10px]">🦶 القاعدة (الأرجل / الوزرة / قاعدة خشبية)</span>
+                  <select value={draft.base?.type ?? 'LEGACY'} onChange={(e) => setBaseType(e.target.value)} className="border bg-white rounded p-0.5 text-[11px]">
+                    {!draft.base && <option value="LEGACY">كما كانت (4 أرجل بلا رسم)</option>}
+                    {(['NONE', 'LEGS', 'PLINTH', 'WOOD'] as BaseType[]).map((t) => (<option key={t} value={t}>{BASE_TYPE_LABELS[t]}</option>))}
+                  </select>
+                </div>
+                {draft.base && draft.base.type !== 'NONE' && (
+                  <div className="grid grid-cols-2 gap-1 text-[10px]">
+                    <label className="flex items-center justify-between gap-1"><span>ارتفاع القاعدة (مم)</span>
+                      <input type="number" min={BASE.HEIGHT_MM[0]} max={BASE.HEIGHT_MM[1]} step={10} value={draft.base.heightMm ?? ''} placeholder={String(baseNow.heightMm || BASE.DEFAULT_HEIGHT_MM)}
+                        onChange={(e) => setBase({ heightMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                    {(draft.base.type === 'LEGS' || draft.base.type === 'PLINTH') && (
+                      <label className="flex items-center justify-between gap-1"><span>عدد الأرجل</span>
+                        <select value={draft.base.legCount ?? 0} onChange={(e) => setBase({ legCount: Number(e.target.value) || undefined })} className="border bg-white rounded p-0.5 text-[11px]">
+                          <option value={0}>{`تلقائي (${baseNow.legCountAuto ? baseNow.legCount : resolved.width > BASE.LEGS_WIDE_ABOVE_MM ? BASE.LEGS_AUTO_WIDE : BASE.LEGS_AUTO})`}</option>
+                          {Array.from({ length: BASE.LEGS_RANGE[1] - BASE.LEGS_RANGE[0] + 1 }, (_, k) => BASE.LEGS_RANGE[0] + k).map((n) => (<option key={n} value={n}>{n}</option>))}
+                        </select></label>
+                    )}
+                    {(draft.base.type === 'PLINTH' || draft.base.type === 'WOOD') && (
+                      <label className="flex items-center justify-between gap-1"><span>ارتداد الأمام (مم)</span>
+                        <input type="number" min={BASE.FRONT_SETBACK_MM[0]} max={BASE.FRONT_SETBACK_MM[1]} step={5} value={draft.base.frontSetbackMm ?? ''} placeholder={String(baseNow.frontSetbackMm || BASE.DEFAULT_PLINTH_SETBACK_MM)}
+                          onChange={(e) => setBase({ frontSetbackMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                    )}
+                    {draft.base.type === 'WOOD' && (
+                      <label className="flex items-center justify-between gap-1"><span>ارتداد الخلف (مم)</span>
+                        <input type="number" min={BASE.BACK_SETBACK_MM[0]} max={BASE.BACK_SETBACK_MM[1]} step={5} value={draft.base.backSetbackMm ?? ''} placeholder={String(BASE.DEFAULT_WOOD_BACK_SETBACK_MM)}
+                          onChange={(e) => setBase({ backSetbackMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
+                    )}
+                    {draft.base.type === 'PLINTH' && (
+                      <label className="col-span-2 flex items-center justify-between gap-1"><span>مادة الوزرة</span>
+                        <select value={draft.base.plinthMaterial ?? 'PVC'} onChange={(e) => setBase({ plinthMaterial: e.target.value as 'PVC' | 'BOARD' })} className="border bg-white rounded p-0.5 text-[11px]">
+                          <option value="PVC">PVC من المخزن (مع مطاط)</option>
+                          <option value="BOARD">لوح من خامة الهيكل</option>
+                        </select></label>
+                    )}
+                  </div>
+                )}
+                {draft.base && baseNow.ignored && (
+                  <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">
+                    {baseNow.ignored === 'APPLIANCE_BAY' && 'الجهاز يقف على أرجله الخاصة، فلا تُطبَّق قاعدة تحت هذه الخزانة.'}
+                    {baseNow.ignored === 'TOO_LOW' && 'الخزانة قصيرة جداً: لا تتسع لقاعدة (يبقى للجسم 10 سم على الأقل).'}
+                  </span>
+                )}
+                <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
+                  {baseNow.legacy ? `${resolved.height} mm · legacy` : `${resolved.height} mm = base ${baseNow.heightMm} + body ${resolved.height - baseNow.heightMm}`}
+                </span>
+                {cabinets.some((c) => c.category === 'BASE_UNIT') && resolved.base && (
+                  <button type="button" onClick={applyBaseToAll} title="يضع هذه القاعدة على كل الخزائن السفلية الموجودة في المطبخ" className="w-full rounded border border-slate-300 bg-white hover:bg-slate-100 text-[10px] font-bold py-0.5 cursor-pointer">⟲ تعميم على كل الخزائن السفلية</button>
+                )}
+              </div>
+            )}
 
             {/* الأقسام: كل خزانة = كومة أقسام من الأسفل للأعلى، تُعرض هنا من الأعلى للأسفل */}
             <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">

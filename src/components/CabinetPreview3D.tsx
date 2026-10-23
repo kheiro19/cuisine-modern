@@ -8,6 +8,7 @@ import CabinetAssembly3D, { DrawnGeometry } from './CabinetAssembly3D';
 import MeasureOverlay from './MeasureOverlay';
 import AuditProbe from './AuditProbe';
 import { dimensionsOf, formatMm } from '../math/dimensions';
+import { baseOf, bodyView } from '../math/base';
 import { AuditReport, expectedParts } from '../math/audit';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
@@ -45,7 +46,7 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
   const moved = explode > 0 || openProgress > 0;
   const frontsDrawn = showFronts && !!drawn && !drawn.glass; // the front sizes are measured only when the fronts are really drawn
   const dims = useMemo(
-    () => (drawn ? dimensionsOf(drawn.geo, cabinet, drawn.thicknessMm, drawn.frontThicknessMm, edges?.front.mm ?? 0).filter((d) => (d.kind !== 'FRONT_W' && d.kind !== 'FRONT_H') || (frontsDrawn && frontDims)) : []),
+    () => (drawn ? dimensionsOf(drawn.geo, bodyView(cabinet), drawn.thicknessMm, drawn.frontThicknessMm, edges?.front.mm ?? 0, baseOf(cabinet).heightMm).filter((d) => (d.kind !== 'FRONT_W' && d.kind !== 'FRONT_H') || (frontsDrawn && frontDims)) : []),
     [drawn, cabinet, frontsDrawn, frontDims, edges?.front.mm],
   );
   const expected = useMemo(
@@ -73,8 +74,11 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
             showFasteners={showFasteners}
             onGeometry={setDrawn}
           />
-          {measure && drawn && <MeasureOverlay dims={dims} showDetails={details} depthMm={cabinet.depth} />}
-          <AuditProbe runId={auditRun} expected={expected} onReport={setReport} />
+          {/* The lines and the audit are in the body's own coordinates: the body stands on its base, so they are lifted with it. */}
+          <group position={[0, baseOf(cabinet).heightMm / 1000, 0]}>
+            {measure && drawn && <MeasureOverlay dims={dims} showDetails={details} depthMm={cabinet.depth} />}
+            <AuditProbe runId={auditRun} expected={expected} onReport={setReport} />
+          </group>
         </group>
         <OrbitControls makeDefault enableDamping dampingFactor={0.05} minDistance={0.6} maxDistance={10} />
       </Canvas>

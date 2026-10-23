@@ -55,6 +55,27 @@ export interface WorkshopInventoryState {
 // ========================================================
 
 export type CabinetCategory = 'BASE_UNIT' | 'WALL_UNIT';
+
+/** What a floor unit stands on: nothing (on the floor), adjustable legs, legs + a front plinth board, or a wooden frame made in the workshop. */
+export type BaseType = 'NONE' | 'LEGS' | 'PLINTH' | 'WOOD';
+
+/**
+ * The base of a floor unit (math/base.ts). `height` of the cabinet is the FINISHED height from the floor, so a 100 mm base leaves a
+ * 770 mm body of an 870 mm unit. A cabinet without this field is a legacy one: nothing is drawn under it and 4 legs are still counted.
+ */
+export interface CabinetBase {
+  type: BaseType;
+  /** Height of the legs / plinth / wooden frame (mm). Missing = the default. */
+  heightMm?: number;
+  /** PLINTH and WOOD: how far the front board / frame is set back from the front face (mm), for the feet. */
+  frontSetbackMm?: number;
+  /** WOOD: how far the frame is set back from the wall at the back (mm), to clear the skirting. */
+  backSetbackMm?: number;
+  /** LEGS and PLINTH: number of legs. 0 or missing = automatic (4, or 6 above 900 mm wide). */
+  legCount?: number;
+  /** PLINTH: a PVC board from the stock (hardware), or a board cut from the cabinet's own sheet. */
+  plinthMaterial?: 'PVC' | 'BOARD';
+}
 /** A = back wall, B = left wall, C = right wall. */
 export type RunId = 'A' | 'B' | 'C';
 export type FrontOpeningType = 'DOORS' | 'DRAWERS' | 'NONE';
@@ -181,6 +202,8 @@ export interface CabinetObject {
   run?: RunId;
   /** Boxes made together that are ONE unit for the user (an L corner is three boxes, math/lCorner.ts). */
   groupId?: string;
+  /** What the unit stands on (legs, plinth, wooden frame). Missing = legacy, see CabinetBase. */
+  base?: CabinetBase;
   /** Sides that are not cut because the neighbouring box of the same group is open to this one (the interior of an L corner is continuous). */
   omitSides?: Array<'LEFT' | 'RIGHT'>;
   /**

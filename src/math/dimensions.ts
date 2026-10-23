@@ -7,7 +7,7 @@
 import { AssemblyGeometry, facadeKey } from './assemblyGeometry';
 import { PartBox, Vec3, gapsBetween } from './audit';
 
-export type DimensionKind = 'OPENING' | 'BOARD' | 'TOTAL' | 'WIDTH_INNER' | 'WIDTH_OUTER' | 'DEPTH' | 'GAP' | 'FRONT_W' | 'FRONT_H';
+export type DimensionKind = 'OPENING' | 'BOARD' | 'TOTAL' | 'BASE' | 'WIDTH_INNER' | 'WIDTH_OUTER' | 'DEPTH' | 'GAP' | 'FRONT_W' | 'FRONT_H';
 
 export interface DimensionLine {
   id: string;
@@ -48,7 +48,7 @@ function boardIntervals(geo: AssemblyGeometry): Array<[number, number]> {
   return merged;
 }
 
-export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height: number; depth: number }, thicknessMm: number, frontThicknessMm = thicknessMm, frontEdgeMm = 0): DimensionLine[] {
+export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height: number; depth: number }, thicknessMm: number, frontThicknessMm = thicknessMm, frontEdgeMm = 0, baseMm = 0): DimensionLine[] {
   const { width: W, height: H, depth: D } = cab;
   const front = D / 2;
   const out: DimensionLine[] = [];
@@ -68,6 +68,8 @@ export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height
     out.push({ id: `chain-${i}`, kind: c.board ? 'BOARD' : 'OPENING', a: [0, c.lo, front], b: [0, c.hi, front], offset: [-ROW, 0, 0], valueMm: len, label: formatMm(len), minor: c.board });
   });
   out.push({ id: 'total', kind: 'TOTAL', a: [0, 0, front], b: [0, H, front], offset: [-2 * ROW, 0, 0], valueMm: H, label: formatMm(H) });
+  // The legs / plinth / frame under the body (the body is measured from its own bottom; the base hangs below it).
+  if (baseMm > 0) out.push({ id: 'base', kind: 'BASE', a: [0, -baseMm, front], b: [0, 0, front], offset: [-2 * ROW, 0, 0], valueMm: baseMm, label: formatMm(baseMm) });
 
   // Bottom: the inner width, and under it the overall width.
   out.push({ id: 'width-inner', kind: 'WIDTH_INNER', a: [thicknessMm, 0, front], b: [W - thicknessMm, 0, front], offset: [0, -ROW, 0], valueMm: W - 2 * thicknessMm, label: formatMm(W - 2 * thicknessMm) });
