@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 700" width="1000" height="700" font-family="Inter, 'Segoe UI', Tahoma, Arial, sans-serif" direction="rtl">
+  <!-- Plan view of one arm of an L corner (450 wide, 600 deep, 18 mm boards), seen from above, front at the bottom.
+       Scale 0.62 px/mm. Shows the fix: (1) the box sits under its front, not centred on the whole arm; (2) the filler is an L
+       with a 100 mm return, which is what the drawer runners are fixed to and what hides the box from the open corner. -->
+  <rect width="1000" height="700" fill="#75808E"/>
+  <text x="500" y="36" text-anchor="middle" font-size="20" font-weight="700" fill="#F5F7FA">ذراع الزاوية من فوق — تصحيح موضع صندوق الدرج ورجوع الضلفة</text>
+  <text x="500" y="60" text-anchor="middle" font-size="12" fill="#E2E7EC">ذراع 450 · عمق 600 · هيكل 18 · الضلفة 19.5 · صندوق الدرج يُبنى داخل ما تغطّيه واجهته</text>
+
+  <!-- ================= BEFORE ================= -->
+  <g transform="translate(70,100)">
+    <text x="0" y="0" font-size="13" font-weight="700" fill="#F2B8AE">قبل — الصندوق موسَّط على عرض الذراع</text>
+    <!-- carcase: 450 wide = 279 px, 600 deep = 372 px, front at the bottom (y = 8+372) -->
+    <rect x="0" y="8" width="279" height="372" fill="#D9CFC2" fill-opacity="0.18" stroke="#B9AC9C" stroke-width="1.4"/>
+    <!-- right side board only (the corner side is open) -->
+    <rect x="267.8" y="8" width="11.2" height="372" fill="#B9AC9C"/>
+    <!-- bottom deck edge, light -->
+    <rect x="0" y="369" width="279" height="11" fill="#CBBBA8" opacity="0.5"/>
+
+    <!-- the drawer box, centred on 450/2 = 225: 31 … 419 -->
+    <g>
+      <rect x="19.2" y="62" width="170" height="300" fill="none" stroke="#A8D8FF" stroke-width="1.6" stroke-dasharray="7 5"/>
+      <text x="104" y="48" text-anchor="middle" font-size="9" fill="#A8D8FF">الصندوق 388 · 31 … 419</text>
+    </g>
+    <!-- the filler (19.5) -->
+    <rect x="0" y="369" width="12" height="11" fill="#9C775F" stroke="#3E2B24" stroke-width="1"/>
+    <text x="6" y="352" text-anchor="middle" font-size="8" fill="#F0E4DA" transform="rotate(-90 6 352)">19.5</text>
+    <!-- the old front -->
+    <line x1="12" y1="369" x2="279" y2="369" stroke="#5C4033" stroke-width="7"/>
+    <text x="145" y="392" text-anchor="middle" font-size="9" fill="#E2E7EC">الواجهة 430 تبدأ 19.5</text>
+    <!-- the defect: 11.5 mm of box beside the filler is seen from the open corner -->
+    <line x1="12" y1="369" x2="19.2" y2="369" stroke="#F2B8AE" stroke-width="3"/>
+    <text x="16" y="410" text-anchor="middle" font-size="8.5" font-weight="700" fill="#F2B8AE">فرق 9 مم</text>
+    <!-- no return: the gap behind the filler -->
+    <rect x="0" y="269" width="12" height="100" fill="none" stroke="#F2B8AE" stroke-width="1.2" stroke-dasharray="4 3"/>
+    <text x="46" y="300" font-size="9" fill="#F2B8AE">لا رجوع: يظهر ظهر الصندوق من الجهة المفتوحة</text>
+  </g>
+
+  <!-- ================= AFTER ================= -->
+  <g transform="translate(560,100)">
+    <text x="0" y="0" font-size="13" font-weight="700" fill="#7CD9A5">بعد — الصندوق تحت واجهته، والضلفة L برجوع</text>
+    <rect x="0" y="8" width="279" height="372" fill="#D9CFC2" fill-opacity="0.18" stroke="#B9AC9C" stroke-width="1.4"/>
+    <rect x="267.8" y="8" width="11.2" height="372" fill="#B9AC9C"/>
+    <rect x="0" y="369" width="279" height="11" fill="#CBBBA8" opacity="0.5"/>
+
+    <!-- the box now 32.5 … 419 (386.5) -->
+    <rect x="20.2" y="62" width="239.6" height="300" fill="none" stroke="#7CD9A5" stroke-width="1.6"/>
+    <text x="140" y="48" text-anchor="middle" font-size="9" fill="#7CD9A5">الصندوق 386.5 · 32.5 … 419</text>
+
+    <!-- the filler + its return (100 deep) -->
+    <rect x="0" y="369" width="12" height="11" fill="#9C775F" stroke="#3E2B24" stroke-width="1"/>
+    <rect x="0" y="307" width="12" height="62" fill="#9C775F" stroke="#3E2B24" stroke-width="1.2"/>
+    <text x="6" y="345" text-anchor="middle" font-size="7.5" fill="#F0E4DA" transform="rotate(-90 6 345)">19.5</text>
+    <text x="20" y="300" font-size="9" font-weight="700" fill="#7CD9A5">رجوع 100 مم خلف الضلفة</text>
+
+    <!-- the front -->
+    <line x1="12" y1="369" x2="279" y2="369" stroke="#5C4033" stroke-width="7"/>
+    <!-- 13 mm clearances -->
+    <line x1="12" y1="380" x2="20.2" y2="380" stroke="#A8D8FF" stroke-width="1.4"/>
+    <line x1="259.8" y1="380" x2="267.8" y2="380" stroke="#A8D8FF" stroke-width="1.4"/>
+    <text x="16" y="396" text-anchor="middle" font-size="8" font-weight="700" fill="#A8D8FF">13</text>
+    <text x="264" y="396" text-anchor="middle" font-size="8" font-weight="700" fill="#A8D8FF">13</text>
+    <text x="145" y="410" text-anchor="middle" font-size="9" fill="#E2E7EC">الواجهة تغطّي الصندوق من الجهتين</text>
+  </g>
+
+  <!-- numbers -->
+  <g transform="translate(60,540)">
+    <rect x="0" y="0" width="880" height="140" rx="14" fill="#F7F5F2" opacity="0.97"/>
+    <text x="856" y="28" text-anchor="end" font-size="12" font-weight="700" fill="#3E2B24">ما تغيّر</text>
+    <text x="856" y="52" text-anchor="end" font-size="11" fill="#4A423A">صندوق الدرج صار يُحسب من الفراغ الذي تغطّيه واجهته: من حرف الضلفة (19.5) إلى داخل الجانب (432) ⇒ 412.5 − 2×13 = <tspan font-weight="700">386.5</tspan></text>
+    <text x="856" y="74" text-anchor="end" font-size="11" fill="#4A423A">وقبل كان موسَّطاً على عرض الذراع (388 عند 31 … 419) فتظهر قطعة من ظهره من جهة الزاوية المفتوحة</text>
+    <text x="856" y="96" text-anchor="end" font-size="11" fill="#4A423A">الضلفة صارت <tspan font-weight="700">L</tspan>: وجه 19.5 + رجوع 100 مم من لوح الهيكل بين لوح القاع والسقف — تُقصّ في القائمة وتُرسم في 3D</text>
+    <text x="856" y="120" text-anchor="end" font-size="11" font-weight="700" fill="#2E6B4A">13 مم فاصل السكة على كل جهة · ولا تراكب بين الصندوق والرجوع في أي تركيبة ضلفة</text>
+  </g>
+</svg>
