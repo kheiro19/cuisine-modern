@@ -111,6 +111,20 @@ export class TextureEngine {
   }
 
   /**
+   * 🪨 The worktop's own slab: the finish picked for it in the Workshop Matrix (a file of public/textures, the same shelf
+   * the fronts use), or plain stone when nothing was picked. It goes through the same loader, so a missing file keeps the
+   * flat colour instead of a black slab — and it is never priced or cut (the worktop is the customer's).
+   */
+  public static slabMaterial(widthMm: number, depthMm: number, isXRayMode: boolean, texturePath?: string): THREE.MeshStandardMaterial {
+    if (isXRayMode) {
+      return new THREE.MeshStandardMaterial({ color: new THREE.Color('#EDEDEA'), transparent: true, opacity: 0.35, roughness: 0.3, metalness: 0.0 });
+    }
+    const material = new THREE.MeshStandardMaterial({ color: '#EDEDEA', roughness: 0.2, metalness: 0.0 });
+    if (texturePath) this.applyTextureAsync(material, texturePath, widthMm, depthMm, false);
+    return material;
+  }
+
+  /**
    * 🎨 Compile PBR Material: Creates a high-fidelity Three.js MeshStandardMaterial for production caissons
    */
   public static compileProceduralMaterial(

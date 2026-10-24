@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 360" width="760" height="360" font-family="Segoe UI, Tahoma, Arial, sans-serif">
+  <style>
+    .body { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2; }
+    .door { fill: #c7d2fe; stroke: #4338ca; stroke-width: 1.2; }
+    .slab { fill: #e2e8f0; stroke: #334155; stroke-width: 2; }
+    .slab2 { fill: none; stroke: #94a3b8; stroke-width: 1.6; stroke-dasharray: 6 5; }
+    .short { fill: #fee2e2; stroke: #dc2626; stroke-width: 1.4; stroke-dasharray: 4 3; }
+    .wall { stroke: #0f172a; stroke-width: 5; }
+    .floor { stroke: #cbd5e1; stroke-width: 1.2; stroke-dasharray: 5 5; }
+    .t { font-size: 12px; fill: #1e293b; }
+    .ts { font-size: 10.5px; fill: #475569; }
+    .ti { font-size: 14px; font-weight: 700; fill: #1e293b; }
+    .tk { font-size: 11.5px; font-weight: 700; fill: #0f766e; }
+    .tr { font-size: 11.5px; font-weight: 700; fill: #b91c1c; }
+    .dim { stroke: #0f766e; stroke-width: 1.4; fill: none; }
+    .dimR { stroke: #dc2626; stroke-width: 1.4; fill: none; }
+    .dimG { stroke: #94a3b8; stroke-width: 1.2; fill: none; stroke-dasharray: 5 4; }
+  </style>
+
+  <rect width="760" height="360" fill="#ffffff"/>
+
+  <text class="ti" x="380" y="34" text-anchor="middle">سطح العمل — الرقم الذي تكتبه هو الرقم المرسوم</text>
+  <text class="ts" x="380" y="54" text-anchor="middle">خزانة 600 مم + باب 18 مم + نتوء 20 مم ⇒ الواجهة عند 638 مم · سطح العمل 20–40 مم سمكاً و580–650 مم عرضاً</text>
+
+  <!-- the section, true depth scale 0.8 mm/px -->
+  <line class="wall" x1="70" y1="98" x2="70" y2="250"/>
+  <text class="ts" x="80" y="86" text-anchor="start">الجدار</text>
+
+  <rect class="body" x="70" y="126" width="480" height="124"/>
+  <rect class="door" x="550" y="126" width="14.4" height="124"/>
+  <line class="floor" x1="70" y1="250" x2="600" y2="250"/>
+
+  <!-- the slab as typed: 611 mm -->
+  <rect class="slab" x="70" y="94" width="488.8" height="32"/>
+  <text class="t" x="300" y="115" text-anchor="middle">سطح العمل 611 مم — كما كتبته</text>
+
+  <!-- the 27 mm it stops short of, and the dashed 638 it could reach -->
+  <rect class="slab2" x="70" y="94" width="510.4" height="32"/>
+  <rect class="short" x="558.8" y="94" width="21.6" height="32"/>
+  <text class="tr" x="596" y="86" text-anchor="middle">27 مم ناقصة</text>
+
+  <text class="t" x="310" y="196" text-anchor="middle">الهيكل 600 مم</text>
+  <path class="dimG" d="M557 250 L600 268 H648"/>
+  <text class="ts" x="604" y="266" text-anchor="start">باب 18 + نتوء 20</text>
+
+  <!-- dimensions -->
+  <path class="dim" d="M70 312 H558.8 M70 306 V318 M558.8 306 V318"/>
+  <text class="tk" x="314" y="330" text-anchor="middle">611 مم — العرض المرسوم (لا يُمدّ قسراً)</text>
+
+  <path class="dimG" d="M70 288 H580.4 M580.4 282 V294"/>
+  <text class="ts" x="584" y="306" text-anchor="start">638 = الواجهة</text>
+
+  <path class="dimR" d="M558.8 262 H580.4 M558.8 256 V268 M580.4 256 V268"/>
+  <text class="tr" x="586" y="252" text-anchor="start">27 مم</text>
+
+  <rect x="24" y="338" width="712" height="18" rx="5" fill="#f8fafc" stroke="#e2e8f0"/>
+  <text class="ts" x="380" y="351" text-anchor="middle">عندما يقصر السطح عن الواجهة يظهر «أقصر من الواجهة بـ 27 مم» وزر «اجعله 638» — القرار لك، لا للبرنامج</text>
+</svg>

@@ -147,6 +147,88 @@ export function withCornerExtension(
   return { width, positionX, cornerExtensionMm: 0, cornerFillers: cornerFillers(cab, zones, frontThMm) };
 }
 
+// ---- editing a corner that is already on the wall ---------------------------------------------------------------
+//
+// The three boxes are ONE unit, but they live as three cabinets. Their sizes used to be frozen at the moment the corner
+// was added: the form could change a box's zones and its material, never its width, and a width typed there was silently
+// given back. Worse, changing one box did nothing to the other two, so the boxes pulled apart on the wall (the client saw
+// two cabinets with a gap at the door side). These two functions close that: read the corner's own numbers, then lay all
+// three boxes out again from them — so any of the three widths can be edited, for ever, and the group never opens.
+
+export interface CornerGroupDims {
+  /** The side wall of the corner (B = left, C = right). */
+  wall: 'B' | 'C';
+  /** The square: the depth of every box and the side of the corner. */
+  depthMm: number;
+  armAMm: number;
+  armBMm: number;
+}
+
+type CornerBox = {
+  id: string;
+  width: number;
+  depth: number;
+  positionX: number;
+  run?: RunId;
+  category: CabinetCategory;
+  groupId?: string;
+  cornerRole?: CornerRole;
+};
+
+/** The three boxes of one corner, read back as the numbers that built them. `null` for anything that is not a corner. */
+export function cornerDimsOf(cabs: ReadonlyArray<CornerBox>): CornerGroupDims | null {
+  if (cabs.length !== 3) return null;
+  const byRole = (role: CornerRole) => cabs.find((c) => (c.cornerRole ?? (Math.abs(c.width - c.depth) < 0.5 ? 'SQUARE' : 'ARM_A')) === role);
+  const square = byRole('SQUARE');
+  const armA = byRole('ARM_A');
+  const armB = byRole('ARM_B');
+  if (!square || !armA || !armB) return null;
+  // The square sits at the left end of the back wall for a left corner, at the right end for a right one.
+  const wall: 'B' | 'C' = square.positionX < 0.5 ? 'B' : 'C';
+  return { wall, depthMm: square.depth, armAMm: armA.width, armBMm: armB.width };
+}
+
+/**
+ * Where the three boxes stand for these numbers — width, depth, run and position along the wall. `roomWidthMm` is the
+ * length of the back wall: a right-hand corner is measured back from its far end. One array, in the order the group is
+ * stored, so the caller can write it in ONE undo step.
+ */
+export function relayoutCornerGroup(
+  cabs: ReadonlyArray<CornerBox>,
+  dims: CornerGroupDims,
+  roomWidthMm: number,
+): Array<{ id: string; role: CornerRole; width: number; depth: number; positionX: number; run: RunId }> {
+  const boxes = lCornerBoxes({
+    category: cabs[0]?.category ?? 'BASE_UNIT',
+    wall: dims.wall,
+    roomWidthMm,
+    depthMm: dims.depthMm,
+    armAMm: dims.armAMm,
+    armBMm: dims.armBMm,
+  });
+  return cabs.map((c) => {
+    const role: CornerRole = c.cornerRole ?? (Math.abs(c.width - c.depth) < 0.5 ? 'SQUARE' : 'ARM_A');
+    const box = boxes.find((b) => b.role === role) ?? boxes[0];
+    return { id: c.id, role, width: box.width, depth: dims.depthMm, positionX: box.positionX, run: box.run };
+  });
+}
+
+/**
+ * Does a corner of this reach still stand inside the two walls it leans on? The back wall holds the square and the arm
+ * along it; the side wall holds the square and the other arm. Refusing here is what stops a resize from pushing a box
+ * through the end of the room — the three boxes are moved as one, so one of them past the wall means all three are.
+ */
+export function cornerFitsWalls(
+  span: { alongA: number; alongSide: number },
+  backWallMm: number,
+  sideWallMm: number,
+): boolean {
+  return span.alongA <= backWallMm + 0.5 && span.alongSide <= sideWallMm + 0.5;
+}
+
+/** How far a corner reaches along each wall with these numbers (the panel shows it while the user types). */
+export const cornerGroupSpan = (dims: Pick<CornerGroupDims, 'depthMm' | 'armAMm' | 'armBMm'>) => lCornerSpan(dims);
+
 export const CORNER_ROLE_LABELS: Record<CornerRole, string> = { SQUARE: 'مربع الزاوية', ARM_A: 'ذراع الجدار الخلفي', ARM_B: 'ذراع الجدار الجانبي' };
 
 export interface LCornerBuild {

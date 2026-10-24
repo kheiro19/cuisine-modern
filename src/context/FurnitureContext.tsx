@@ -1,6 +1,7 @@
 // src/context/FurnitureContext.tsx
 import React, { createContext, useContext, useRef, useState } from 'react';
 import { CabinetObject, RunId, WorkshopInventoryState, EdgeBandRoll, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
+import { withDefaultFrontEdge } from '../math/edgeDefaults';
 import { computeCabinetTotalCost } from '../math/costEngine';
 import { applyConsumptionDelta, registerHardwareItem, totalConsumption } from '../math/stockDelta';
 
@@ -25,7 +26,8 @@ interface FurnitureContextType {
   moveCabinets: (moves: Array<{ id: string; positionX?: number; run?: RunId }>) => void;
   updateCabinet: (id: string, fields: Partial<CabinetObject>) => void;
   /** Same change on several cabinets with ONE undo step. */
-  updateManyCabinets: (ids: string[], fields: Partial<CabinetObject>) => void;
+  updateManyCabinets: (ids: string[], fields: Partial<CabinetObject>) => void;  /** One edit that touches several boxes in DIFFERENT ways (an L corner re-laid out): one undo step, one save. */
+  patchCabinets: (patches: Array<{ id: string; fields: Partial<CabinetObject> }>) => void;
   deleteCabinet: (id: string) => void;
   triggerUndo: () => void;
   canUndo: boolean;
@@ -111,7 +113,10 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       carcaseThickness: carcaseMat ? carcaseMat.thickness : 18,
       frontThickness: frontMat ? frontMat.thickness : 18,
     };
-    return { ...thick, calculatedCostDA: computeCabinetTotalCost(thick, inventory.woodPanels, inventory.hardwareItems, inventory.edgeBandRolls) };
+    // A front is banded: when the board declares no band and the user never picked a roll, the stock's own default roll is
+    // used (math/edgeDefaults.ts), so the cut size, the price and the 3D all tell the same truth. `NONE` is respected.
+    const edged = withDefaultFrontEdge(thick, inventory.woodPanels, inventory.edgeBandRolls);
+    return { ...edged, calculatedCostDA: computeCabinetTotalCost(edged, inventory.woodPanels, inventory.hardwareItems, inventory.edgeBandRolls) };
   };
 
   const addCabinet = (cabFields: Omit<CabinetObject, 'calculatedCostDA' | 'carcaseThickness' | 'frontThickness'>) => {
@@ -158,6 +163,18 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     // Only drag moves skip the history (they would flood it); every other edit is one undo step.
     if (!isMoveOnly(fields)) saveToHistory(cabinetsRef.current);
     commit(cabinetsRef.current.map(cab => (targets.has(cab.id) ? refresh({ ...cab, ...fields }) : cab)));
+  };
+
+  // The three boxes of a corner are one unit: resizing it writes different numbers on each box, and it must be ONE undo step
+  // (otherwise undoing a resize takes three presses and the group is left half-resized in between).
+  const patchCabinets = (patches: Array<{ id: string; fields: Partial<CabinetObject> }>) => {
+    const byId = new Map(patches.map((p) => [p.id, p.fields]));
+    if (!cabinetsRef.current.some((c) => byId.has(c.id))) return;
+    saveToHistory(cabinetsRef.current);
+    commit(cabinetsRef.current.map((cab) => {
+      const fields = byId.get(cab.id);
+      return fields ? refresh({ ...cab, ...fields }) : cab;
+    }));
   };
 
   const updateCabinet = (id: string, fields: Partial<CabinetObject>) => updateManyCabinets([id], fields);
@@ -276,6 +293,7 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       moveCabinets,
       updateCabinet,
       updateManyCabinets,
+      patchCabinets,
       deleteCabinet,
       triggerUndo,
       canUndo,

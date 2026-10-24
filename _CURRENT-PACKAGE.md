@@ -1,13 +1,17 @@
 # الحزمة الحالية — 2026-10-23 (مساءً)
 
-الملف: **`cuisine-modern-main-2026-10-23-final2.zip`** (بلا `node_modules` ولا `dist` — يُبنى محلياً).
+الملف: **`cuisine-modern-main-2026-10-23-final5.zip`** (بلا `node_modules` ولا `dist` — يُبنى محلياً).
 
 > هذا الملف يلخّص **كل** ما أُنجز اليوم، وانطلاقاً من الحزمة الصباحية أُضيف: سطح العمل · اللوحة اللونية ·
-> زاوية L (ضلفة الزاوية · الضلفة على الجهتين) · خلفية الخزانة بثلاث طرق · قاعدة الزاوية L قطعة واحدة.
+> زاوية L (ضلفة الزاوية · الضلفة على الجهتين) · خلفية الخزانة بثلاث طرق · قاعدة الزاوية L قطعة واحدة ·
+> مكتبة الخامات (307) · **تعديل مقاسات الزاوية بعد بنائها** · **عرض سطح العمل وخامته وشريط الواجهة الافتراضي**.
 
 > **اقرأ هذا قبل النشر:** الـZIP **طبقة كود** لا مشروعاً مستقلاً. لا يحتوي `public/textures/`
-> (307 صور · 6.54 MB). إن نشرتَه وحده على Vercel، يحوّل `prebuild` مانيفست الخامات إلى `[]`
-> وتظهر اللوحة بلا خامة واحدة. المجلد موجود عندك — اتركه كما هو عند فكّ الـZIP فوق مشروعك.
+> (307 صور · 6.54 MB) — وهي أصول تبقى عندك كما هي. المجلد **لا يُحذف** بفكّ الحزمة.
+>
+> **الخامات عادت:** الحزمة **لا تحمل `src/data/textureManifest.json`**، فلا يمكن أن تمسح قائمتك. وتُبنى القائمة تلقائياً
+> من `public/textures` عبر `npm install` (خطّاف `prepare`) أو `npm run textures`. والتطبيق نفسه يعالج نفسه: إن وجد
+> المانيفست فارغاً قرأ `public/textures/index.json` وأعاد الـ307 بلا إعادة بناء. التفصيل: `docs/21_مكتبة_الخامات_المحلية.md`.
 
 ## ما فيها
 
@@ -29,14 +33,19 @@
 | خلفية الخزانة: **HDF / عارضتان / لوح الهيكل** لكل خزانة + تعميم | `src/math/backPanel.ts` · `docs/back-options.svg` | `19` |
 | قاعدة الزاوية L: **قطعة واحدة مقصوصة على شكل L** | `src/math/cornerDeck.ts` · `docs/corner-deck.svg` | `20` |
 | **تصحيح:** صندوق الدرج تحت واجهته + **رجوع الضلفة 100 مم** | `src/math/drawerBox.ts` · `assemblyGeometry.ts` · `docs/corner-filler-return.svg` | `17` |
+| **تصحيح:** مكتبة الخامات المحلية (307) عادت ولا يمكن مسحها | `scripts/build-texture-manifest.mjs` · `src/data/textureCatalog.ts` | `21` |
+| **تصحيح:** مقاسات الزاوية L بعد بنائها — ذراعان ومربع بأي مقاس، والثلاثة بخزنة واحدة | `src/math/lCorner.ts` · `FurnitureContext.patchCabinets` · `docs/corner-resize.svg` | `22` |
+| **تصحيح:** عرض سطح العمل رقمك (لا مدّ قسري) + خامته من `public/textures` | `src/math/countertop.ts` · `textureEngine.slabMaterial` · `docs/countertop-width.svg` | `23` |
+| **تصحيح:** شريط الواجهة الافتراضي — لا تحذير أحمر بعد اليوم | `src/math/edgeDefaults.ts` · `src/components/InventoryManager.tsx` | `23` |
+| **تصحيح:** تجويف الغسالة/الجلاية بلا واجهة ⇒ لا يُطلب له شريط ولا لفّة افتراضية | `src/math/edgeDefaults.ts` (`cabinetHasFronts`) · `CabinetPreview3D` | `23` |
 
 ## الأرقام المقيسة
 
 ```
-npm test                 309 / 309      (tests/product 265 على 22 ملفاً · tests/compat 37 على 6 ملفات · حرّاس 7)
-npm run test:ui           54 / 54       (7 ملفات Vitest)
+npm test                 332 / 332      (tests/product 288 على 25 ملفاً · tests/compat 37 على 6 ملفات · حرّاس 7)
+npm run test:ui           64 / 64       (9 ملفات Vitest)
 typecheck (src + tests + ui)  ✓ 0 أخطاء
-npm run build             ✓ 9.15s
+npm run build             ✓ 8.24s
 ```
 
 ## ⚠️ ثلاث حزم يجب حذفها من نسختك القديمة
@@ -50,7 +59,7 @@ tests/fixtures/corpus.ts
 tests/compat/catalogue.test.ts
 ```
 
-بعد حذفها: `npm install && npm test` يجب أن يعطي **309/309** و`npm run test:ui` يعطي **54/54**.
+بعد حذفها: `npm install && npm test` يجب أن يعطي **332/332** و`npm run test:ui` يعطي **64/64**.
 
 ## الأصول (خارج الـZIP، عندك)
 

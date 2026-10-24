@@ -10,11 +10,12 @@ import type { PlacedAccessory } from '../math/accessoryPlacement';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem, RunId } from '../types/flatma';
 import { KitchenLayout, DEFAULT_LAYOUT, alongToFrame, runFrame, runOf, runsOf, toFrame } from '../math/kitchenLayout';
-import { textureCatalog } from '../data/textureCatalog';
+import { useTextureCatalog } from '../data/textureCatalog';
 import type { TextureEntry } from '../data/textureCatalog';
 import { onlineTextureCatalog, makeOnlineTextureEntry } from '../data/onlineTextures';
 import { LAYOUT } from '../math/constants';
 import { computeCountertopOutline, carriesCountertop, countertopDepthMm, COUNTERTOP_DEFAULT } from '../math/countertop';
+import { TextureEngine } from '../math/textureEngine';
 import { DEFAULT_PALETTE, gridColoursOf } from '../math/palette';
 import type { CountertopSettings } from '../math/countertop';
 
@@ -86,7 +87,8 @@ export default function Kitchen3DCanvas({
   // Local library: generated from the files that really exist in /public/textures (scripts/build-texture-manifest.mjs).
   // Online library: src/data/onlineTextures.ts + links pasted during this session.
   const onlineCollection = useMemo(() => [...onlineTextureCatalog, ...customOnline], [customOnline]);
-  const activeCollection = activeSource === 'local' ? textureCatalog : onlineCollection;
+  const local = useTextureCatalog();
+  const activeCollection = activeSource === 'local' ? local.entries : onlineCollection;
 
   useEffect(() => {
     const el = stripRef.current;
@@ -155,7 +157,7 @@ export default function Kitchen3DCanvas({
       if (!(xEnd - xStart > 1)) return;
       const zBack = Math.min(...list.map(c => -c.positionZ));
       const zFront = Math.max(...list.map(c => c.depth + c.frontThickness - c.positionZ)) + LAYOUT.COUNTERTOP_FRONT_OVERHANG_MM;
-      // The slab the user asked for, stretched when it would stop before the front it covers.
+      // The slab the user typed — drawn as typed, even when it stops before the front (the panel says by how much).
       const { depthMm } = countertopDepthMm(countertop.depthMm, zFront - zBack);
       const outline = computeCountertopOutline(run === 'A' ? countertopPath : [], xStart, xEnd, zBack, zBack + depthMm);
       if (outline.length < 3) return;
@@ -168,6 +170,13 @@ export default function Kitchen3DCanvas({
   }, [framed, runs, countertopPath, countertop.visible, countertop.thicknessMm, countertop.depthMm]);
 
   useEffect(() => () => { (Object.values(countertopGeometries) as Array<THREE.BufferGeometry | undefined>).forEach(g => g?.dispose()); }, [countertopGeometries]);
+  // The slab's finish: the file the user picked from public/textures, or plain stone. One material for the whole worktop,
+  // released when the pick changes (a texture left attached would leak on every switch).
+  const slabMaterial = useMemo(
+    () => TextureEngine.slabMaterial(countertop.depthMm, countertop.thicknessMm, isXRayMode, countertop.texturePath),
+    [countertop.depthMm, countertop.thicknessMm, countertop.texturePath, isXRayMode],
+  );
+  useEffect(() => () => slabMaterial.dispose(), [slabMaterial]);
 
   // Accessories live on the wall of the cabinet that hosts them (or of the sink they are fixed on); the others are on the back wall.
   const accessoriesOf = useCallback((run: RunId): PlacedAccessory[] => {
@@ -237,9 +246,7 @@ export default function Kitchen3DCanvas({
 
                     {/* Countertop of this wall */}
                     {countertopGeometries[run] && (
-                      <mesh geometry={countertopGeometries[run]} position={[0, baseHeightMm / 1000, 0]} castShadow receiveShadow>
-                        <meshStandardMaterial color="#FFFFFF" roughness={0.2} metalness={0.0} transparent={isXRayMode} opacity={isXRayMode ? 0.35 : 1.0} />
-                      </mesh>
+                      <mesh geometry={countertopGeometries[run]} material={slabMaterial} position={[0, baseHeightMm / 1000, 0]} castShadow receiveShadow />
                     )}
 
                     {/* Accessories library: sockets, sinks, hobs, hoods, lighting, organisers */}
@@ -268,7 +275,7 @@ export default function Kitchen3DCanvas({
                 onClick={() => setActiveSource('local')}
                 className={`flex items-center space-x-1.5 pb-1 text-[11px] font-sans font-bold tracking-tight uppercase cursor-pointer whitespace-nowrap border-b-2 transition-all ${activeSource === 'local' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
               >
-                <span>📂</span> <span>Workshop Matrix ({textureCatalog.length})</span>
+                <span>📂</span> <span>Workshop Matrix ({local.count})</span>
               </button>
               <button
                 type="button"
@@ -357,6 +364,17 @@ export default function Kitchen3DCanvas({
             >
               ↺
             </div>
+            {/* An empty Workshop Matrix says WHY, and offers to read the folder again — never a silent blank strip. */}
+            {activeSource === 'local' && activeCollection.length === 0 && (
+              <div className="flex-shrink-0 flex items-center gap-2 h-14 px-3 rounded-xl border border-amber-300 bg-amber-50 text-[10px] text-amber-900 leading-snug">
+                <span>⚠ مكتبة الخامات المحلية فارغة: مجلد <b style={{ direction: 'ltr' }}>public/textures</b> غير مقروء في هذا البناء.</span>
+                <button
+                  type="button"
+                  onClick={() => { void local.reload(); }}
+                  className="px-2 py-1 rounded border border-amber-400 bg-white hover:bg-amber-100 font-bold cursor-pointer"
+                >⟳ إعادة القراءة</button>
+              </div>
+            )}
             {activeCollection.map((tex) => (
               <div
                 key={tex.id}

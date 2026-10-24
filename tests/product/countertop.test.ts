@@ -16,7 +16,7 @@ test('the allowed numbers are a real slab: 20–40 mm thick, 580–650 mm deep',
   assert.deepEqual(COUNTERTOP.DEPTH_MM, [580, 650]);
   // the factory default is still the one the rest of the app knows
   assert.equal(LAYOUT.COUNTERTOP_THICKNESS_MM, COUNTERTOP.DEFAULT_THICKNESS_MM);
-  assert.deepEqual(COUNTERTOP_DEFAULT, { visible: true, thicknessMm: 40, depthMm: 600 });
+  assert.deepEqual(COUNTERTOP_DEFAULT, { visible: true, thicknessMm: 40, depthMm: 600, texturePath: undefined });
 });
 
 test('a typed number is clamped to the slab, rounded to whole millimetres', () => {
@@ -25,6 +25,13 @@ test('a typed number is clamped to the slab, rounded to whole millimetres', () =
   assert.equal(clampCountertopSettings({ thicknessMm: 33.4 }).thicknessMm, 33, 'whole mm');
   assert.equal(clampCountertopSettings({ depthMm: 500 }).depthMm, 580, 'too narrow → 580');
   assert.equal(clampCountertopSettings({ depthMm: 900 }).depthMm, 650, 'too wide → 650');
+});
+
+test('the finish picked for the slab is kept, and clearing it goes back to plain stone', () => {
+  assert.equal(clampCountertopSettings({ texturePath: '/textures/marble.webp' }).texturePath, '/textures/marble.webp');
+  assert.equal(clampCountertopSettings({ texturePath: '' }).texturePath, undefined);
+  assert.equal(clampCountertopSettings({ texturePath: '   ' }).texturePath, undefined);
+  assert.equal(clampCountertopSettings(undefined).texturePath, undefined);
 });
 
 test('a missing or non-numeric entry falls back to the default, never to NaN', () => {
@@ -36,12 +43,15 @@ test('a missing or non-numeric entry falls back to the default, never to NaN', (
   assert.equal(clampCountertopSettings({ visible: undefined }).visible, true, 'shown unless hidden on purpose');
 });
 
-test('the slab never stops before the front it covers: 580 over a 598 front is drawn 598', () => {
-  assert.deepEqual(countertopDepthMm(600, 598), { depthMm: 600, stretched: false });
-  assert.deepEqual(countertopDepthMm(650, 598), { depthMm: 650, stretched: false });
-  assert.deepEqual(countertopDepthMm(580, 598), { depthMm: 598, stretched: true });
+test('the slab is drawn with the width that was typed — never stretched behind the user', () => {
+  // The old rule drew max(typed, front): 600 over a 648 front was drawn 648 and the field looked locked, because typing
+  // 611, 620 or 640 all drew 648. The width is the user's; a short slab says how many mm it lacks and nothing else.
+  assert.deepEqual(countertopDepthMm(600, 598), { depthMm: 600, shortByMm: 0 });
+  assert.deepEqual(countertopDepthMm(650, 598), { depthMm: 650, shortByMm: 0 });
+  assert.deepEqual(countertopDepthMm(580, 598), { depthMm: 580, shortByMm: 18 }, 'short, and it says by how much');
+  assert.deepEqual(countertopDepthMm(611, 648), { depthMm: 611, shortByMm: 37 }, 'the 648 case: 611 stays 611');
   // a run whose front is unknown (nothing installed) keeps the requested depth
-  assert.deepEqual(countertopDepthMm(600, 0), { depthMm: 600, stretched: false });
+  assert.deepEqual(countertopDepthMm(600, 0), { depthMm: 600, shortByMm: 0 });
 });
 
 test('only the floor units under counter height carry it — a 2200 pantry goes through', () => {

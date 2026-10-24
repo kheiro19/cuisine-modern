@@ -160,6 +160,9 @@ export default function InventoryManager() {
   const [selectedFinish, setSelectedFinish] = useState<string>("MDF Melamine Matt");
   const [selectedDimensionLabel, setSelectedDimensionLabel] = useState<string>("2800 x 2070 mm");
   const [woodThickness, setWoodThickness] = useState<number>(18);
+  // The band this board comes with (0 = none). A front reads it when no roll is picked — it used to be hard-coded 0, so
+  // every kitchen built from these boards reported "no front band" and cut every door 2 × band too wide.
+  const [woodEdgeThickness, setWoodEdgeThickness] = useState<number>(1);
   const [woodQty, setWoodQty] = useState<string>('10');
   const [woodPrice, setWoodPrice] = useState<string>('15000');
 
@@ -313,7 +316,7 @@ export default function InventoryManager() {
       widthSheet: matchedSize.w,
       heightSheet: matchedSize.h,
       thickness: woodThickness,
-      edgeThickness: 0, 
+      edgeThickness: woodEdgeThickness,
       edgeWidth: 0,
       currentQty: parsedQty,
       averagePriceDA: parsedPrice
@@ -455,6 +458,19 @@ export default function InventoryManager() {
               <div>
                 <label className="text-[9px] font-bold text-slate-400 block mb-0.5 font-sans">Purchase Price (DA)</label>
                 <input type="number" value={woodPrice} onChange={(e) => setWoodPrice(e.target.value)} className="w-full border text-emerald-600 rounded-lg p-1.5 text-center focus:outline-none font-bold bg-emerald-50/20" />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">شريط اللوح (مم) — Edge Thickness</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number" min={0} max={3} step={0.1} value={woodEdgeThickness}
+                  onChange={(e) => setWoodEdgeThickness(Math.max(0, Number(e.target.value) || 0))}
+                  aria-label="سُمك شريط اللوح"
+                  className="w-24 border rounded-lg p-2 text-center font-bold"
+                />
+                <span className="text-[9px] text-slate-500 leading-snug">سُمك الشريط الذي يأتي مع اللوح: يُستعمل لواجهة لم تُختر لها لفّة. 0 = بلا شريط، و1 مم هو الافتراضي.</span>
               </div>
             </div>
 

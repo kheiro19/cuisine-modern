@@ -16,6 +16,7 @@ import {
   OpeningMode,
   ZoneSplit,
 } from '../types/flatma';
+import { NO_EDGE_ROLL } from './edgeDefaults';
 import { LIMITS, PANEL, SPLIT } from './constants';
 import { clampInt } from './utils';
 import { golaSlotsOf } from './gola';
@@ -253,7 +254,9 @@ export function resolveDraft(
   d.frontMaterialId = woods.some((m) => m.id === d.frontMaterialId) ? d.frontMaterialId : fallback;
   // A roll that is no longer in stock is dropped (the choice goes back to "none").
   d.carcaseEdgeRollId = edgeRolls.some((r) => r.id === d.carcaseEdgeRollId) ? d.carcaseEdgeRollId : '';
-  d.frontEdgeRollId = edgeRolls.some((r) => r.id === d.frontEdgeRollId) ? d.frontEdgeRollId : '';
+  // NO_EDGE_ROLL ('NONE') is a decision — a painted / bare front — and survives; an empty field means "not chosen yet",
+  // which lets the workshop's default roll apply (math/edgeDefaults.ts).
+  d.frontEdgeRollId = d.frontEdgeRollId === NO_EDGE_ROLL || edgeRolls.some((r) => r.id === d.frontEdgeRollId) ? d.frontEdgeRollId : '';
   return d;
 }
 

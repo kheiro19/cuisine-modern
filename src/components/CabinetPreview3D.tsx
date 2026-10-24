@@ -21,6 +21,10 @@ export interface EdgeBandInfo {
   /** Brand of the roll, empty when none is chosen. */
   label: string;
   chosen: boolean;
+  /** True when no roll was picked and the stock's own default band applies (math/edgeDefaults.ts). */
+  defaulted?: boolean;
+  /** How many front panels the cabinet really cuts. 0 = an open bay (washer / dishwasher): no band, no front cut. */
+  panels?: number;
 }
 
 interface CabinetPreview3DProps {
@@ -153,13 +157,20 @@ export default function CabinetPreview3D({ cabinet, showFronts, isXRayMode, wood
 
       {measure && edges && (
         <div className="absolute top-1 right-1 rounded-lg bg-slate-950/80 backdrop-blur-sm px-2 py-1 text-[9px] leading-snug max-w-[60%]" style={{ direction: 'rtl' }}>
-          {frontsDrawn && (
+          {(edges.front.panels ?? 1) === 0 && (
+            // A bay that holds a washing machine or a dishwasher under the worktop is an OPEN niche: no door, no band, and
+            // nothing to say about one. Saying «لا شريط محدد للواجهات» here was asking for a band on a cabinet without a front.
+            <p className="font-bold text-slate-300">بلا واجهة (فتحة مفتوحة أو تجويف غسالة/جلاية تحت الرخامة): لا شريط للواجهة ولا قصّ لها</p>
+          )}
+          {frontsDrawn && (edges.front.panels ?? 1) > 0 && (
             edges.front.mm > 0 ? (
               <p className="font-bold text-blue-300">
-                شريط الواجهات: {formatMm(edges.front.mm)} مم{edges.front.label ? ` (${edges.front.label})` : ''} · الرقم ✂ هو مقاس القص = النهائي − {formatMm(2 * edges.front.mm)} مم
+                شريط الواجهات: {formatMm(edges.front.mm)} مم{edges.front.label ? ` (${edges.front.label})` : ''}{edges.front.defaulted ? ' — افتراضي من المخزن' : ''} · الرقم ✂ هو مقاس القص = النهائي − {formatMm(2 * edges.front.mm)} مم
               </p>
             ) : (
-              <p className="font-bold text-red-300">⚠ لا شريط محدد للواجهات: مقاس القص = المقاس النهائي، وسيكبر الباب عند لصق الشريط</p>
+              // Not an error any more: the front is banded by default (math/edgeDefaults.ts). A 0 here means the user really
+              // chose «بدون شريط حافة» (a painted front) — so the line states the fact and leaves the cut size alone.
+              <p className="font-bold text-amber-300">الواجهة بلا شريط (اختيارك): مقاس القص = المقاس النهائي. اختر لفّة من المخزن إن أردت الشريط</p>
             )
           )}
           <p className="font-bold text-slate-300">

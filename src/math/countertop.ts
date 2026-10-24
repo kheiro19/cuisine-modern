@@ -52,12 +52,18 @@ export interface CountertopSettings {
   visible: boolean;
   thicknessMm: number;
   depthMm: number;
+  /**
+   * The finish picked for the slab (a file of public/textures, the same shelf the fronts use). Look only: the worktop is
+   * not stock, not priced, not cut. Empty / missing = the plain stone the slab is drawn with.
+   */
+  texturePath?: string;
 }
 
 export const COUNTERTOP_DEFAULT: CountertopSettings = {
   visible: true,
   thicknessMm: COUNTERTOP.DEFAULT_THICKNESS_MM,
   depthMm: COUNTERTOP.DEFAULT_DEPTH_MM,
+  texturePath: undefined,
 };
 
 const whole = (v: unknown, range: readonly [number, number], fallback: number): number => {
@@ -67,22 +73,24 @@ const whole = (v: unknown, range: readonly [number, number], fallback: number): 
 
 /** The form's numbers, clamped: thickness 20–40 mm, depth 580–650 mm. A missing / NaN value keeps the default. */
 export function clampCountertopSettings(raw: Partial<CountertopSettings> | undefined): CountertopSettings {
+  const path = typeof raw?.texturePath === 'string' && raw.texturePath.trim() !== '' ? raw.texturePath : undefined;
   return {
     visible: raw?.visible !== false,
     thicknessMm: whole(raw?.thicknessMm, COUNTERTOP.THICKNESS_MM, COUNTERTOP.DEFAULT_THICKNESS_MM),
     depthMm: whole(raw?.depthMm, COUNTERTOP.DEPTH_MM, COUNTERTOP.DEFAULT_DEPTH_MM),
+    texturePath: path,
   };
 }
 
 /**
- * The depth really drawn: the requested one, or the front it has to cover when the slab would be narrower.
- * `neededMm` is how far the run reaches from the wall (carcase + door + overhang).
+ * The depth really drawn — ALWAYS the one typed. The slab used to be stretched, silently and for ever, to the front it
+ * covers: a 600 mm number drew 648 and typing 611, 620 or 640 changed nothing at all, which read as a locked field. The
+ * width belongs to the user now, and a slab that stops before the front is reported (how many mm it lacks) so they can
+ * decide, with one click, to cover it. `neededMm` is how far the run reaches from the wall (carcase + door + overhang).
  */
-export function countertopDepthMm(requestedMm: number, neededMm: number): { depthMm: number; stretched: boolean } {
-  if (!(neededMm > 0)) return { depthMm: requestedMm, stretched: false };
-  return neededMm > requestedMm
-    ? { depthMm: neededMm, stretched: true }
-    : { depthMm: requestedMm, stretched: false };
+export function countertopDepthMm(requestedMm: number, neededMm: number): { depthMm: number; shortByMm: number } {
+  if (!(neededMm > 0)) return { depthMm: requestedMm, shortByMm: 0 };
+  return { depthMm: requestedMm, shortByMm: Math.max(0, Math.round(neededMm - requestedMm)) };
 }
 
 /** Floor units that carry a worktop: tall / pantry units go through it. */

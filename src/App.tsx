@@ -29,12 +29,15 @@ import {
   DEFAULT_LAYOUT, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WIDTH_LIMITS_MM,
   autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, placeAlongWall, runOf, runsOf, wallLengthOf,
 } from './math/kitchenLayout';
-import { clampCornerFillerMm, cornerDeckOf, L_CORNER_LIMITS, lCornerCabinets, lCornerSpan, withCornerExtension } from './math/lCorner';
+import { clampCornerFillerMm, CORNER_ROLE_LABELS, cornerDeckOf, cornerDimsOf, cornerFitsWalls, cornerGroupSpan, L_CORNER_LIMITS, lCornerCabinets, lCornerSpan, relayoutCornerGroup, withCornerExtension } from './math/lCorner';
+import type { CornerGroupDims, CornerRole } from './math/lCorner';
 import { cornerDeckPieceOf } from './math/cornerDeck';
 import { BACK, CORNER, COUNTERTOP, LAYOUT, LIMITS, PANEL } from './math/constants';
 import { BACK_PANEL_LABELS, BACK_PANEL_MODES, BackPanelMode, backPanelModeOf, backRailDepthOf } from './math/backPanel';
 import { bandPricePerMeterDA } from './math/edgeBand';
 import { carriesCountertop, clampCountertopSettings, countertopDepthMm, COUNTERTOP_DEFAULT } from './math/countertop';
+import { useTextureCatalog } from './data/textureCatalog';
+import { frontPanelCount, withDefaultFrontEdge } from './math/edgeDefaults';
 import type { CountertopSettings } from './math/countertop';
 import { clampInt, uid } from './math/utils';
 import { BASE_TYPE_LABELS, baseOf } from './math/base';
@@ -110,6 +113,7 @@ export default function App() {
     moveCabinets,
     updateCabinet,
     updateManyCabinets,
+    patchCabinets,
     triggerUndo,
     canUndo,
   } = useFurniture();
@@ -128,14 +132,23 @@ export default function App() {
 
   const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, hardwareSettings.wallSplashHeight);
 
-  const countertopStretch = useMemo(() => {
+  // How far the fronts reach from the wall (carcase + door + nosing). The slab is NEVER stretched to it any more: the number
+  // typed is the number drawn, and when it stops short the panel says by how many millimetres and offers the one click that
+  // covers it. One number in, one slab out.
+  const countertopShort = useMemo(() => {
     const bases = cabinets.filter((c) => carriesCountertop(c));
     if (bases.length === 0) return null;
     const zBack = Math.min(...bases.map((c) => -c.positionZ));
     const zFront = Math.max(...bases.map((c) => c.depth + c.frontThickness - c.positionZ)) + LAYOUT.COUNTERTOP_FRONT_OVERHANG_MM;
-    const { depthMm, stretched } = countertopDepthMm(countertop.depthMm, zFront - zBack);
-    return stretched ? { requested: countertop.depthMm, drawn: Math.round(depthMm) } : null;
+    const { depthMm, shortByMm } = countertopDepthMm(countertop.depthMm, zFront - zBack);
+    void depthMm;
+    if (shortByMm <= 0) return null;
+    const needed = Math.round(zFront - zBack);
+    return { neededMm: needed, shortByMm, canCover: needed <= COUNTERTOP.DEPTH_MM[1] };
   }, [cabinets, countertop.depthMm]);
+  // The finishes of the Workshop Matrix (public/textures), the same shelf the fronts pick from.
+  const localTextures = useTextureCatalog();
+  const [countertopFinishOpen, setCountertopFinishOpen] = useState(false);
 
   const [showFronts, setShowFronts] = useState<boolean>(true);
   const [isXRayMode, setIsXRayMode] = useState<boolean>(false);
@@ -167,6 +180,10 @@ export default function App() {
   // front slides out); [] = none. Both sides can carry one: the far side is for looks, the corner side is what makes the drawer
   // pass beside the neighbour's closed door.
   const [cornerFillerSides, setCornerFillerSides] = useState<Array<'LEFT' | 'RIGHT'> | undefined>(undefined);
+  // The numbers a corner was built with (the square's side and the two arms). They used to be frozen at creation: the form
+  // showed the corner's W/D but the save wrote the OLD width back, and the other two boxes never moved, so widening an arm
+  // opened a gap at the door side. Read here when the edit opens, then re-applied to all three boxes by relayoutCornerGroup.
+  const [cornerDims, setCornerDims] = useState<CornerGroupDims | null>(null);
   const layoutRuns = runsOf(layout);
   const [activeRunRaw, setActiveRun] = useState<RunId>('A');
   const activeRun: RunId = layoutRuns.includes(activeRunRaw) ? activeRunRaw : 'A'; // the wall a new cabinet is added on
@@ -211,7 +228,24 @@ export default function App() {
     // a drawer box centred on the full width — a picture the save would never produce.
     return { ...base, width: ext.width, cornerSide: editing.cornerSide, cornerFillerMm, cornerFillerSides, omitSides: editing.omitSides, cornerRole: editing.cornerRole, cornerGroupDeckMm: editing.cornerGroupDeckMm, run: editing.run };
   }, [resolved, woods, isCornerBuilder, armA, cornerDepth, editing, cornerFillerMm, cornerFillerSides]);
+  // ---- the corner's own numbers, while it is being edited ---------------------------------------------------------
+  // The box in the form is one of three, and its width is not its own: it is the arm's. So the form shows the three
+  // numbers of the corner (square, arm along the back wall, arm along the side wall) and every one of them can be typed,
+  // at any time, in any size. `cornerDimsOf` reads them back from the boxes; `relayoutCornerGroup` puts the three boxes
+  // back on the wall from them in ONE write, which is what keeps the doors of the arms shut against each other.
+  const editingCornerRole: CornerRole | null = editing && cornerDims
+    ? (editing.cornerRole ?? (Math.abs(editing.width - editing.depth) < 0.5 ? 'SQUARE' : 'ARM_A'))
+    : null;
+  /** The field of the corner panel that stands for the box the form has open (its W is that number, not a width of its own). */
+  const cornerDimKeyOf = (role: CornerRole): keyof Omit<CornerGroupDims, 'wall'> =>
+    role === 'ARM_A' ? 'armAMm' : role === 'ARM_B' ? 'armBMm' : 'depthMm';
+  const cornerSpanNow = cornerDims ? cornerGroupSpan(cornerDims) : null;
 
+  // The band the front REALLY leaves the workshop with (math/edgeDefaults.ts): the roll the user picked, else the thinnest
+  // roll in the stock. Without this every kitchen built from self-added boards (they store edgeThickness 0) was drawn with
+  // "no front band" in red and cut 2 × band too wide.
+  const previewEdged = useMemo(() => withDefaultFrontEdge(previewCabinet, woods, edgeRolls), [previewCabinet, woods, edgeRolls]);
+  const previewFrontBandDefault = !previewCabinet.frontEdgeRollId && !!previewEdged.frontEdgeRollId;
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
   const hasDoorZone = needs.doors;
@@ -222,7 +256,7 @@ export default function App() {
   const golaAllowed = canUseGola(resolved.category, resolved.zones); // rules/openings.ts
 
   // The preview is priced by the very function the BOM sums, so this figure is the BOM figure.
-  const previewPricing = useMemo(() => priceCabinet(previewCabinet, woods, hardwareItems, edgeRolls), [previewCabinet, woods, hardwareItems, edgeRolls]);
+  const previewPricing = useMemo(() => priceCabinet(previewEdged, woods, hardwareItems, edgeRolls), [previewEdged, woods, hardwareItems, edgeRolls]);
   // The edge band the pricing really uses (roll, else the sheet's own band), so the dimension lines show the real cut sizes.
   const previewEdges = useMemo(() => {
     const info = (role: 'front' | 'carcase', rollId?: string) => {
@@ -230,8 +264,13 @@ export default function App() {
       const roll = rollId ? edgeRolls.find((r) => r.id === rollId) : undefined;
       return { mm: part?.edgeMm ?? 0, label: roll?.brand ?? '', chosen: !!roll };
     };
-    return { front: info('front', previewCabinet.frontEdgeRollId), carcase: info('carcase', previewCabinet.carcaseEdgeRollId) };
-  }, [previewPricing, previewCabinet, edgeRolls]);
+    // `panels` is the honest answer to «is there a front at all?»: a washing-machine / dishwasher bay under the worktop is an
+    // open niche with no front panel, so the atomic view must not ask it for a band (math/edgeDefaults.frontPanelCount).
+    return {
+      front: { ...info('front', previewEdged.frontEdgeRollId), defaulted: previewFrontBandDefault, panels: frontPanelCount(previewPricing.parts) },
+      carcase: info('carcase', previewEdged.carcaseEdgeRollId),
+    };
+  }, [previewPricing, previewEdged, previewFrontBandDefault, edgeRolls]);
   const DESIGN_ISSUES = ['ZONES_TOO_TALL', 'APPLIANCE_TOO_NARROW', 'APPLIANCE_TOO_SHALLOW', 'APPLIANCE_ZONE_TOO_SHORT', 'APPLIANCE_ZONE_WIDE', 'SPLIT_NO_ROOM', 'DOORS_TOO_NARROW', 'SHELVES_TOO_CLOSE', 'GOLA_ZONE_TOO_SHORT', 'GOLA_NOT_WITH_INSET', 'LIFT_ZONE_NOT_TOP', 'NO_FRONT_HARDWARE', 'NO_PUSH_ITEM', 'NO_GOLA_ITEM', 'NO_CARCASE_MATERIAL', 'NO_FRONT_MATERIAL'];
   const designIssues = previewPricing.issues.filter((i) => DESIGN_ISSUES.includes(i.code));
 
@@ -289,6 +328,24 @@ export default function App() {
   // A corner needs a wall that forms it (L or U layout) and no corner of this level already on that wall.
   const canAddNow = canInject && (!isCornerBuilder || (!!cornerWall && !cornerTaken(cornerWall)));
 
+  /** The sentence about the fixed filler of a corner arm: the same words whether the arm is edited alone or inside its corner. */
+  const cornerArmNotice = (
+    ext: { width: number; cornerFillers: { left: number; right: number } },
+    zones: ReadonlyArray<CabinetZone>,
+  ): string | null => {
+    const { left, right } = ext.cornerFillers;
+    const both = left > 0 && right > 0;
+    const where = both ? 'على الجهتين' : left > 0 ? 'على الجهة اليسرى' : 'على الجهة اليمنى';
+    const panelMm = both ? left : left > 0 ? left : right;
+    const slides = zones.some((z) => z.kind === 'DRAWERS' || z.split?.fill === 'PULL_OUT');
+    const frontMm = Math.round((Math.min(ext.width - 0.5, ext.width - right) - Math.max(0.5, left)) * 10) / 10;
+    if (left > 0 || right > 0) {
+      return `🖇️ ضلفة زاوية ثابتة بعرض ${panelMm} مم ${where} من أسفل الهيكل إلى أعلاه${slides ? `، والدرج يمرّ أمامها بفراغ ${CORNER.DRAWER_CLEARANCE_MM} مم` : ' — للجمال فقط، لا أدراج في هذا الذراع'}. عرض الذراع ${ext.width} مم · الواجهة ${frontMm} مم.`;
+    }
+    if (slides) return `↔️ بلا ضلفة: عرض الذراع ${ext.width} مم، والدرج يصل إلى حافة الزاوية أمام باب الذراع الآخر.`;
+    return null;
+  };
+
   const handleSaveCabinet = () => {
     if (!canAddNow) return;
     if (isCornerBuilder) { if (cornerWall) handleAddLCorner(cornerWall); return; }
@@ -305,9 +362,71 @@ export default function App() {
       const savedPatch = corner
         ? { ...patch, width: corner.width, positionX: corner.positionX, cornerExtensionMm: 0, cornerFillerMm, cornerFillerSides }
         : patch;
+      // ── a box of an L corner: the corner has THREE numbers, and changing any one of them moves all three boxes ─────
+      // Before this, the boxes kept the sizes they were born with: the form showed the corner's W and D, the save wrote the
+      // box's old width back, and the other two boxes never moved — so a wider arm left the door side hanging in the air.
+      const groupCabs = editing.groupId ? cabinets.filter((c) => c.groupId === editing.groupId) : [];
+      type CornerSave = { refused: string } | { patches: Array<{ id: string; fields: Partial<CabinetObject> }>; dims: CornerGroupDims };
+      const cornerBox: CornerSave | null = groupCabs.length === 3 && cornerDims !== null && editingCornerRole !== null ? (() => {
+        const role = editingCornerRole;
+        // The box the form has open gives its own slot: its W is the arm's width (the square's is its depth), so typing in
+        // the header and typing in the corner panel are ONE edit and can never disagree.
+        const dims: CornerGroupDims = {
+          wall: cornerDims.wall,
+          depthMm: Math.round(role === 'SQUARE' ? resolved.width : resolved.depth),
+          armAMm: Math.round(role === 'ARM_A' ? resolved.width : cornerDims.armAMm),
+          armBMm: Math.round(role === 'ARM_B' ? resolved.width : cornerDims.armBMm),
+        };
+        const span = cornerGroupSpan(dims);
+        const backWall = wallLengthOf(layout, 'A');
+        const sideWall = wallLengthOf(layout, dims.wall);
+        if (!cornerFitsWalls(span, backWall, sideWall)) {
+          return { refused: `⛔ مقاسات الزاوية هذه تحتاج ${Math.round(span.alongA)} مم على الجدار الخلفي (المتاح ${Math.round(backWall)}) و${Math.round(span.alongSide)} مم على الجدار الجانبي (المتاح ${Math.round(sideWall)}). لم يُغيَّر شيء: قلّل المربع أو أحد الذراعين.` };
+        }
+        // All three boxes, from the three numbers: width, depth, run and start on the wall (math/lCorner.ts).
+        const placed = relayoutCornerGroup(groupCabs, dims, backWall);
+        const byId = new Map(placed.map((x) => [x.id, x]));
+        const projected = cabinets.map((c) => {
+          const at = byId.get(c.id);
+          if (!at) return c;
+          return { ...c, ...(c.id === editing.id ? patch : {}), width: at.width, depth: at.depth, positionX: at.positionX, run: at.run, cornerExtensionMm: 0 };
+        });
+        // ONE L bottom for the three (math/lCorner.ts): re-read from the boxes as they will be, written on all three.
+        const deck = cornerDeckOf(projected.filter((c) => c.groupId === editing.groupId));
+        return {
+          patches: projected.filter((c) => byId.has(c.id)).map((c) => ({
+            id: c.id,
+            fields: {
+              ...(c.id === editing.id ? patch : {}),
+              width: c.width,
+              depth: c.depth,
+              positionX: c.positionX,
+              run: c.run,
+              cornerExtensionMm: 0,
+              ...(c.id === editing.id && editing.cornerSide ? { cornerFillerMm, cornerFillerSides } : {}),
+              ...(deck ? { cornerGroupDeckMm: deck } : {}),
+            } as Partial<CabinetObject>,
+          })),
+          dims,
+        };
+      })() : null;
+      if (cornerBox && 'refused' in cornerBox) { setLayoutNotice(cornerBox.refused); return; }
+      if (cornerBox) {
+        // One write, one undo step: the three boxes are one unit and must never be seen half-resized.
+        patchCabinets(cornerBox.patches);
+        setCornerDims(cornerBox.dims);
+        // What the arm really is after the save (the filler is re-read on the NEW width): the same sentence as before.
+        const mine = cornerBox.patches.find((x) => x.id === editing.id)?.fields;
+        const after = withCornerExtension({ ...editing, ...patch, width: mine?.width ?? editing.width, positionX: mine?.positionX ?? editing.positionX, cornerExtensionMm: 0, cornerFillerMm, cornerFillerSides }, resolved.zones, frontTh);
+        const spanNow = cornerGroupSpan(cornerBox.dims);
+        const group = `📐 الزاوية ${cornerBox.dims.depthMm} × (${cornerBox.dims.armAMm} + ${cornerBox.dims.armBMm}): تشغل ${Math.round(spanNow.alongA)} مم على الجدار الخلفي و${Math.round(spanNow.alongSide)} مم على الجانبي، والصناديق الثلاثة تحرّكت معاً.`;
+        setLayoutNotice([cornerArmNotice(after, resolved.zones), group].filter(Boolean).join(' '));
+        setEditingId(null);
+        return;
+      }
       // The three boxes of a corner stand on ONE L bottom (math/lCorner.ts): an arm edited here changes the piece itself, so
       // the group's deck is worked out again from the boxes as they will be, and written on all three (one board, one cut).
-      const groupIds = editing.groupId ? cabinets.filter((c) => c.groupId === editing.groupId).map((c) => c.id) : [];
+      const groupIds = groupCabs.map((c) => c.id);
       const nextGroup = groupIds.length
         ? cabinets.filter((c) => c.groupId === editing.groupId).map((c) => (c.id === editing.id ? { ...c, ...savedPatch } : c))
         : [];
@@ -315,22 +434,7 @@ export default function App() {
       const deckSame = nextGroup.every((c) => (c.cornerGroupDeckMm?.armAMm ?? null) === (deckNow?.armAMm ?? null) && (c.cornerGroupDeckMm?.armBMm ?? null) === (deckNow?.armBMm ?? null));
       updateCabinet(editing.id, deckNow && !deckSame ? { ...savedPatch, cornerGroupDeckMm: deckNow } : savedPatch);
       if (groupIds.length && deckNow && !deckSame) updateManyCabinets(groupIds.filter((id) => id !== editing.id), { cornerGroupDeckMm: deckNow });
-      if (corner) {
-        const { left, right } = corner.cornerFillers;
-        // one sentence for the two possible panels: either a clearance (drawers) or a look-only panel on a doors arm
-        const both = left > 0 && right > 0;
-        const where = both ? 'على الجهتين' : left > 0 ? 'على الجهة اليسرى' : 'على الجهة اليمنى';
-        const panelMm = both ? left : left > 0 ? left : right;
-        const slides = resolved.zones.some((z) => z.kind === 'DRAWERS' || z.split?.fill === 'PULL_OUT');
-        const frontMm = Math.round((Math.min(corner.width - 0.5, corner.width - right) - Math.max(0.5, left)) * 10) / 10;
-        if (left > 0 || right > 0) {
-          setLayoutNotice(`🖇️ ضلفة زاوية ثابتة بعرض ${panelMm} مم ${where} من أسفل الهيكل إلى أعلاه${slides ? `، والدرج يمرّ أمامها بفراغ ${CORNER.DRAWER_CLEARANCE_MM} مم` : ' — للجمال فقط، لا أدراج في هذا الذراع'}. عرض الذراع ${corner.width} مم · الواجهة ${frontMm} مم.`);
-        } else if (resolved.zones.some((z) => z.kind === 'DRAWERS' || z.split?.fill === 'PULL_OUT')) {
-          setLayoutNotice(`↔️ بلا ضلفة: عرض الذراع ${corner.width} مم، والدرج يصل إلى حافة الزاوية أمام باب الذراع الآخر.`);
-        } else {
-          setLayoutNotice(null);
-        }
-      }
+      if (corner) setLayoutNotice(cornerArmNotice(corner, resolved.zones));
       setEditingId(null);
       return;
     }
@@ -414,6 +518,9 @@ export default function App() {
     setActiveCabinetId(id);
     setCornerFillerMm(cab.cornerFillerMm);
     setCornerFillerSides(cab.cornerFillerSides);
+    // A box of an L corner opens with the corner's THREE numbers (the square and both arms), read from the group — so the
+    // panel below can resize the corner instead of only the one box the list happened to open.
+    setCornerDims(cab.groupId ? cornerDimsOf(cabinets.filter((c) => c.groupId === cab.groupId)) : null);
     setDraft(cabinetToDraft(cab));
   };
 
@@ -518,7 +625,7 @@ export default function App() {
             </span>
             <div className="absolute inset-x-0 top-9 bottom-0">
               <CabinetPreview3D
-                cabinet={previewCabinet}
+                cabinet={previewEdged}
                 showFronts={showFronts}
                 isXRayMode={isXRayMode}
                 woodPanels={woods}
@@ -612,11 +719,53 @@ export default function App() {
                   <CommitNumber value={countertop.depthMm} min={COUNTERTOP.DEPTH_MM[0]} max={COUNTERTOP.DEPTH_MM[1]} ariaLabel="عرض سطح العمل" title="العرض (العمق من الجدار) من 580 إلى 650 مم" onCommit={(v) => setCountertopSettings({ depthMm: v })} />
                   <span>مم</span>
                 </label>
-                {countertopStretch && (
-                  <span className="text-[9px] font-bold text-amber-300" title="العمق المطلوب أقل من الواجهة التي يغطيها">
-                    ⚠️ الواجهة عند {countertopStretch.drawn} مم ⇐ يُرسم بهذا العرض
+                {countertopShort && (
+                  <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title="العرض الذي كتبته أقصر من الواجهة التي يغطيها سطح العمل — والرسم يتبع رقمك، لا العكس">
+                    ⚠️ أقصر من الواجهة بـ {countertopShort.shortByMm} مم (الواجهة عند {countertopShort.neededMm} مم)
+                    {countertopShort.canCover && (
+                      <button type="button" onClick={() => setCountertopSettings({ depthMm: countertopShort.neededMm })} className="px-1 rounded border border-amber-400 bg-amber-900/40 hover:bg-amber-800 text-[8px] font-bold cursor-pointer">
+                        اجعله {countertopShort.neededMm}
+                      </button>
+                    )}
                   </span>
                 )}
+                {/* خامة سطح العمل: تُختار من نفس مكتبة الـ public/textures التي تختار منها الواجهات (عرض فقط، بلا تسعير) */}
+                <span className="relative">
+                  <button
+                    type="button"
+                    aria-label="خامة سطح العمل"
+                    onClick={() => setCountertopFinishOpen((o) => !o)}
+                    className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-500 bg-slate-800 hover:bg-slate-700 text-[9px] font-bold text-slate-200 cursor-pointer"
+                    title="افتح مكتبة public/textures واختر خامة للسطح — كما تختار خامة الواجهة"
+                  >
+                    🪨 {countertop.texturePath ? countertop.texturePath.split('/').pop()?.replace(/\.[^.]+$/, '') : 'رخام أبيض'}
+                    <span className="text-[8px] font-mono text-slate-400">({localTextures.count})</span>
+                  </button>
+                  {countertopFinishOpen && (
+                    <span className="absolute z-50 top-6 left-0 w-72 max-h-56 overflow-y-auto rounded-lg border border-slate-600 bg-slate-900/95 p-1.5 shadow-2xl block" style={{ direction: 'ltr' }}>
+                      <span className="flex items-center justify-between px-1 pb-1" style={{ direction: 'rtl' }}>
+                        <span className="text-[9px] font-bold text-slate-200">مكتبة الخامات ({localTextures.count})</span>
+                        <button type="button" onClick={() => setCountertopSettings({ texturePath: undefined })} className="px-1 rounded border border-slate-600 bg-slate-800 text-[8px] text-slate-300 hover:bg-slate-700 cursor-pointer">↺ رخام أبيض</button>
+                      </span>
+                      {localTextures.count === 0 && (
+                        <span className="block px-1 py-1 text-[9px] text-amber-300" style={{ direction: 'rtl' }}>مجلد public/textures غير مقروء في هذا البناء.</span>
+                      )}
+                      <span className="grid grid-cols-6 gap-1">
+                        {localTextures.entries.map((tex) => (
+                          <button
+                            key={tex.id}
+                            type="button"
+                            title={tex.name}
+                            onClick={() => { setCountertopSettings({ texturePath: tex.path }); setCountertopFinishOpen(false); }}
+                            className={`w-10 h-10 rounded border overflow-hidden cursor-pointer hover:border-indigo-400 ${countertop.texturePath === tex.path ? 'border-indigo-400 ring-2 ring-indigo-500' : 'border-slate-600'}`}
+                          >
+                            <img src={tex.path} alt={tex.name} loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-full h-full object-cover" />
+                          </button>
+                        ))}
+                      </span>
+                    </span>
+                  )}
+                </span>
                 <span className="text-[8px] font-mono text-slate-500">مجاني في التسعير — على الزبون</span>
               </div>
             )}
@@ -790,6 +939,59 @@ export default function App() {
               </div>
             )}
 
+            {/* مقاسات الزاوية: ثلاثة أرقام، كلها قابلة للتعديل في أي وقت — والمربع والذراعان يتحركون معاً */}
+            {editing && cornerDims && editingCornerRole && (() => {
+              const role = editingCornerRole;
+              const mine = cornerDimKeyOf(role);
+              // The box in the form shows its OWN number from the header (they are one edit); the other two from the panel.
+              const valueOf = (k: keyof Omit<CornerGroupDims, 'wall'>) => (k === mine ? Math.round(resolved[k === 'depthMm' ? 'depth' : 'width']) : cornerDims[k]);
+              const set = (k: keyof Omit<CornerGroupDims, 'wall'>, v: number) => {
+                const n = k === 'depthMm' ? clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], cornerDims[k]) : cornerArm(v);
+                setCornerDims({ ...cornerDims, [k]: n });
+                if (k === mine) patchDraft(k === 'depthMm' ? { depth: n, width: role === 'SQUARE' ? n : draft.width } : { width: n });
+                if (k === 'depthMm' && role !== 'SQUARE') patchDraft({ depth: n });
+              };
+              const shown: CornerGroupDims = { ...cornerDims, [mine]: valueOf(mine) };
+              const span = cornerGroupSpan(shown);
+              const backWall = wallLengthOf(layout, 'A');
+              const sideWall = wallLengthOf(layout, cornerDims.wall);
+              const fits = cornerFitsWalls(span, backWall, sideWall);
+              const num = "w-16 px-1 py-0.5 border rounded font-mono text-center text-[11px]" + (fits ? " border-indigo-300" : " border-red-400 bg-red-50");
+              return (
+                <div className="rounded border border-indigo-300 bg-indigo-50 p-1.5 space-y-1" data-testid="corner-dims">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-indigo-900">📐 مقاسات الزاوية</span>
+                    <span className="text-[9px] text-indigo-700">{CORNER_ROLE_LABELS[role]} هي المفتوحة الآن</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="ضلع المربع = عمق كل صناديق الزاوية">
+                      <span>المربع</span>
+                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="مربع الزاوية (مم)" value={shown.depthMm}
+                        onChange={(e) => set('depthMm', Number(e.target.value))} onBlur={() => set('depthMm', shown.depthMm)} className={num} style={{ direction: 'ltr' }} />
+                      <span className="text-[9px]">مم</span>
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="عرض الذراع على الجدار الخلفي (عرض بابه)">
+                      <span>الذراع الخلفي</span>
+                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="عرض الذراع الخلفي (مم)" value={shown.armAMm}
+                        onChange={(e) => set('armAMm', Number(e.target.value))} onBlur={() => set('armAMm', shown.armAMm)} className={num} style={{ direction: 'ltr' }} />
+                      <span className="text-[9px]">مم</span>
+                    </label>
+                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="عرض الذراع على الجدار الجانبي (عرض بابه)">
+                      <span>الذراع الجانبي</span>
+                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="عرض الذراع الجانبي (مم)" value={shown.armBMm}
+                        onChange={(e) => set('armBMm', Number(e.target.value))} onBlur={() => set('armBMm', shown.armBMm)} className={num} style={{ direction: 'ltr' }} />
+                      <span className="text-[9px]">مم</span>
+                    </label>
+                  </div>
+                  <span className={fits ? "block text-[9px] leading-snug text-indigo-800" : "block text-[9px] leading-snug font-bold text-red-700"}>
+                    {fits
+                      ? `يحتاج ${Math.round(span.alongA)} مم على الجدار الخلفي (المتاح ${Math.round(backWall)}) و${Math.round(span.alongSide)} مم على الجانبي (المتاح ${Math.round(sideWall)}). المربع والذراعان صناديق ثلاثة تتحرك معاً بخزنة واحدة.`
+                      : `⚠️ لا يدخل: ${Math.round(span.alongA)} / ${Math.round(backWall)} مم على الخلفي و${Math.round(span.alongSide)} / ${Math.round(sideWall)} مم على الجانبي. قلّل المربع أو أحد الذراعين.`}
+                  </span>
+                  <span className="block text-[9px] leading-snug text-indigo-700">العرض في الأعلى (W) هو رقم هذا الصندوق نفسه: تعديله هنا وتعديله هناك شيء واحد.</span>
+                </div>
+              );
+            })()}
             <div className={isCornerBuilder ? 'hidden' : 'contents'}>
             <div className="grid grid-cols-3 gap-1 text-[10px] bg-slate-50 p-1.5 rounded border" style={{ direction: 'ltr' }}>
               <div>W:<input type="number" aria-label="العرض" min={LIMITS.WIDTH_MM[0]} max={LIMITS.WIDTH_MM[1]} value={draft.width} onChange={(e) => patchDraft({ width: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
@@ -1299,10 +1501,10 @@ export default function App() {
                   value={resolved.frontEdgeRollId}
                   onChange={(e) => patchDraft({ frontEdgeRollId: e.target.value })}
                   disabled={!canSave || edgeRolls.length === 0}
-                  title="شريط الحافة (edge band) من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة"
+                  title="شريط الحافة للواجهات من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة. «بدون» تعني واجهة بلا شريط (مدهونة) — وإن تركت الحقل فارغاً يُستعمل أرقّ لفّة في المخزن تلقائياً"
                   className="w-44 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
                 >
-                  <option value="">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
+                  <option value="NONE">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
                   {edgeRolls.map((r) => (
                     <option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>
                   ))}
@@ -1331,7 +1533,7 @@ export default function App() {
                 {editing ? '💾 تحديث الوحدة المحددة' : isCornerBuilder ? '➕ إضافة زاوية L إلى المطبخ' : '➕ حقن وتثبيت الوحدة في المطبخ'}
               </button>
               {editing && (
-                <button type="button" onClick={() => setEditingId(null)} className="w-full bg-white border border-slate-300 text-slate-700 font-bold py-1 rounded-lg text-[11px] hover:bg-slate-50 cursor-pointer">
+                <button type="button" onClick={() => { setEditingId(null); setCornerDims(null); }} className="w-full bg-white border border-slate-300 text-slate-700 font-bold py-1 rounded-lg text-[11px] hover:bg-slate-50 cursor-pointer">
                   ✖ إلغاء التعديل
                 </button>
               )}
