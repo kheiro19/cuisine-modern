@@ -142,6 +142,12 @@ export interface ZoneSplit {
   /** Width (mm) between the carcase and the vertical board for the main column. Missing: the niche + clearance for an appliance, half the free width for doors. */
   mainWidthMm?: number;
   fill?: ColumnFillChoice;
+  /**
+   * Join the FILL column of this zone with the zone just below it (which must be split too, on the same side): the two side columns
+   * become ONE column — one vertical board as tall as both zones, no horizontal board across that column, one front over both.
+   * Missing / false = every zone keeps its own side column (the horizontal divider runs across the whole width).
+   */
+  joinBelow?: boolean;
 }
 
 /** How the fronts open: a handle (not priced), Gola channels, or a push-to-open mechanism (priced per facade). */

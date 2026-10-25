@@ -75,12 +75,12 @@ export function splitLayoutOf(
   zone: CabinetZone,
   cab: { width: number },
   thicknessMm: number,
-  opts: { open?: boolean } = {},
+  opts: { open?: boolean; /** Joined zones share one vertical board: both use the wider main column (math/zones.ts layoutZones). */ mainWidthMm?: number } = {},
 ): { layout?: SplitLayout; issue?: SplitIssue } {
   if (!zone.split || !canSplitZone(zone) || opts.open) return {};
   const th = thicknessMm;
   const inner = cab.width - 2 * th;
-  const mainW = mainColumnWidthMm(zone, inner, th);
+  const mainW = opts.mainWidthMm ?? mainColumnWidthMm(zone, inner, th);
   const fillW = inner - th - mainW;
   if (mainW < SPLIT.MIN_COLUMN_MM || fillW < SPLIT.MIN_COLUMN_MM) {
     return {

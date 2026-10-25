@@ -82,6 +82,7 @@ export interface CabinetIssue {
     | 'APPLIANCE_ZONE_TOO_SHORT'
     | 'APPLIANCE_ZONE_WIDE'
     | 'SPLIT_NO_ROOM'
+    | 'SPLIT_JOIN_INVALID'
     | 'DOORS_TOO_NARROW'
     | 'SHELVES_TOO_CLOSE'
     | 'GOLA_ZONE_TOO_SHORT'
@@ -166,10 +167,29 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     }
   }
   // The board between two zones is always cut — including above an open bay: the zone above it has to stand on something.
-  if (zones.length > 1) parts.push(carcase('Zone Divider Panel', innerDepth, inner, (zones.length - 1) * dividerBoardsOf(cab), 'horizontal', 'FRONT'));
-  // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening.
+  // Where two zones' side columns are joined the board crosses the main column only (its length is that column's width).
+  if (zones.length > 1) {
+    const boardsPer = dividerBoardsOf(cab);
+    let whole = 0;
+    const narrow = new Map<number, number>();
+    for (let i = 0; i < zones.length - 1; i++) {
+      const joined = layout.bands[i + 1].join && layout.bands[i + 1].join!.lowIndex <= i ? layout.bands[i].split : undefined;
+      if (!joined) { whole += boardsPer; continue; }
+      const w = Math.round((joined.main.innerHiMm - joined.main.innerLoMm) * 10) / 10;
+      narrow.set(w, (narrow.get(w) ?? 0) + boardsPer);
+    }
+    if (whole > 0) parts.push(carcase('Zone Divider Panel', innerDepth, inner, whole, 'horizontal', 'FRONT'));
+    narrow.forEach((qty, w) => parts.push(carcase('Zone Divider Panel (main column only)', innerDepth, w, qty, 'horizontal', 'FRONT')));
+  }
+  // A vertical board inside a zone (math/columns.ts): as deep as the cabinet, as tall as the zone's opening — or, for joined side
+  // columns, one board as tall as all the zones it joins.
   layout.bands.forEach((band) => {
-    if (band.split) parts.push(carcase(`Zone Column Board${zones.length > 1 ? ` [zone ${band.index + 1}]` : ''}`, innerDepth, band.openingHeightMm, 1, 'vertical', 'FRONT'));
+    if (!band.split) return;
+    if (band.join && band.join.lowIndex !== band.index) return;
+    const top = band.join ? layout.bands[band.join.highIndex] : band;
+    const height = top.openingBottomMm + top.openingHeightMm - band.openingBottomMm;
+    const tag = band.join ? ` [zones ${band.join.lowIndex + 1}–${band.join.highIndex + 1}]` : zones.length > 1 ? ` [zone ${band.index + 1}]` : '';
+    parts.push(carcase(`Zone Column Board${tag}`, innerDepth, height, 1, 'vertical', 'FRONT'));
   });
 
   // Hinge boards of a row of several doors (zones.ts partitions): as deep as the cabinet, as tall as the zone's opening.
@@ -208,6 +228,7 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     if (n === 0) return;
     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
     shelfSpansOf(band.zone, band.split, carcaseTh, cab.width, mainHasBaskets, band.partitions).forEach((s) => {
+      if (s.column === 'FILL' && band.join && band.join.lowIndex !== band.index) return; // a joined side column is shelved once, by its lowest zone
       const w = s.hiMm - s.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM;
       shelfRows.set(w, (shelfRows.get(w) ?? 0) + n);
     });

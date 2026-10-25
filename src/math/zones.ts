@@ -90,7 +90,7 @@ export function backPanelBottomMm(layout: ZoneLayout): number {
 export const isApplianceBayAtBottom = (zones: CabinetZone[]): boolean => isFloorApplianceZone(zones[0]);
 
 export interface ZoneIssue {
-  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SHELVES_TOO_CLOSE' | 'DOORS_TOO_NARROW';
+  code: 'ZONES_TOO_TALL' | 'APPLIANCE_TOO_NARROW' | 'APPLIANCE_TOO_SHALLOW' | 'APPLIANCE_ZONE_TOO_SHORT' | 'APPLIANCE_ZONE_WIDE' | 'SPLIT_NO_ROOM' | 'SPLIT_JOIN_INVALID' | 'SHELVES_TOO_CLOSE' | 'DOORS_TOO_NARROW';
   message: string;
 }
 
@@ -105,6 +105,11 @@ export interface ZoneBand {
   bandTopMm: number;
   /** The two columns when a vertical board splits this zone (math/columns.ts); missing = one column, the whole width. */
   split?: SplitLayout;
+  /**
+   * The zones whose side (FILL) columns are joined into one (ZoneSplit.joinBelow), as the indices of the lowest and the highest zone
+   * of the group, on every zone of the group. The lowest zone carries the vertical board, the shelves and the front of the joined column.
+   */
+  join?: { lowIndex: number; highIndex: number };
   /**
    * Doors zones with several swinging doors: the vertical boards the hinges hang on. A hinge needs a board behind it, so every hinge
    * that is not on a side (or on the zone's own vertical board) gets one: neighbouring doors hinged on the same edge share it.
@@ -246,6 +251,33 @@ export function layoutZones(cab: SizedCabinet, thicknessMm: number, opts: { inse
     if (s.layout) b.split = s.layout;
     if (s.issue) issues.push(s.issue);
   });
+  // Joined side columns (ZoneSplit.joinBelow): consecutive split zones on the same side share ONE vertical board and ONE side column.
+  // The board stands at the wider of their main columns, so every appliance still fits.
+  {
+    const joins = (i: number) => i > 0 && !!bands[i].zone.split?.joinBelow;
+    const sameSide = (i: number) => !!bands[i].split && !!bands[i - 1].split && bands[i].split!.mainSide === bands[i - 1].split!.mainSide;
+    for (let i = 1; i < n; i++) {
+      if (joins(i) && !sameSide(i)) issues.push({ code: 'SPLIT_JOIN_INVALID', message: `القسم ${i + 1}: لا يمكن دمج عموده الجانبي مع القسم ${i}، يجب أن يكون القسمان بلوح عمودي وعلى الجهة نفسها.` });
+    }
+    for (let i = 0; i < n; i++) {
+      if (i > 0 && joins(i) && sameSide(i)) continue; // not the lowest of its group
+      let hi = i;
+      while (hi + 1 < n && joins(hi + 1) && sameSide(hi + 1)) hi++;
+      if (hi === i) continue;
+      const group = bands.slice(i, hi + 1);
+      const mainW = Math.max(...group.map((b) => b.split!.main.innerHiMm - b.split!.main.innerLoMm));
+      const redone = group.map((b) => splitLayoutOf(b.zone, cab, th, { mainWidthMm: mainW }));
+      const bad = redone.find((r) => !r.layout);
+      if (bad) { if (bad.issue) issues.push(bad.issue); continue; }
+      group.forEach((b, k) => {
+        b.split = redone[k].layout!;
+        b.join = { lowIndex: i, highIndex: hi };
+      });
+      // One side column, one content: the lowest zone's choice rules the whole column.
+      const fill = group[0].split!.fill.fill;
+      group.forEach((b) => { b.split!.fill = { ...b.split!.fill, fill }; });
+    }
+  }
   // Hinge boards: a door can only hang on a board. With three or more doors in a row (or all hinges on one side) some hinges fall
   // between two doors, where there is nothing: a board is cut for each of those edges, and the doors hang on it.
   bands.forEach((b) => {
@@ -314,6 +346,8 @@ export interface Facade {
   levels?: number;
   /** Real thickness of THIS facade's sheet (mm) when its zone has a front sheet of its own; missing = the cabinet's front thickness. */
   thicknessMm?: number;
+  /** The joined side column of several zones: the highest zone this facade reaches up to (its own `zoneIndex` is the lowest). */
+  spanToZone?: number;
 }
 
 /** Baskets in a pull-out frame: the zone's shelves, or the default when it has none (a drawers zone has no shelves). */
@@ -421,8 +455,17 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
       } else if (z.kind === 'APPLIANCE' && z.panelFront) {
         facades.push({ ...base(sp.main, 'MAIN'), kind: 'PANEL', index: 0, count: 1, widthMm: mainStrip.hiMm - mainStrip.loMm, heightMm: extent, xMm: mainStrip.loMm, yMm: yLo });
       }
+      // A joined side column (band.join) has ONE front, made by its lowest zone and as tall as all the zones it joins.
+      const joined = band.join;
+      if (joined && joined.lowIndex !== i) return;
       const fillStrip = trimStrip(frontStripOf(sp.fill, cab.width));
-      const fillBase = { ...base(sp.fill, 'FILL'), index: 0, count: 1, widthMm: fillStrip.hiMm - fillStrip.loMm, heightMm: stack, xMm: fillStrip.loMm, yMm: y };
+      const joinTop = joined ? layout.bands[joined.highIndex] : undefined;
+      const joinHi = joinTop ? round2(joinTop.bandTopMm - (joined!.highIndex === n - 1 ? half : reveal)) : yHi;
+      const fillBase = {
+        ...base(sp.fill, 'FILL'), index: 0, count: 1, widthMm: fillStrip.hiMm - fillStrip.loMm,
+        heightMm: joined ? Math.max(0, joinHi - yLo) : stack, xMm: fillStrip.loMm, yMm: joined ? yLo : y,
+        ...(joined && joined.highIndex !== i ? { spanToZone: joined.highIndex } : {}),
+      };
       if (sp.fill.fill === 'PULL_OUT') facades.push({ ...fillBase, kind: 'DOOR', kinematic: 'PULL_OUT_FRAME', levels: PULL_OUT.DEFAULT_LEVELS });
       else if (sp.fill.fill === 'DOOR') facades.push({ ...fillBase, kind: 'DOOR', hingeSide: outer(sp.fill) });
       else if (sp.fill.fill === 'PANEL') facades.push({ ...fillBase, kind: 'PANEL' });
@@ -521,7 +564,8 @@ function insetPlan(cab: SizedCabinet, layout: ZoneLayout, plan: FrontPlan): Fron
     const lo = (first.innerLoMm ?? sides.loMm) + g;
     const hi = (first.innerHiMm ?? sides.hiMm) - g;
     const yLo = band.openingBottomMm + g;
-    const yHi = band.openingBottomMm + band.openingHeightMm - g;
+    const topBand = first.spanToZone !== undefined ? layout.bands[first.spanToZone] : band; // a joined side column reaches up to its highest zone
+    const yHi = topBand.openingBottomMm + topBand.openingHeightMm - g;
     const n = list.length;
     const height = Math.max(0, yHi - yLo);
     if (first.kind === 'DOOR') {

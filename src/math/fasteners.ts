@@ -60,10 +60,19 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
   ] as Array<{ key: string; xFace: number; dir: 1 | -1 }>).filter((s) => geo.boxes.some((b) => b.key === s.key));
 
   // ---- board-to-side joints: a cam bolt (screwed into the side) + its cam housing (in the board) + a dowel
+  // A divider that only crosses the main column (joined side columns) is held by the side at one end and by the vertical board at the other.
+  const vFaces: Array<{ key: string; xFace: number; dir: 1 | -1; y0: number; y1: number }> = geo.boxes.filter((b) => b.kind === 'vdivider').flatMap((v) => [
+    { key: v.key, xFace: v.centerMm[0] - v.sizeMm[0] / 2, dir: -1 as const, y0: v.centerMm[1] - v.sizeMm[1] / 2, y1: v.centerMm[1] + v.sizeMm[1] / 2 },
+    { key: v.key, xFace: v.centerMm[0] + v.sizeMm[0] / 2, dir: 1 as const, y0: v.centerMm[1] - v.sizeMm[1] / 2, y1: v.centerMm[1] + v.sizeMm[1] / 2 },
+  ]);
   geo.boxes.filter((b) => b.kind === 'bottom' || b.kind === 'divider' || b.kind === 'rail' || b.kind === 'roof').forEach((b: BoxGeo) => {
     const [, cy, cz] = b.centerMm;
     const zLo = cz - b.sizeMm[2] / 2, zHi = cz + b.sizeMm[2] / 2;
-    sides.forEach((s) => {
+    const xLeft = b.centerMm[0] - b.sizeMm[0] / 2, xRight = b.centerMm[0] + b.sizeMm[0] / 2;
+    const holders = b.kind === 'divider'
+      ? [...sides, ...vFaces.filter((f) => cy > f.y0 + 0.5 && cy < f.y1 - 0.5)].filter((s) => Math.abs((s.dir === 1 ? xLeft : xRight) - s.xFace) < 1.5)
+      : sides;
+    holders.forEach((s) => {
       jointZs(zLo, zHi).forEach((z) => {
         out.push(cyl('CAM_BOLT', 'x', [s.xFace + s.dir * (FASTENER.BOLT_LEN_MM / 2 - 5), cy, z], FASTENER.BOLT_DIA_MM, FASTENER.BOLT_LEN_MM, s.key));
         out.push(cyl('CAM', 'y', [s.xFace + s.dir * FASTENER.BOLT_LEN_MM, cy + b.sizeMm[1] / 2 - FASTENER.CAM_DEPTH_MM / 2, z], FASTENER.CAM_DIA_MM, FASTENER.CAM_DEPTH_MM, b.key));

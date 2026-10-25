@@ -157,7 +157,7 @@ function normalizeSplit(z: CabinetZone, n: CabinetZone): ZoneSplit | undefined {
   const w = z.split.mainWidthMm;
   const mainWidthMm = typeof w === 'number' && Number.isFinite(w) && w > 0 ? clampInt(w, SPLIT.MIN_COLUMN_MM, LIMITS.WIDTH_MM[1], SPLIT.MIN_COLUMN_MM) : undefined;
   const fill = z.split.fill && (z.split.fill === 'AUTO' || COLUMN_FILLS.includes(z.split.fill as never)) ? z.split.fill : 'AUTO';
-  return { mainSide: z.split.mainSide === 'RIGHT' ? 'RIGHT' : 'LEFT', ...(mainWidthMm !== undefined ? { mainWidthMm } : {}), fill };
+  return { mainSide: z.split.mainSide === 'RIGHT' ? 'RIGHT' : 'LEFT', ...(mainWidthMm !== undefined ? { mainWidthMm } : {}), fill, ...(z.split.joinBelow ? { joinBelow: true } : {}) };
 }
 
 /** Which hinge / runner pickers a draft needs, a split's small door or spice rack included. `d` must be resolved. */

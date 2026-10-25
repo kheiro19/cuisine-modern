@@ -108,7 +108,16 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   {
     const boards = dividerBoardsOf(cab);
     layout.dividerBottomsMm.forEach((y, i) => {
-      for (let b = 0; b < boards; b++) boxes.push({ key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider', sizeMm: [inner, th, D - backIn], centerMm: [cx, y + b * th + th / 2, zBackBoard] });
+      // Between two zones whose side columns are joined, the board crosses the main column only: the joined column stays open from zone to zone.
+      const joinedSplit = layout.bands[i + 1].join && layout.bands[i + 1].join!.lowIndex <= i ? layout.bands[i].split : undefined;
+      const lo = joinedSplit ? joinedSplit.main.innerLoMm : undefined, hi = joinedSplit ? joinedSplit.main.innerHiMm : undefined;
+      for (let b = 0; b < boards; b++) {
+        boxes.push({
+          key: b === 0 ? `divider-${i}` : `divider-${i}-${b + 1}`, kind: 'divider',
+          sizeMm: [lo !== undefined && hi !== undefined ? hi - lo : inner, th, D - backIn],
+          centerMm: [lo !== undefined && hi !== undefined ? (lo + hi) / 2 : cx, y + b * th + th / 2, zBackBoard],
+        });
+      }
     });
   }
 
@@ -117,7 +126,11 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   {
     layout.bands.forEach((band) => {
       if (!band.split) return;
-      boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, band.openingHeightMm, D - backIn], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + band.openingHeightMm / 2, zBackBoard] });
+      // Joined side columns share ONE vertical board, as tall as all the zones it joins (it passes beside the horizontal boards).
+      if (band.join && band.join.lowIndex !== band.index) return;
+      const top = band.join ? layout.bands[band.join.highIndex] : band;
+      const h = top.openingBottomMm + top.openingHeightMm - band.openingBottomMm;
+      boxes.push({ key: `vdiv-${band.index}`, kind: 'vdivider', sizeMm: [band.split.boardWidthMm, h, D - backIn], centerMm: [band.split.boardXLoMm + band.split.boardWidthMm / 2, band.openingBottomMm + h / 2, zBackBoard] });
     });
     // The hinge boards of a row of several doors (zones.ts partitions): same height and depth as a vertical board.
     layout.bands.forEach((band) => {
@@ -178,8 +191,12 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
     if (count === 0) return;
     const mainHasBaskets = plan.facades.some((f) => f.zoneIndex === band.index && f.column !== 'FILL' && f.kinematic === 'PULL_OUT_FRAME');
     shelfSpansOf(band.zone, band.split, th, W, mainHasBaskets, band.partitions).forEach((span) => {
+      // The shelves of a joined side column belong to its lowest zone and spread over all the zones it joins.
+      if (span.column === 'FILL' && band.join && band.join.lowIndex !== band.index) return;
+      const joinTop = span.column === 'FILL' && band.join ? layout.bands[band.join.highIndex] : band;
+      const spanHeight = joinTop.openingBottomMm + joinTop.openingHeightMm - band.openingBottomMm;
       for (let k = 0; k < count; k++) {
-        const y = band.openingBottomMm + (band.openingHeightMm * (k + 1)) / (count + 1);
+        const y = band.openingBottomMm + (spanHeight * (k + 1)) / (count + 1);
         const tag = `${span.column === 'ALL' ? '' : span.column === 'FILL' ? 'f-' : 'm-'}${span.part !== undefined ? `p${span.part}-` : ''}`;
         const key = `shelf-${band.index}-${tag}${k}`;
         boxes.push({ key, kind: 'shelf', sizeMm: [span.hiMm - span.loMm - PANEL.SHELF_WIDTH_CLEARANCE_MM, th, D - PANEL.SHELF_DEPTH_INSET_MM - backIn], centerMm: [(span.loMm + span.hiMm) / 2, y, (backIn - PANEL.SHELF_DEPTH_INSET_MM) / 2] });

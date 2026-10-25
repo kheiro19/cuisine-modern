@@ -1415,13 +1415,32 @@ export default function App() {
                                   <input type="number" min={20} placeholder="تلقائي" value={z.split.mainWidthMm ?? ''} onChange={(e) => updateZone(i, { split: { ...z.split!, mainWidthMm: e.target.value === '' ? undefined : Number(e.target.value) } })} onBlur={normalizeDraft} className="w-14 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
                                 </label>
                               )}
-                              <label className="flex items-center gap-1 font-bold">
-                                العمود الآخر
-                                <select value={z.split.fill ?? 'AUTO'} onChange={(e) => updateZone(i, { split: { ...z.split!, fill: e.target.value as ColumnFillChoice } })} className="border bg-white rounded p-0.5 text-[10px] font-normal">
-                                  <option value="AUTO">{`تلقائي${fillW !== undefined ? ` (${FILL_LABELS[suggestFill(fillW)]})` : ''}`}</option>
-                                  {COLUMN_FILLS.map((f) => (<option key={f} value={f}>{FILL_LABELS[f]}</option>))}
-                                </select>
-                              </label>
+                              {band?.join && band.join.lowIndex !== i ? (
+                                <span className="font-bold text-indigo-700">العمود الآخر: مدموج مع القسم {band.join.lowIndex + 1} (يتبع اختياره)</span>
+                              ) : (
+                                <label className="flex items-center gap-1 font-bold">
+                                  العمود الآخر
+                                  <select value={z.split.fill ?? 'AUTO'} onChange={(e) => updateZone(i, { split: { ...z.split!, fill: e.target.value as ColumnFillChoice } })} className="border bg-white rounded p-0.5 text-[10px] font-normal">
+                                    <option value="AUTO">{`تلقائي${fillW !== undefined ? ` (${FILL_LABELS[suggestFill(fillW)]})` : ''}`}</option>
+                                    {COLUMN_FILLS.map((f) => (<option key={f} value={f}>{FILL_LABELS[f]}</option>))}
+                                  </select>
+                                </label>
+                              )}
+                              {i > 0 && resolved.zones[i - 1].split && (
+                                <label
+                                  className={`flex items-center gap-1 font-bold ${resolved.zones[i - 1].split!.mainSide !== z.split.mainSide ? 'opacity-50' : ''}`}
+                                  title="يصبح العمود الآخر عموداً واحداً يجمع القسمين: لوح عمودي واحد، ولا يمرّ الرف الأفقي عبر هذا الجانب، وواجهة واحدة تغطيهما."
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={!!z.split.joinBelow}
+                                    disabled={resolved.zones[i - 1].split!.mainSide !== z.split.mainSide}
+                                    onChange={(e) => updateZone(i, { split: { ...z.split!, joinBelow: e.target.checked ? true : undefined } })}
+                                  />
+                                  دمج العمود الآخر مع القسم {i} (بلا رف فاصل في هذا الجانب)
+                                  {resolved.zones[i - 1].split!.mainSide !== z.split.mainSide && <span className="font-normal text-slate-500"> — يلزم أن يكون الجهازان على الجهة نفسها</span>}
+                                </label>
+                              )}
                               {sp && <span className="text-slate-500">عمود {z.kind === 'APPLIANCE' ? 'الجهاز' : 'الأبواب'} {Math.round(sp.main.innerHiMm - sp.main.innerLoMm)} مم · الباقي {fillW} مم ← {FILL_LABELS[sp.fill.fill ?? 'PANEL']}</span>}
                               {!sp && <span className="text-red-600 font-bold">لا مكان للوح: وسّع الخزانة أو قلّل عرض عمود الأبواب</span>}
                             </>
