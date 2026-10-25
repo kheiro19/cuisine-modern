@@ -1,8 +1,7 @@
 // UI tests for the REAL App: no mock component, no fake context — the same FurnitureProvider and the same buttons a user clicks.
 // The 3D scene is not asserted (jsdom has no WebGL): what is asserted is the part test.md said nobody tests — the screen.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import React from 'react';
-import { render, fireEvent, cleanup, within } from '@testing-library/react';
+import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';
 

@@ -200,7 +200,6 @@ export default function InventoryManager() {
   const [newFinishInput, setNewFinishInput] = useState<string>('');
   const [showFinishInput, setShowFinishInput] = useState<boolean>(false);
 
-  const [newDimensionInput, setNewDimensionInput] = useState<string>('');
   const [newDimW, setNewDimW] = useState<string>('2800');
   const [newDimH, setNewDimH] = useState<string>('2070');
   const [showDimensionInput, setShowDimensionInput] = useState<boolean>(false);

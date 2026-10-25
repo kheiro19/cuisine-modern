@@ -2,7 +2,6 @@
 // 638 mm front was drawn 638, so typing 611, 620 or 630 changed nothing and the field looked locked. And its finish is picked
 // from the same public/textures shelf the fronts use.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

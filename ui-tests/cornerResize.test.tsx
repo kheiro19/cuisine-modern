@@ -2,7 +2,6 @@
 // (square, back-wall arm, side-wall arm), each one is typable at any time, and the three boxes move together — the door side
 // never opens again.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

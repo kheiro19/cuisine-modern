@@ -1,7 +1,6 @@
 // The L corner in the panel: a FIXED filler panel on either side of an arm (the corner side for drawer clearance, the far side
 // for looks alone) — always inside the arm's own width, so the arm stays 450 and nothing on the wall moves. The user controls it.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

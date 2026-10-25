@@ -1,7 +1,7 @@
 // src/components/CabinetPreview3D.tsx
 // The "3D ATOMIC WORKSPACE": renders the draft with the SAME assembly components the showcase uses, so what is
 // previewed here is exactly what will be injected (it used to be flat CSS rectangles from a separate generator).
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import CabinetAssembly3D, { DrawnGeometry } from './CabinetAssembly3D';

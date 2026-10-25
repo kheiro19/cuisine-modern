@@ -1,7 +1,7 @@
 // src/components/GlbModel.tsx
 // Draws a real 3D model (.glb of the external library) inside the box of its catalog piece. If the file cannot be loaded the
 // boundary falls back to the built-in shapes, so a broken or missing file never breaks the scene.
-import React, { Component, ReactNode, Suspense, useEffect, useMemo } from 'react';
+import { Component, ReactNode, Suspense, useEffect, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { FinishStyle } from '../data/accessoryCatalog';

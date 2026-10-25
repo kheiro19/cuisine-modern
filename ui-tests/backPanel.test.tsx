@@ -1,7 +1,6 @@
 // The back of the cabinet in the panel: three buttons — HDF sheet, two carcase rails, a full carcase board — and the
 // workshop's own numbers under them. The choice is written per cabinet and can be pushed to the whole kitchen.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

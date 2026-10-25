@@ -4,8 +4,7 @@
 // reading the shelf back through the same context. If `commit()` ever stops calling applyConsumptionDelta, or undo forgets the
 // stock, this file fails even though every engine still passes.
 import { describe, it, expect, beforeEach } from 'vitest';
-import React from 'react';
-import { render, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
 import { FurnitureProvider, useFurniture } from '../src/context/FurnitureContext';
 import * as P from '../src/math/cabinetPresets';
 
@@ -170,7 +169,7 @@ describe('the real provider: stock goes down and comes back', () => {
   });
 
   it('correcting a board quantity is immediate, and the ledger reads the new number', () => {
-    const v = workshop();
+    workshop();
     act(() => { api.updateWoodMaterial('mel', { currentQty: 3 }); });
     expect(api.baselineInventory.woodPanels.find((w: any) => w.id === 'mel').currentQty).toBe(3);
     expect(api.inventory.woodPanels.find((w: any) => w.id === 'mel').currentQty).toBe(3);

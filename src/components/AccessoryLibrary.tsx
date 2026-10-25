@@ -1,7 +1,7 @@
 // src/components/AccessoryLibrary.tsx
 // The accessories library panel: search or browse by category, pick a finish, press "إضافة للتصميم" and the piece appears in
 // the 3D showroom; the list below moves, recolours or removes what was added.
-import React, { useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ACCESSORY_CATEGORIES,
   AccessoryCategory,

@@ -1,7 +1,6 @@
 // src/components/PrimShapes.tsx
 // Draws the shapes of math/accessoryModels.ts (boxes, cylinders, spheres in millimetres) as meshes. Shared by the accessories
 // library (AccessoryLayer) and the appliances inside a cabinet niche (CabinetAssembly3D).
-import React from 'react';
 import type { Prim } from '../math/accessoryModels';
 
 const mm = (v: number) => v / 1000;

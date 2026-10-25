@@ -1,7 +1,6 @@
 // Correcting a stock line: the workshop typed 10 boards instead of 1, or the wrong price, or a line that should not exist.
 // Before this, the stockroom could only ADD — a typo was permanent. These tests drive the real InventoryManager screen.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup, within } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import InventoryManager from '../src/components/InventoryManager';

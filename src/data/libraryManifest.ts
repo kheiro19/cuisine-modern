@@ -131,6 +131,7 @@ export function parseExtraItems(raw: unknown, takenIds: ReadonlySet<string>): { 
       ...(r.noCollide === true ? { noCollide: true } : {}),
       external: true,
     });
+    return;
   });
   return { items, errors };
 }

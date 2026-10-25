@@ -1,7 +1,7 @@
 // src/components/AccessoryLayer.tsx
 // Draws the pieces of the accessories library inside the kitchen scene. Where a piece is comes from math/accessoryPlacement.ts
 // and what it looks like from math/accessoryModels.ts (plain boxes and cylinders), so this file only maps numbers to meshes.
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { CodeModelId, FinishStyle, getAccessory, resolveFinish } from '../data/accessoryCatalog';
 import { Prim, modelPrims } from '../math/accessoryModels';
 import { Shapes } from './PrimShapes';

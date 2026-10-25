@@ -70,7 +70,7 @@ export function wallBottomMmOf(cab: { height: number; wallMount?: WallMount }, r
 
 export interface WallMountIssue {
   cabinetId: string;
-  code: 'ABOVE_CEILING' | 'BELOW_WORKTOP';
+  code: 'ABOVE_CEILING' | 'BELOW_WORKTOP' | 'WALL_OVERLAP';
   message: string;
 }
 
@@ -94,6 +94,21 @@ export function wallMountIssues(
     if (over && bottom < ref.counterTopMm - TOL_MM) {
       out.push({ cabinetId: w.id, code: 'BELOW_WORKTOP', message: `${w.name}: أسفل الخزانة على ${Math.round(bottom)} مم، أي تحت سطح العمل (${Math.round(ref.counterTopMm)} مم): تصطدم بالخزانة السفلية.` });
     }
+  });
+  // Two wall units on the same wall may share the same stretch of it only when one hangs wholly above the other
+  // (a short unit at the ceiling over a taller one). Sharing the stretch AND the height is a real clash — the
+  // floor-plan overlap alone cannot tell the two apart, so this is checked on the vertical spans.
+  const walls = cabinets.filter((c) => c.category === 'WALL_UNIT');
+  walls.forEach((w, i) => {
+    const wLo = wallBottomMmOf(w, ref), wHi = wLo + w.height;
+    walls.slice(i + 1).forEach((o) => {
+      if (runOf(o) !== runOf(w)) return;
+      if (!(w.positionX < o.positionX + o.width - TOL_MM && o.positionX < w.positionX + w.width - TOL_MM)) return;
+      const oLo = wallBottomMmOf(o, ref), oHi = oLo + o.height;
+      if (wLo < oHi - TOL_MM && oLo < wHi - TOL_MM) {
+        out.push({ cabinetId: o.id, code: 'WALL_OVERLAP', message: `${o.name}: تتداخل عموديًا مع «${w.name}» على نفس الجدار (من ${Math.round(Math.max(wLo, oLo))} إلى ${Math.round(Math.min(wHi, oHi))} مم). ارفعها أو اخفضها حتى تتلامس الحواف بلا تداخل.` });
+      }
+    });
   });
   return out;
 }
@@ -184,7 +199,21 @@ export type FitState = 'OVERLAP' | 'OUT_OF_BOUNDS' | 'TOUCHING' | 'FREE';
  * it is flush against a neighbour of its own wall (no gap, no clash), FREE otherwise. Units of one group (an L corner) are
  * one thing: they are never in conflict with each other.
  */
-export function fitStates(cabinets: ReadonlyArray<Placed & { id: string; category: CabinetCategory; groupId?: string }>, layout: KitchenLayout): Record<string, FitState> {
+export function fitStates(
+  cabinets: ReadonlyArray<Placed & { id: string; category: CabinetCategory; groupId?: string; height?: number; wallMount?: WallMount }>,
+  layout: KitchenLayout,
+  ref?: WallMountRef,
+): Record<string, FitState> {
+  // Where wall units hang, for the vertical half of the clash test below. Without a caller-supplied reference the
+  // worktop is read off the tallest base unit in the set (the same approximation the 3D view uses before any base
+  // unit exists: a 900 mm unit under a 40 mm slab).
+  const mountRef: WallMountRef = ref ?? {
+    counterTopMm: Math.max(0, ...cabinets.filter((c) => c.category === 'BASE_UNIT').map((c) => c.height ?? 0), 900) + 40,
+    defaultGapMm: wallGapOf(layout),
+    roomHeightMm: roomHeightOf(layout),
+  };
+  const vSpan = (c: { height?: number; wallMount?: WallMount }): [number, number] | null =>
+    c.height === undefined ? null : [wallBottomMmOf({ height: c.height, wallMount: c.wallMount }, mountRef), wallBottomMmOf({ height: c.height, wallMount: c.wallMount }, mountRef) + c.height];
   const out: Record<string, FitState> = {};
   cabinets.forEach((a) => {
     let clash = false;
@@ -192,7 +221,16 @@ export function fitStates(cabinets: ReadonlyArray<Placed & { id: string; categor
     for (const b of cabinets) {
       if (a === b || a.category !== b.category) continue;
       const sameGroup = !!a.groupId && a.groupId === b.groupId;
-      if (!sameGroup && overlap(footprintOf(a, layout), footprintOf(b, layout))) { clash = true; break; }
+      // Wall units live on the wall, not on the floor: two of them may share the same stretch of wall when one
+      // hangs wholly above the other (stacked). They clash only when their heights clash too. A unit whose height
+      // is unknown keeps the old floor-plan verdict.
+      const stackedClear = (() => {
+        if (a.category !== 'WALL_UNIT') return false;
+        const sa = vSpan(a), sb = vSpan(b);
+        if (!sa || !sb) return false;
+        return sa[1] <= sb[0] + TOL_MM || sb[1] <= sa[0] + TOL_MM;
+      })();
+      if (!sameGroup && !stackedClear && overlap(footprintOf(a, layout), footprintOf(b, layout))) { clash = true; break; }
       if (runOf(a) === runOf(b) && (Math.abs(a.positionX + a.width - b.positionX) < TOL_MM || Math.abs(b.positionX + b.width - a.positionX) < TOL_MM)) touching = true;
     }
     // Leaving the wall is the worst state: the design cannot be built there, whatever else is true of it.

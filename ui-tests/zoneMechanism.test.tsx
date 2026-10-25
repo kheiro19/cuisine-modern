@@ -2,7 +2,6 @@
 // Before this, the engine priced pull-out frames but nothing in the app could ask for one: three old templates died with the
 // catalogue because of it. This is that capability coming back where it belongs — in the control panel.
 import { describe, it, expect, afterEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

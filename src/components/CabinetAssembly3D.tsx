@@ -4,7 +4,7 @@
 // swing / lift / glass, drawers that slide, and one Gola channel per enabled position.
 // `explode` (0..1) pulls the parts apart and `showFasteners` shows the cams, dowels, screws, shelf pins, hinges and
 // runners (ghosted boards with outlines), both computed by math/fasteners.ts from the same geometry as the BOM.
-import React, { useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Edges } from '@react-three/drei';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';

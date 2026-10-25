@@ -146,3 +146,18 @@ test('moving: a cabinet is clamped inside its wall, never pushed past either end
   assert.equal(K.clampOnWall(1000, 600, 3000), 1000);
   assert.equal(K.clampOnWall(100, 4000, 3000), 0, 'a cabinet wider than the wall sits at the start');
 });
+
+test('fit: wall units stacked on the same stretch of wall clash only when their heights clash', () => {
+  const S = (over: any = {}): K.KitchenLayout => ({ type: 'STRAIGHT', widthMm: 3000, lSide: 'LEFT', ...over });
+  const wall = (id: string, positionX: number, over: any = {}) => cab(id, 'A', positionX, 600, { category: 'WALL_UNIT', depth: 350, height: 400, ...over });
+  // a 400 mm unit at the ceiling (2200–2600) and one hung 400 below it (1800–2200), same stretch: stacked, FREE
+  const upper = wall('up', 0, { wallMount: { from: 'CEILING', mm: 0 } });
+  const lower = wall('lo', 0, { wallMount: { from: 'CEILING', mm: 400 } });
+  assert.deepEqual(Object.values(K.fitStates([upper, lower], S())), ['FREE', 'FREE']);
+  // the lower one raised 100 mm into the upper (1900–2300 against 2200–2600): a real overlap again
+  const pushed = wall('lo', 0, { wallMount: { from: 'CEILING', mm: 300 } });
+  assert.deepEqual(Object.values(K.fitStates([upper, pushed], S())), ['OVERLAP', 'OVERLAP']);
+  // a wall unit whose height is unknown keeps the old floor-plan verdict
+  const unknown = cab('u2', 'A', 0, 600, { category: 'WALL_UNIT', depth: 350 });
+  assert.deepEqual(Object.values(K.fitStates([upper, unknown], S())), ['OVERLAP', 'OVERLAP']);
+});

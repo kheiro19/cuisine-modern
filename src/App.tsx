@@ -1,11 +1,15 @@
 // src/App.tsx
-import React, { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
-import InventoryManager from './components/InventoryManager';
-import Kitchen3DCanvas from './components/Kitchen3DCanvas';
-import AccessoryLibrary from './components/AccessoryLibrary';
 import { useAccessories } from './components/useAccessories';
-import CabinetPreview3D from './components/CabinetPreview3D';
+import StockPanel from './app/panels/StockPanel';
+import ShowcasePanel from './app/panels/ShowcasePanel';
+import AtomicPanel from './app/panels/AtomicPanel';
+import LayoutPanel from './app/panels/LayoutPanel';
+import InstalledUnitsPanel from './app/panels/InstalledUnitsPanel';
+import CabinetFormPanel from './app/panels/CabinetFormPanel';
+import ZonesEditor from './app/panels/ZonesEditor';
+import type { ListRow } from './app/panels/InstalledUnitsPanel';
 import { generateFactoryBOMReport, convertBOMToCSVString } from './math/bomEngine';
 import { checkStock } from './math/stockCheck';
 import { generateCustomerInvoice, formatCustomerInvoiceText } from './math/invoiceEngine';
@@ -20,97 +24,38 @@ import {
   draftToCabinetPatch,
   draftToNewCabinet,
   draftToPreviewCabinet,
-  fitCabinetToAppliance,
   frontHardwareNeedsOf,
   resolveDraft,
-  soleZoneGola,
 } from './math/cabinetPresets';
-import { libraryAppliances } from './math/applianceModels';
 import {
-  DEFAULT_LAYOUT, DEFAULT_ROOM_HEIGHT_MM, DEFAULT_WALL_GAP_MM, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, HEIGHT_LIMITS_MM, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WALL_GAP_LIMITS_MM, WIDTH_LIMITS_MM,
-  autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, placeAlongWall, runOf, runsOf, wallBottomMmOf, wallLengthOf, wallMountIssues,
+  DEFAULT_LAYOUT, DEFAULT_WALL_GAP_MM, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, DEFAULT_ROOM_HEIGHT_MM, HEIGHT_LIMITS_MM, KitchenLayout, RUN_LABELS, WALL_GAP_LIMITS_MM, WIDTH_LIMITS_MM,
+  autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, placeAlongWall, runOf, runsOf, wallLengthOf, wallMountIssues,
 } from './math/kitchenLayout';
-import { clampCornerFillerMm, CORNER_ROLE_LABELS, cornerDeckOf, cornerDimsOf, cornerFitsWalls, cornerGroupSpan, L_CORNER_LIMITS, lCornerCabinets, lCornerSpan, relayoutCornerGroup, withCornerExtension } from './math/lCorner';
+import { cornerDeckOf, cornerDimsOf, cornerFitsWalls, cornerGroupSpan, L_CORNER_LIMITS, lCornerCabinets, relayoutCornerGroup, withCornerExtension } from './math/lCorner';
 import type { CornerGroupDims, CornerRole } from './math/lCorner';
-import { cornerDeckPieceOf } from './math/cornerDeck';
-import { BACK, CORNER, COUNTERTOP, LAYOUT, LIMITS, PANEL } from './math/constants';
-import { BACK_PANEL_LABELS, BACK_PANEL_MODES, BackPanelMode, backPanelModeOf, backRailDepthOf } from './math/backPanel';
-import { bandPricePerMeterDA } from './math/edgeBand';
+import { CORNER, COUNTERTOP, LAYOUT } from './math/constants';
+import { BACK_PANEL_LABELS } from './math/backPanel';
 import { carriesCountertop, clampCountertopSettings, countertopDepthMm, COUNTERTOP_DEFAULT } from './math/countertop';
 import { useTextureCatalog } from './data/textureCatalog';
 import { frontPanelCount } from './math/zones';
 import type { CountertopSettings } from './math/countertop';
 import { clampInt, uid } from './math/utils';
-import { BASE_TYPE_LABELS, baseOf } from './math/base';
-import { BASE } from './math/constants';
-import { ApplianceKind, BaseType, CabinetBase, CabinetCategory, CabinetObject, CabinetZone, ColumnFillChoice, OpeningMode, RunId, ZoneKind } from './types/flatma';
-import { APPLIANCES, ZONE_LABELS, hingeSidesOf, isOpenCarcase, sharedHingeEdgesOf, zonesOf } from './math/zones';
-import { OPEN_BAY_APPLIANCES } from './rules/appliances';
-import { COLUMN_FILLS, FILL_LABELS, canSplitZone, suggestFill } from './math/columns';
+import { baseOf } from './math/base';
+import { BaseType, CabinetBase, CabinetCategory, CabinetObject, CabinetZone, RunId } from './types/flatma';
 import { priceCabinet } from './math/partsEngine';
-import { FAMILIES, FAMILY_ORDER, FamilyId, KINEMATICS, KinematicId, KinematicSpec, canUseGola, kinematicOfHardware, liftZoneIsTop, templatesOf } from './rules';
+import { FAMILIES, FamilyId, canUseGola, kinematicOfHardware, liftZoneIsTop, templatesOf } from './rules';
 
 // One model of a cabinet for the whole screen: the form edits a CabinetDraft, the "3D ATOMIC WORKSPACE" renders that
 // draft with the same assembly components as the "3D EXECUTIVE SHOWCASE", and "inject" stores exactly that object.
 // (The former flat-rectangle board generator was removed: the preview now renders the real cabinet.)
 
-const frontSummary = (c: CabinetObject): string =>
-  zonesOf(c)
-    .slice()
-    .reverse() // top -> bottom, the way the cabinet is read
-    .map((z) =>
-      z.kind === 'DOORS' ? `أبواب ×${z.count ?? 1}`
-      : z.kind === 'DRAWERS' ? `أدراج ×${z.count ?? 1}`
-      : z.kind === 'APPLIANCE' ? APPLIANCES[z.appliance ?? 'OVEN'].label
-      : z.kind === 'APRON' ? 'لوح ثابت'
-      : 'مفتوح')
-    .join(' + ');
 
-const ZONE_KINDS: ZoneKind[] = ['DOORS', 'DRAWERS', 'OPEN', 'APPLIANCE', 'APRON'];
-
-/** A zone of another kind starts from sensible values (an appliance zone from the appliance's own niche height). */
-const zoneOfKind = (kind: ZoneKind, previous: CabinetZone): CabinetZone => {
-  // What the zone chose for its own fronts (sheet, band roll, opening mode) survives a change of kind; resolveDraft drops what the new kind cannot use.
-  const own: Partial<CabinetZone> = {
-    ...(previous.frontMaterialId ? { frontMaterialId: previous.frontMaterialId } : {}),
-    ...(previous.frontEdgeRollId ? { frontEdgeRollId: previous.frontEdgeRollId } : {}),
-    ...(previous.openingMode ? { openingMode: previous.openingMode } : {}),
-  };
-  if (kind === 'DOORS') return { kind, count: previous.count ?? 2, shelves: 0, ...own };
-  if (kind === 'DRAWERS') return { kind, count: previous.count ?? 2, ...own };
-  if (kind === 'OPEN') return { kind, shelves: 2 };
-  if (kind === 'APPLIANCE') return { kind, appliance: 'OVEN', heightMm: APPLIANCES.OVEN.nicheHeightMm };
-  return { kind: 'APRON', heightMm: 150, ...own };
-};
-
-const FRONT_COUNT_OPTIONS = Array.from(
-  { length: LIMITS.FRONT_ELEMENTS[1] - LIMITS.FRONT_ELEMENTS[0] + 1 },
-  (_, i) => LIMITS.FRONT_ELEMENTS[0] + i,
-);
 
 /** A number box that commits on Enter or when it loses focus (a move is one undo step, not one per typed digit). */
-function CommitNumber({ value, onCommit, title, min = 0, max, ariaLabel }: { value: number; onCommit: (v: number) => void; title?: string; min?: number; max?: number; ariaLabel?: string }) {
-  const [text, setText] = useState<string>(String(value));
-  useEffect(() => { setText(String(value)); }, [value]);
-  const commit = () => {
-    const raw = Number(text);
-    const whole = Number.isFinite(raw) ? Math.round(raw) : NaN;
-    const n = Number.isFinite(whole) ? Math.min(max ?? whole, Math.max(min, whole)) : value;
-    if (n !== value) onCommit(n);
-    else setText(String(value));
-  };
-  return (
-    <input type="number" min={min} max={max} step={10} value={text} title={title} aria-label={ariaLabel}
-      onChange={(e) => setText(e.target.value)} onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      className="w-14 px-1 py-0.5 border border-slate-300 rounded text-[10px] font-mono text-center" style={{ direction: 'ltr' }} />
-  );
-}
 
 export default function App() {
   const {
     cabinets,
-    inventory,
     baselineInventory,
     activeCabinetId,
     setActiveCabinetId,
@@ -211,7 +156,7 @@ export default function App() {
   const [armB, setArmB] = useState<number>(450);
   const [cornerWallRaw, setCornerWall] = useState<'B' | 'C'>('B');
   const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
-  const fits = useMemo(() => fitStates(cabinets, layout), [cabinets, layout]);
+  const fits = useMemo(() => fitStates(cabinets, layout, wallRef), [cabinets, layout, wallRef]);
   // Does the workshop really have the boards, the edge-band metres and the pieces this kitchen needs? (math/stockCheck.ts)
   const stockShortages = useMemo(() => checkStock(cabinets, woods, hardwareItems, edgeRolls), [cabinets, woods, hardwareItems, edgeRolls]);
 
@@ -256,7 +201,6 @@ export default function App() {
   /** The field of the corner panel that stands for the box the form has open (its W is that number, not a width of its own). */
   const cornerDimKeyOf = (role: CornerRole): keyof Omit<CornerGroupDims, 'wall'> =>
     role === 'ARM_A' ? 'armAMm' : role === 'ARM_B' ? 'armBMm' : 'depthMm';
-  const cornerSpanNow = cornerDims ? cornerGroupSpan(cornerDims) : null;
 
   // Hinge / lift picker for hinged or lifting doors; runner picker for drawers AND pull-out frames (rules/kinematics.ts).
   const needs = frontHardwareNeedsOf(resolved, woods, resolved.carcaseMaterialId); // a split's small door / spice rack counts
@@ -478,7 +422,6 @@ export default function App() {
   };
 
   // ---- moving the units: the arrows move 5 cm, the box takes any distance (from the left end on the back wall, from the corner on a side wall)
-  const MOVE_STEP_MM = 50;
   const nudgeCabinet = (id: string, deltaMm: number) => {
     const cab = cabinets.find((c) => c.id === id);
     if (!cab) return;
@@ -545,6 +488,12 @@ export default function App() {
   };
 
   /** Texture picked in the showcase: look only, stored apart from the stock material. Empty path = back to stock. */
+  const handleDeleteFromCanvas = (id: string) => {
+    const cab = cabinets.find((c) => c.id === id);
+    const ids = cab?.groupId ? cabinets.filter((c) => c.groupId === cab.groupId).map((c) => c.id) : [id];
+    deleteCabinets(ids);
+    if (editingId && ids.includes(editingId)) setEditingId(null);
+  };
   const handleApplyTexture = (cabinetId: string, texturePath: string, finishType: string, applyToAll: boolean) => {
     const override = texturePath ? { path: texturePath, finishType: finishType || undefined } : undefined;
     updateManyCabinets(applyToAll ? cabinets.map((c) => c.id) : [cabinetId], { frontTextureOverride: override });
@@ -565,7 +514,6 @@ export default function App() {
   };
 
   // The installed units as the list shows them: an L corner (a group) is one row, everything else one row per cabinet.
-  type ListRow = { kind: 'single'; cab: CabinetObject } | { kind: 'group'; groupId: string; name: string; cabs: CabinetObject[] };
   const listRows = useMemo<ListRow[]>(() => {
     const rows: ListRow[] = [];
     const seen = new Set<string>();
@@ -610,1173 +558,62 @@ export default function App() {
       <div className={`w-full grid ${gridLayoutClass} gap-3 items-stretch flex-1`}>
         
         {/* 📋 الجناح الأول: المخازن والتسعير الصافي */}
-        {!isWorkspaceMinimized && (
-          <div className="xl:col-span-1 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs max-h-[750px] overflow-y-auto animate-fade-in">
-            <InventoryManager />
-          </div>
-        )}
-
+        {!isWorkspaceMinimized && <StockPanel />}
         {/* 💻 الجناح الثاني المدمج: ورشة تفكيك الألواح الفردية بالمليمتر */}
         {!isWorkspaceMinimized && (
-          <div className={`${isShowroomMinimized ? 'xl:col-span-2' : 'xl:col-span-1'} bg-slate-900 border border-slate-800 rounded-xl p-4 relative overflow-hidden shadow-inner flex flex-col justify-end min-h-[480px] animate-fade-in`}>
-            
-            <button 
-              type="button" 
-              onClick={() => { setIsWorkspaceMinimized(true); setIsShowroomMinimized(false); }} 
-              className="absolute top-3 right-3 z-40 bg-white/10 hover:bg-white/20 text-white border border-white/10 rounded px-2 py-0.5 font-mono text-[10px] font-bold transition-all cursor-pointer shadow-sm"
-              title="تقليص شاشة الورشة وتكبير صالة العرض للزبون كلياً"
-            >
-              🗕 Minimize Workspace
-            </button>
-
-            <span className="absolute top-3 left-3 text-[9px] font-mono font-bold bg-indigo-600 text-white px-2 py-0.5 rounded shadow-sm">
-              📐 3D ATOMIC WORKSPACE
-            </span>
-            <div className="absolute inset-x-0 top-9 bottom-0">
-              <CabinetPreview3D
-                cabinet={previewCabinet}
-                showFronts={showFronts}
-                isXRayMode={isXRayMode}
-                woodPanels={woods}
-                hardwareItems={hardwareItems}
-                edges={previewEdges}
-              />
-            </div>
-            {editing && (
-              <span className="absolute top-3 left-44 z-30 text-[9px] font-bold bg-amber-500 text-white px-2 py-0.5 rounded shadow-sm max-w-[160px] truncate">
-                ✏️ تعديل: {editing.name}
-              </span>
-            )}
-            {(preset.note || !canSave) && (
-              <div className="absolute top-10 left-3 right-3 z-30 flex flex-col gap-1">
-                {preset.note && (
-                  <span className="text-[9px] leading-snug bg-amber-100/95 text-amber-900 border border-amber-300 rounded px-2 py-1" style={{ direction: 'rtl' }}>
-                    ⚠️ {preset.note}
-                  </span>
-                )}
-                {isCornerBuilder && (
-                  <span className="text-[9px] leading-snug bg-indigo-100/95 text-indigo-900 border border-indigo-300 rounded px-2 py-1" style={{ direction: 'rtl' }}>
-                    📐 معاينة ذراع واحد من الزاوية L. الزاوية كاملة (المربع والذراعان) تظهر في صالة العرض بعد الإضافة.
-                  </span>
-                )}
-                {!canSave && (
-                  <span className="text-[9px] leading-snug bg-slate-100/95 text-slate-800 border border-slate-300 rounded px-2 py-1" style={{ direction: 'rtl' }}>
-                    أضف لوحاً خشبياً من المخزن (العمود الأول) لتتمكن من حقن الوحدة.
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+          <AtomicPanel
+            previewCabinet={previewCabinet} showFronts={showFronts} isXRayMode={isXRayMode}
+            woodPanels={woods} hardwareItems={hardwareItems} edges={previewEdges}
+            editing={editing} presetNote={preset.note} canSave={canSave} isCornerBuilder={isCornerBuilder}
+            isShowroomMinimized={isShowroomMinimized}
+            onMinimizeWorkspace={() => { setIsWorkspaceMinimized(true); setIsShowroomMinimized(false); }}
+          />
         )}
-
-        {/* 📺 الجناح الثالث: صالة عرض المطبخ ثلاثية الأبعاد الكبرى للزبون (Showcase Canvas) */}
-        {!isShowroomMinimized && (
-          <div className={`${isWorkspaceMinimized ? 'xl:col-span-11' : 'xl:col-span-1'} bg-white border border-slate-200 rounded-2xl p-2 min-h-[580px] flex flex-col relative shadow-3xs transition-all duration-300 animate-fade-in`}>
-            
-            {/* أزرار التحكم بالمينيميز ومحاور الاستعادة الذكية */}
-            {isWorkspaceMinimized ? (
-              <button type="button" onClick={() => setIsWorkspaceMinimized(false)} className="absolute top-4 right-4 z-40 bg-slate-900 text-white hover:bg-slate-800 rounded-lg px-3 py-1 font-sans text-xs font-bold transition-all cursor-pointer shadow-md">
-                🗖 استعادة لوحة التقطيع (Split View)
-              </button>
-            ) : (
-              <button type="button" onClick={() => { setIsShowroomMinimized(true); setIsWorkspaceMinimized(false); }} className="absolute top-3 right-3 z-40 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded px-2 py-0.5 font-mono text-[10px] font-bold transition-all cursor-pointer shadow-xs" title="تقليص صالة العرض وتركيز باحة العين على تفكيك الألواح">
-                🗕 Minimize 3D Showcase
-              </button>
-            )}
-
-                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات) */}
-            <div className="absolute top-3 left-32 z-40 flex bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 space-x-2 shadow-md">
-              <button 
-                type="button" 
-                onClick={() => setShowFronts(p => !p)} 
-                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${showFronts ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
-              >
-                {showFronts ? '🚪 إخفاء الواجهات والتعرية' : '🚪 إظهار الأبواب مغلقة'}
-              </button>
-              <button 
-                type="button" 
-                onClick={() => setIsXRayMode(p => !p)} 
-                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${isXRayMode ? 'bg-teal-600 text-white shadow-inner animate-pulse' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
-              >
-                {isXRayMode ? '💀 وضع X-Ray نشط (شفاف)' : '💀 تشغيل شفافية الألواح X-Ray'}
-              </button>
-
-              {/* سطح العمل: إظهار / إخفاء — يرسمه الزبون من عنده، فلا يدخل التسعير */}
-              <span className="w-px bg-slate-600" />
-              <button
-                type="button"
-                aria-label="سطح العمل"
-                aria-pressed={countertop.visible}
-                title="إظهار أو إخفاء سطح العمل في المشهد ثلاثي الأبعاد"
-                onClick={() => setCountertopSettings({ visible: !countertop.visible })}
-                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${countertop.visible ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-slate-200'}`}
-              >
-                {countertop.visible ? '🍽️ إخفاء سطح العمل' : '🍽️ إظهار سطح العمل'}
-              </button>
-            </div>
-
-            {/* السمك والعرض: 20–40 مم و 580–650 مم. التغيير يتم عند Enter أو الخروج من الحقل. */}
-            {countertop.visible && (
-              <div data-testid="countertop-settings" className="absolute top-[3.1rem] left-32 z-40 flex flex-wrap items-center gap-2 bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 shadow-md">
-                <label className="flex items-center space-x-1 text-[9px] font-mono font-bold text-slate-300">
-                  <span>سُمك سطح العمل</span>
-                  <CommitNumber value={countertop.thicknessMm} min={COUNTERTOP.THICKNESS_MM[0]} max={COUNTERTOP.THICKNESS_MM[1]} ariaLabel="سُمك سطح العمل" title="السمك من 20 إلى 40 مم" onCommit={(v) => setCountertopSettings({ thicknessMm: v })} />
-                  <span>مم</span>
-                </label>
-                <label className="flex items-center space-x-1 text-[9px] font-mono font-bold text-slate-300">
-                  <span>عرض سطح العمل</span>
-                  <CommitNumber value={countertop.depthMm} min={COUNTERTOP.DEPTH_MM[0]} max={COUNTERTOP.DEPTH_MM[1]} ariaLabel="عرض سطح العمل" title="العرض (العمق من الجدار) من 580 إلى 650 مم" onCommit={(v) => setCountertopSettings({ depthMm: v })} />
-                  <span>مم</span>
-                </label>
-                {countertopShort && (
-                  <span className="flex items-center gap-1 text-[9px] font-bold text-amber-300" title="العرض الذي كتبته أقصر من الواجهة التي يغطيها سطح العمل — والرسم يتبع رقمك، لا العكس">
-                    ⚠️ أقصر من الواجهة بـ {countertopShort.shortByMm} مم (الواجهة عند {countertopShort.neededMm} مم)
-                    {countertopShort.canCover && (
-                      <button type="button" onClick={() => setCountertopSettings({ depthMm: countertopShort.neededMm })} className="px-1 rounded border border-amber-400 bg-amber-900/40 hover:bg-amber-800 text-[8px] font-bold cursor-pointer">
-                        اجعله {countertopShort.neededMm}
-                      </button>
-                    )}
-                  </span>
-                )}
-                {/* خامة سطح العمل: تُختار من نفس مكتبة الـ public/textures التي تختار منها الواجهات (عرض فقط، بلا تسعير) */}
-                <span className="relative">
-                  <button
-                    type="button"
-                    aria-label="خامة سطح العمل"
-                    onClick={() => setCountertopFinishOpen((o) => !o)}
-                    className="flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-500 bg-slate-800 hover:bg-slate-700 text-[9px] font-bold text-slate-200 cursor-pointer"
-                    title="افتح مكتبة public/textures واختر خامة للسطح — كما تختار خامة الواجهة"
-                  >
-                    🪨 {countertop.texturePath ? countertop.texturePath.split('/').pop()?.replace(/\.[^.]+$/, '') : 'رخام أبيض'}
-                    <span className="text-[8px] font-mono text-slate-400">({localTextures.count})</span>
-                  </button>
-                  {countertopFinishOpen && (
-                    <span className="absolute z-50 top-6 left-0 w-72 max-h-56 overflow-y-auto rounded-lg border border-slate-600 bg-slate-900/95 p-1.5 shadow-2xl block" style={{ direction: 'ltr' }}>
-                      <span className="flex items-center justify-between px-1 pb-1" style={{ direction: 'rtl' }}>
-                        <span className="text-[9px] font-bold text-slate-200">مكتبة الخامات ({localTextures.count})</span>
-                        <button type="button" onClick={() => setCountertopSettings({ texturePath: undefined })} className="px-1 rounded border border-slate-600 bg-slate-800 text-[8px] text-slate-300 hover:bg-slate-700 cursor-pointer">↺ رخام أبيض</button>
-                      </span>
-                      {localTextures.count === 0 && (
-                        <span className="block px-1 py-1 text-[9px] text-amber-300" style={{ direction: 'rtl' }}>مجلد public/textures غير مقروء في هذا البناء.</span>
-                      )}
-                      <span className="grid grid-cols-6 gap-1">
-                        {localTextures.entries.map((tex) => (
-                          <button
-                            key={tex.id}
-                            type="button"
-                            title={tex.name}
-                            onClick={() => { setCountertopSettings({ texturePath: tex.path }); setCountertopFinishOpen(false); }}
-                            className={`w-10 h-10 rounded border overflow-hidden cursor-pointer hover:border-indigo-400 ${countertop.texturePath === tex.path ? 'border-indigo-400 ring-2 ring-indigo-500' : 'border-slate-600'}`}
-                          >
-                            <img src={tex.path} alt={tex.name} loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }} className="w-full h-full object-cover" />
-                          </button>
-                        ))}
-                      </span>
-                    </span>
-                  )}
-                </span>
-                <span className="text-[8px] font-mono text-slate-500">مجاني في التسعير — على الزبون</span>
-              </div>
-            )}
-
-            <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded shadow-sm tracking-wider">
-              {isWorkspaceMinimized ? "🧊 3D LUXURY KITCHEN SHOWROOM (100% MAXIMUM VIEW)" : "🧊 3D EXECUTIVE SHOWCASE"}
-            </span>
-
-            <div className={`w-full ${isWorkspaceMinimized ? 'h-[80vh]' : 'h-full'} rounded-xl overflow-hidden relative mt-6 flex flex-col flex-1`}>
-              <Kitchen3DCanvas
-                cabinets={cabinets}
-                hardware={{ ...hardwareSettings, wallSplashHeight: layout.wallGapMm ?? DEFAULT_WALL_GAP_MM }}
-                showFronts={showFronts}
-                isXRayMode={isXRayMode}
-                countertopPath={countertopPath}
-                countertop={countertop}
-                layout={layout}
-                woodPanels={woods}
-                hardwareItems={hardwareItems}
-                accessories={accessories}
-                onApplyTextureOverride={handleApplyTexture}
-                onDeleteCabinet={(id) => {
-                  const cab = cabinets.find((c) => c.id === id);
-                  const ids = cab?.groupId ? cabinets.filter((c) => c.groupId === cab.groupId).map((c) => c.id) : [id];
-                  deleteCabinets(ids);
-                  if (editingId && ids.includes(editingId)) setEditingId(null);
-                }}
-              />
-            </div>
-
-            <AccessoryLibrary cabinets={cabinets} accessories={accessories} onAdd={addAccessory} onNudge={nudgeAccessory} onRemove={removeAccessory} onFinish={changeAccessoryFinish} onClear={clearAccessories} />
-          </div>
-        )}
-
-        {/* زر التمدد الفوري إذا تم عمل مينيميز لصالة العرض بالكامل */}
-        {isShowroomMinimized && (
-          <div className="xl:col-span-1 bg-indigo-50 border border-indigo-200 rounded-xl flex flex-col items-center justify-center p-4 animate-fade-in text-center">
-            <span className="text-xl mb-1">🧊</span>
-            <span className="text-[10px] font-bold text-indigo-900 block mb-2">صالة العرض مصغرة الآن</span>
-            <button type="button" onClick={() => setIsShowroomMinimized(false)} className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded text-[11px] cursor-pointer shadow-xs">🗖 استعادة وعرض الـ 3D للزبون</button>
-          </div>
-        )}
+        <ShowcasePanel
+          cabinets={cabinets} hardwareSettings={hardwareSettings} layout={layout}
+          showFronts={showFronts} setShowFronts={setShowFronts} isXRayMode={isXRayMode} setIsXRayMode={setIsXRayMode}
+          isWorkspaceMinimized={isWorkspaceMinimized} isShowroomMinimized={isShowroomMinimized}
+          setIsWorkspaceMinimized={setIsWorkspaceMinimized} setIsShowroomMinimized={setIsShowroomMinimized}
+          countertop={countertop} setCountertopSettings={setCountertopSettings} countertopShort={countertopShort}
+          countertopPath={countertopPath} countertopFinishOpen={countertopFinishOpen} setCountertopFinishOpen={setCountertopFinishOpen}
+          localTextures={localTextures} woodPanels={woods} hardwareItems={hardwareItems} accessories={accessories}
+          onApplyTextureOverride={handleApplyTexture} onDeleteCabinet={handleDeleteFromCanvas}
+          onAddAccessory={addAccessory} onNudgeAccessory={nudgeAccessory} onRemoveAccessory={removeAccessory}
+          onFinishAccessory={changeAccessoryFinish} onClearAccessories={clearAccessories}
+        />
 
         {/* 🛠️ الجناح الرابع والأخير: لوحة التحكم الـ 24 طرازاً وحقن العقد */}
         {!isWorkspaceMinimized && (
           <div className="xl:col-span-1 flex flex-col space-y-3 bg-white border border-slate-200 rounded-xl p-3 shadow-3xs text-right text-xs animate-fade-in max-h-[750px] overflow-y-auto" style={{ direction: 'rtl' }}>
             <span className="font-bold text-slate-900 block border-b border-slate-100 pb-1 text-sm">🛠️ الموديلات البرامترية والـ CNC</span>
 
-            {/* 🏠 شكل المطبخ: مستقيم أو L أو U، والجدار الذي تُضاف عليه الخزانة، وخزانة الزاوية L الحقيقية */}
-            <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-2 space-y-1.5">
-              <span className="font-bold text-[11px] block">🏠 شكل المطبخ</span>
-              <div className="grid grid-cols-3 gap-1">
-                {(['STRAIGHT', 'L', 'U'] as LayoutType[]).map((t) => (
-                  <button key={t} type="button" onClick={() => handleLayoutChange({ type: t })} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${layout.type === t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{LAYOUT_LABELS[t]}</button>
-                ))}
-              </div>
-              <label className="flex items-center justify-between gap-2 text-[10px]">
-                <span>{layout.type === 'STRAIGHT' ? 'طول الجدار (مم)' : 'طول الجدار الخلفي (مم)'}</span>
-                <input type="number" min={WIDTH_LIMITS_MM[0]} max={WIDTH_LIMITS_MM[1]} step={100} value={rawLayout.widthMm}
-                  onChange={(e) => handleLayoutChange({ widthMm: Number(e.target.value) })}
-                  onBlur={() => handleLayoutChange({ widthMm: layout.widthMm })}
-                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
-              </label>
-              <label className="flex items-center justify-between gap-2 text-[10px]">
-                <span>ارتفاع الغرفة (من الأرض إلى السقف، مم)</span>
-                <input type="number" min={HEIGHT_LIMITS_MM[0]} max={HEIGHT_LIMITS_MM[1]} step={50} value={rawLayout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM}
-                  onChange={(e) => handleLayoutChange({ heightMm: Number(e.target.value) })}
-                  onBlur={() => handleLayoutChange({ heightMm: layout.heightMm })}
-                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
-              </label>
-              <label className="flex items-center justify-between gap-2 text-[10px]">
-                <span title="الفراغ القياسي بين سطح العمل وأسفل الخزائن العلوية؛ كل خزانة علوية تستطيع اختيار تعليقها الخاص من نموذجها">الفراغ القياسي فوق سطح العمل (مم)</span>
-                <input type="number" min={WALL_GAP_LIMITS_MM[0]} max={WALL_GAP_LIMITS_MM[1]} step={10} value={rawLayout.wallGapMm ?? DEFAULT_WALL_GAP_MM}
-                  onChange={(e) => handleLayoutChange({ wallGapMm: Number(e.target.value) })}
-                  onBlur={() => handleLayoutChange({ wallGapMm: layout.wallGapMm })}
-                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
-              </label>
-              {wallIssues.length > 0 && (
-                <ul className="space-y-0.5 text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">
-                  {wallIssues.map((w) => (<li key={`${w.cabinetId}-${w.code}`}>⚠️ {w.message}</li>))}
-                </ul>
-              )}
-              {layout.type !== 'STRAIGHT' && (
-                <label className="flex items-center justify-between gap-2 text-[10px]">
-                  <span>عمق الغرفة = طول الجدار الجانبي (مم)</span>
-                  <input type="number" min={DEPTH_LIMITS_MM[0]} max={DEPTH_LIMITS_MM[1]} step={100} value={rawLayout.depthMm ?? DEFAULT_ROOM_DEPTH_MM}
-                    onChange={(e) => handleLayoutChange({ depthMm: Number(e.target.value) })}
-                    onBlur={() => handleLayoutChange({ depthMm: layout.depthMm })}
-                    className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
-                </label>
-              )}
-              {layout.type === 'L' && (
-                <div className="grid grid-cols-2 gap-1">
-                  {(['LEFT', 'RIGHT'] as const).map((side) => (
-                    <button key={side} type="button" onClick={() => handleLayoutChange({ lSide: side })} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${layout.lSide === side ? 'bg-indigo-100 border-indigo-400 text-indigo-900' : 'bg-white text-slate-600 hover:bg-slate-50'}`}>
-                      {side === 'LEFT' ? 'الجدار الجانبي على اليسار' : 'الجدار الجانبي على اليمين'}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {layoutRuns.length > 1 && (
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-slate-600 block">الجدار الذي تُضاف عليه الخزانة الجديدة:</span>
-                  <div className={`grid gap-1 ${layoutRuns.length === 3 ? 'grid-cols-3' : 'grid-cols-2'}`}>
-                    {layoutRuns.map((r) => (
-                      <button key={r} type="button" onClick={() => setActiveRun(r)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${activeRun === r ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{RUN_LABELS[r]}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {/* مخطط صغير: الجدران المستعملة بلون واضح، والزوايا نقاط برتقالية. لا يبني شيئاً، فقط يوضّح أن هذا مطبخ بزوايا. */}
-              <div className="border-t border-indigo-100 pt-1.5 space-y-0.5">
-                <svg viewBox="0 0 160 96" className="w-full h-20" role="img" aria-label="مخطط المطبخ">
-                  {([['A', 20, 12, 140, 12], ['B', 20, 12, 20, 84], ['C', 140, 12, 140, 84]] as Array<[RunId, number, number, number, number]>).map(([r, x1, y1, x2, y2]) => {
-                    const on = layoutRuns.includes(r);
-                    return <line key={r} x1={x1} y1={y1} x2={x2} y2={y2} stroke={on ? '#4f46e5' : '#cbd5e1'} strokeWidth={on ? 5 : 2} strokeDasharray={on ? undefined : '4 3'} strokeLinecap="round" />;
-                  })}
-                  {layoutRuns.includes('B') && <circle cx={20} cy={12} r={6} fill="#f59e0b" />}
-                  {layoutRuns.includes('C') && <circle cx={140} cy={12} r={6} fill="#f59e0b" />}
-                  <text x={80} y={28} textAnchor="middle" fontSize={9} fill="#64748b">A</text>
-                  <text x={32} y={52} textAnchor="middle" fontSize={9} fill="#64748b">B</text>
-                  <text x={128} y={52} textAnchor="middle" fontSize={9} fill="#64748b">C</text>
-                </svg>
-                <span className="block text-[10px] leading-snug text-slate-600">
-                  {layout.type === 'STRAIGHT' && 'جدار واحد: لا توجد زوايا.'}
-                  {layout.type === 'L' && 'مطبخ L: جداران يلتقيان في زاوية واحدة (●). خزانة الزاوية تُضاف من أنواع الخزائن: «سفلية زاوية L» و«علوية زاوية L».'}
-                  {layout.type === 'U' && 'مطبخ U: ثلاثة جدران وزاويتان (●). خزانتا الزاويتين تُضافان من أنواع الخزائن: «سفلية زاوية L» و«علوية زاوية L».'}
-                </span>
-              </div>
-            </div>
-
-            {/* العائلة (4 أنواع) ثم قالب جاهز اختياري: القالب يضبط الخزانة الحقيقية فقط، وكل شيء بعده قابل للتعديل */}
-            <div className="space-y-1">
-              <div className="grid grid-cols-3 gap-1">
-                {FAMILY_ORDER.map((f) => (
-                  <button key={f} type="button" onClick={() => handleFamilyChange(f)} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${family === f ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{FAMILIES[f].label}</button>
-                ))}
-              </div>
-              <select value={resolved.subtype} onChange={(e) => handleSubtypeChange(e.target.value as CabinetSubtype)} className="w-full border bg-white rounded-md p-1.5 font-medium text-xs focus:outline-none">
-                {templatesOf(family).map((s) => (
-                  <option key={s} value={s}>{SUBTYPE_PRESETS[s].label}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* زاوية L: ذراعان على جدارين. الأبعاد والأقسام تُحدَّد هنا لا من الاستمارة */}
-            {isCornerBuilder && (
-              <div className="bg-indigo-50/60 border border-indigo-100 rounded-lg p-2 space-y-1.5">
-                <span className="font-bold text-[11px] block">📐 زاوية L: ذراعان على جدارين</span>
-                {cornerWallList.length === 0 ? (
-                  <span className="block text-[10px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">هذه الزاوية تحتاج مطبخاً بجدارين. اختر «شكل L» أو «شكل U» من لوحة «شكل المطبخ» أعلاه.</span>
-                ) : (
-                  <>
-                    {cornerWallList.length === 2 && (
-                      <div className="grid grid-cols-2 gap-1">
-                        {cornerWallList.map((w) => (
-                          <button key={w} type="button" onClick={() => setCornerWall(w)} className={`rounded-md border p-1 text-[10px] font-bold cursor-pointer ${cornerWall === w ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>
-                            زاوية {w === 'B' ? 'اليسار' : 'اليمين'}{cornerTaken(w) ? ' ✓' : ''}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-1 text-[10px]">
-                      <label className="flex items-center justify-between gap-1"><span>عرض الذراع الخلفي</span>
-                        <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armA} onChange={(e) => setArmA(Number(e.target.value))} onBlur={() => setArmA(cornerArm(armA))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                      <label className="flex items-center justify-between gap-1"><span>عرض الذراع الجانبي</span>
-                        <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={50} value={armB} onChange={(e) => setArmB(Number(e.target.value))} onBlur={() => setArmB(cornerArm(armB))} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                    </div>
-                    <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
-                      {(() => { const sp = lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }); return `${sp.alongA} × ${sp.alongSide} mm · ${cornerDepth}`; })()}
-                    </span>
-                    <span className="block text-[9px] leading-snug text-emerald-800 bg-emerald-50 border border-emerald-200 rounded p-1">
-                      {(() => {
-                        // The three boxes stand on ONE board, cut in an L (math/cornerDeck.ts): the panel says what the shop will cut.
-                        const board = woods.find((w) => w.id === resolved.carcaseMaterialId)?.thickness ?? 18;
-                        const p = cornerDeckPieceOf({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB), boardMm: board });
-                        return `🟩 قاعدة واحدة L بين الصناديق الثلاثة: ${p.spanXMm}×${p.spanYMm} خارجياً، عرض الرجل ${p.legsMm}، من لوح ${board} مم — تُقصّ قطعة واحدة ويبقى مربع ${p.cutOutXMm}×${p.cutOutYMm} قصاصة.`;
-                      })()}
-                    </span>
-                    {cornerWall && cornerTaken(cornerWall) && (
-                      <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">توجد زاوية من هذا المستوى على هذا الجدار. احذفها أولاً لتغيير مقاساتها.</span>
-                    )}
-                    {layout.type === 'U' && layout.widthMm < 2 * lCornerSpan({ depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) }).alongA && (
-                      <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">⚠️ الجدار الخلفي أقصر من زاويتين معاً: ستتداخل الزاويتان.</span>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {/* مقاسات الزاوية: ثلاثة أرقام، كلها قابلة للتعديل في أي وقت — والمربع والذراعان يتحركون معاً */}
-            {editing && cornerDims && editingCornerRole && (() => {
-              const role = editingCornerRole;
-              const mine = cornerDimKeyOf(role);
-              // The box in the form shows its OWN number from the header (they are one edit); the other two from the panel.
-              const valueOf = (k: keyof Omit<CornerGroupDims, 'wall'>) => (k === mine ? Math.round(resolved[k === 'depthMm' ? 'depth' : 'width']) : cornerDims[k]);
-              const set = (k: keyof Omit<CornerGroupDims, 'wall'>, v: number) => {
-                const n = k === 'depthMm' ? clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], cornerDims[k]) : cornerArm(v);
-                setCornerDims({ ...cornerDims, [k]: n });
-                if (k === mine) patchDraft(k === 'depthMm' ? { depth: n, width: role === 'SQUARE' ? n : draft.width } : { width: n });
-                if (k === 'depthMm' && role !== 'SQUARE') patchDraft({ depth: n });
-              };
-              const shown: CornerGroupDims = { ...cornerDims, [mine]: valueOf(mine) };
-              const span = cornerGroupSpan(shown);
-              const backWall = wallLengthOf(layout, 'A');
-              const sideWall = wallLengthOf(layout, cornerDims.wall);
-              const fits = cornerFitsWalls(span, backWall, sideWall);
-              const num = "w-16 px-1 py-0.5 border rounded font-mono text-center text-[11px]" + (fits ? " border-indigo-300" : " border-red-400 bg-red-50");
-              return (
-                <div className="rounded border border-indigo-300 bg-indigo-50 p-1.5 space-y-1" data-testid="corner-dims">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-indigo-900">📐 مقاسات الزاوية</span>
-                    <span className="text-[9px] text-indigo-700">{CORNER_ROLE_LABELS[role]} هي المفتوحة الآن</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="ضلع المربع = عمق كل صناديق الزاوية">
-                      <span>المربع</span>
-                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="مربع الزاوية (مم)" value={shown.depthMm}
-                        onChange={(e) => set('depthMm', Number(e.target.value))} onBlur={() => set('depthMm', shown.depthMm)} className={num} style={{ direction: 'ltr' }} />
-                      <span className="text-[9px]">مم</span>
-                    </label>
-                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="عرض الذراع على الجدار الخلفي (عرض بابه)">
-                      <span>الذراع الخلفي</span>
-                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="عرض الذراع الخلفي (مم)" value={shown.armAMm}
-                        onChange={(e) => set('armAMm', Number(e.target.value))} onBlur={() => set('armAMm', shown.armAMm)} className={num} style={{ direction: 'ltr' }} />
-                      <span className="text-[9px]">مم</span>
-                    </label>
-                    <label className="flex items-center gap-1 text-[10px] font-bold text-indigo-900" title="عرض الذراع على الجدار الجانبي (عرض بابه)">
-                      <span>الذراع الجانبي</span>
-                      <input type="number" min={L_CORNER_LIMITS.ARM_MM[0]} max={L_CORNER_LIMITS.ARM_MM[1]} step={10} aria-label="عرض الذراع الجانبي (مم)" value={shown.armBMm}
-                        onChange={(e) => set('armBMm', Number(e.target.value))} onBlur={() => set('armBMm', shown.armBMm)} className={num} style={{ direction: 'ltr' }} />
-                      <span className="text-[9px]">مم</span>
-                    </label>
-                  </div>
-                  <span className={fits ? "block text-[9px] leading-snug text-indigo-800" : "block text-[9px] leading-snug font-bold text-red-700"}>
-                    {fits
-                      ? `يحتاج ${Math.round(span.alongA)} مم على الجدار الخلفي (المتاح ${Math.round(backWall)}) و${Math.round(span.alongSide)} مم على الجانبي (المتاح ${Math.round(sideWall)}). المربع والذراعان صناديق ثلاثة تتحرك معاً بخزنة واحدة.`
-                      : `⚠️ لا يدخل: ${Math.round(span.alongA)} / ${Math.round(backWall)} مم على الخلفي و${Math.round(span.alongSide)} / ${Math.round(sideWall)} مم على الجانبي. قلّل المربع أو أحد الذراعين.`}
-                  </span>
-                  <span className="block text-[9px] leading-snug text-indigo-700">العرض في الأعلى (W) هو رقم هذا الصندوق نفسه: تعديله هنا وتعديله هناك شيء واحد.</span>
-                </div>
-              );
-            })()}
-            <div className={isCornerBuilder ? 'hidden' : 'contents'}>
-            <div className="grid grid-cols-3 gap-1 text-[10px] bg-slate-50 p-1.5 rounded border" style={{ direction: 'ltr' }}>
-              <div>W:<input type="number" aria-label="العرض" min={LIMITS.WIDTH_MM[0]} max={LIMITS.WIDTH_MM[1]} value={draft.width} onChange={(e) => patchDraft({ width: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
-              <div>H:<input type="number" aria-label="الارتفاع" min={LIMITS.HEIGHT_MM[0]} max={LIMITS.HEIGHT_MM[1]} value={draft.height} onChange={(e) => patchDraft({ height: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
-              <div>D:<input type="number" aria-label="العمق" min={LIMITS.DEPTH_MM[0]} max={LIMITS.DEPTH_MM[1]} value={draft.depth} onChange={(e) => patchDraft({ depth: Number(e.target.value) })} onBlur={normalizeDraft} className="w-full border p-0.5 text-center bg-white font-bold rounded" /></div>
-            </div>
-            </div>
-
-            {/* القاعدة: أرجل أو وزرة أو قاعدة خشبية تحت الخزانة السفلية. الارتفاع الكلي ثابت: القاعدة تُؤخذ منه */}
-            {resolved.category === 'BASE_UNIT' && (
-              <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
-                <div className="flex items-center justify-between gap-1">
-                  <span className="font-bold text-[10px]">🦶 القاعدة (الأرجل / الوزرة / قاعدة خشبية)</span>
-                  <select value={draft.base?.type ?? 'LEGACY'} onChange={(e) => setBaseType(e.target.value)} className="border bg-white rounded p-0.5 text-[11px]">
-                    {!draft.base && <option value="LEGACY">كما كانت (4 أرجل بلا رسم)</option>}
-                    {(['NONE', 'LEGS', 'PLINTH', 'WOOD'] as BaseType[]).map((t) => (<option key={t} value={t}>{BASE_TYPE_LABELS[t]}</option>))}
-                  </select>
-                </div>
-                {draft.base && draft.base.type !== 'NONE' && (
-                  <div className="grid grid-cols-2 gap-1 text-[10px]">
-                    <label className="flex items-center justify-between gap-1"><span>ارتفاع القاعدة (مم)</span>
-                      <input type="number" min={BASE.HEIGHT_MM[0]} max={BASE.HEIGHT_MM[1]} step={10} value={draft.base.heightMm ?? ''} placeholder={String(baseNow.heightMm || BASE.DEFAULT_HEIGHT_MM)}
-                        onChange={(e) => setBase({ heightMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                    {(draft.base.type === 'LEGS' || draft.base.type === 'PLINTH') && (
-                      <label className="flex items-center justify-between gap-1"><span>عدد الأرجل</span>
-                        <select value={draft.base.legCount ?? 0} onChange={(e) => setBase({ legCount: Number(e.target.value) || undefined })} className="border bg-white rounded p-0.5 text-[11px]">
-                          <option value={0}>{`تلقائي (${baseNow.legCountAuto ? baseNow.legCount : resolved.width > BASE.LEGS_WIDE_ABOVE_MM ? BASE.LEGS_AUTO_WIDE : BASE.LEGS_AUTO})`}</option>
-                          {Array.from({ length: BASE.LEGS_RANGE[1] - BASE.LEGS_RANGE[0] + 1 }, (_, k) => BASE.LEGS_RANGE[0] + k).map((n) => (<option key={n} value={n}>{n}</option>))}
-                        </select></label>
-                    )}
-                    {(draft.base.type === 'PLINTH' || draft.base.type === 'WOOD') && (
-                      <label className="flex items-center justify-between gap-1"><span>ارتداد الأمام (مم)</span>
-                        <input type="number" min={BASE.FRONT_SETBACK_MM[0]} max={BASE.FRONT_SETBACK_MM[1]} step={5} value={draft.base.frontSetbackMm ?? ''} placeholder={String(baseNow.frontSetbackMm || BASE.DEFAULT_PLINTH_SETBACK_MM)}
-                          onChange={(e) => setBase({ frontSetbackMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                    )}
-                    {draft.base.type === 'WOOD' && (
-                      <label className="flex items-center justify-between gap-1"><span>ارتداد الخلف (مم)</span>
-                        <input type="number" min={BASE.BACK_SETBACK_MM[0]} max={BASE.BACK_SETBACK_MM[1]} step={5} value={draft.base.backSetbackMm ?? ''} placeholder={String(BASE.DEFAULT_WOOD_BACK_SETBACK_MM)}
-                          onChange={(e) => setBase({ backSetbackMm: numOrUndef(e.target.value) })} className="w-14 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} /></label>
-                    )}
-                    {draft.base.type === 'PLINTH' && (
-                      <label className="col-span-2 flex items-center justify-between gap-1"><span>مادة الوزرة</span>
-                        <select value={draft.base.plinthMaterial ?? 'PVC'} onChange={(e) => setBase({ plinthMaterial: e.target.value as 'PVC' | 'BOARD' })} className="border bg-white rounded p-0.5 text-[11px]">
-                          <option value="PVC">PVC من المخزن (مع مطاط)</option>
-                          <option value="BOARD">لوح من خامة الهيكل</option>
-                        </select></label>
-                    )}
-                  </div>
-                )}
-                {draft.base && baseNow.ignored && (
-                  <span className="block text-[9px] leading-snug rounded p-1 border text-amber-800 bg-amber-50 border-amber-200">
-                    {baseNow.ignored === 'APPLIANCE_BAY' && 'الجهاز يقف على أرجله الخاصة، فلا تُطبَّق قاعدة تحت هذه الخزانة.'}
-                    {baseNow.ignored === 'TOO_LOW' && 'الخزانة قصيرة جداً: لا تتسع لقاعدة (يبقى للجسم 10 سم على الأقل).'}
-                  </span>
-                )}
-                <span className="block text-[9px] text-slate-500" style={{ direction: 'ltr', textAlign: 'right' }}>
-                  {baseNow.legacy ? `${resolved.height} mm · legacy` : `${resolved.height} mm = base ${baseNow.heightMm} + body ${resolved.height - baseNow.heightMm}`}
-                </span>
-                {cabinets.some((c) => c.category === 'BASE_UNIT') && resolved.base && (
-                  <button type="button" onClick={applyBaseToAll} title="يضع هذه القاعدة على كل الخزائن السفلية الموجودة في المطبخ" className="w-full rounded border border-slate-300 bg-white hover:bg-slate-100 text-[10px] font-bold py-0.5 cursor-pointer">⟲ تعميم على كل الخزائن السفلية</button>
-                )}
-              </div>
-            )}
-
-            {/* خلفية الخزانة: HDF أو عارضتان من لوح الهيكل أو لوح كامل مثل باقي قطع الهيكل (math/backPanel.ts) */}
-            <div className="space-y-1 bg-slate-50 p-1.5 rounded border">
-              <div className="flex items-center justify-between gap-1">
-                <span className="font-bold text-[10px]">🧱 خلفية الخزانة</span>
-                <span className="text-[9px] text-slate-500">{(draft.backPanel ?? 'HDF') === 'HDF' ? 'ملصوقة على الظهر' : (draft.backPanel ?? 'HDF') === 'RAILS' ? 'من لوح الهيكل' : 'داخل الظهر'}</span>
-              </div>
-              <div className="flex flex-wrap gap-1" role="group" aria-label="خلفية الخزانة">
-                {BACK_PANEL_MODES.map((mode: BackPanelMode) => {
-                  const on = backPanelModeOf(draft) === mode;
-                  return (
-                    <button key={mode} type="button" aria-pressed={on}
-                      onClick={() => patchDraft({ backPanel: mode, ...(mode !== 'RAILS' ? { backRailDepthMm: undefined } : {}) })}
-                      className={`px-1.5 py-0.5 rounded border text-[9px] font-bold cursor-pointer ${on ? 'bg-slate-700 text-white border-slate-700' : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'}`}>
-                      {BACK_PANEL_LABELS[mode]}
-                    </button>
-                  );
-                })}
-              </div>
-              {backPanelModeOf(draft) === 'RAILS' && (
-                <label className="flex items-center justify-between gap-1 text-[10px]">
-                  <span>عرض العارضة (مم)</span>
-                  <input type="number" aria-label="عرض عارضة الخلفية (مم)" min={BACK.RAIL_DEPTH_RANGE_MM[0]} max={BACK.RAIL_DEPTH_RANGE_MM[1]} step={10}
-                    value={draft.backRailDepthMm ?? ''} placeholder={String(BACK.RAIL_DEPTH_MM)}
-                    onChange={(e) => patchDraft({ backRailDepthMm: numOrUndef(e.target.value) })} onBlur={normalizeDraft}
-                    className="w-16 px-1 py-0.5 border border-slate-300 rounded font-mono text-center" style={{ direction: 'ltr' }} />
-                </label>
-              )}
-              <span className="block text-[9px] leading-snug text-slate-600">
-                {backPanelModeOf(draft) === 'HDF'
-                  ? 'لوح HDF ٣ مم ملصوق على الوجه الخلفي، يغطّي الجزء المغلق فقط. الخيار الافتراضي: أخفّ وأرخص، ويُقصّ من لوح HDF.'
-                  : backPanelModeOf(draft) === 'RAILS'
-                    ? `عارضتان من لوح الهيكل (${backRailDepthOf(draft)} مم عرضاً): واحدة على لوح القاع وأخرى تحت السقف/العارضتين العلويتين. بلا ظهر — أعمق داخل وأرخص، لكن الغبار والسلك يظهران من الخلف.`
-                    : 'لوح من خامة الهيكل بنفس سُمكه، مقصوص بين الجانبين وداخل الظهر: أقوى ظهر. يأكل سُمك اللوح من العمق الداخلي، فتقصر الأرفف والحواجز ولوحات المفصلات تلقائياً.'}
-              </span>
-              {cabinets.length > 0 && (
-                <button type="button" onClick={applyBackToAll} title="يضع هذه الخلفية على كل خزائن المطبخ" className="w-full rounded border border-slate-300 bg-white hover:bg-slate-100 text-[10px] font-bold py-0.5 cursor-pointer">⟲ تعميم على كل الخزائن</button>
-              )}
-            </div>
-
-            {/* الأقسام: كل خزانة = كومة أقسام من الأسفل للأعلى، تُعرض هنا من الأعلى للأسفل */}
-            <div className="space-y-1.5 bg-slate-50 p-1.5 rounded border">
-              {editing?.cornerSide && (() => {
-                // The FIXED filler panels of a corner box (math/cornerFiller.ts): the corner side (what makes a drawer pass beside
-                // the neighbour's closed door) and/or the far side, for looks alone. Both are INSIDE the box: nothing on the wall moves.
-                const frontThMm = woods.find((m) => m.id === resolved.frontMaterialId)?.thickness ?? (editing.frontThickness || 18);
-                const boxWidth = Math.round((editing.width - (editing.cornerExtensionMm ?? 0)) * 10) / 10;
-                const clamp = (v: number) => clampCornerFillerMm(v, frontThMm);
-                const autoCorner = Math.round((frontThMm + CORNER.DRAWER_CLEARANCE_MM) * 10) / 10;
-                const autoLook = frontThMm;
-                const chosen = cornerFillerMm;
-                const sides = cornerFillerSides;                       // undefined = automatic
-                const on = (side: 'LEFT' | 'RIGHT') => (sides ? sides.includes(side) : side === editing.cornerSide);
-                const widthOn = (side: 'LEFT' | 'RIGHT') => (on(side) ? clamp(chosen ?? (side === editing.cornerSide ? autoCorner : autoLook)) : 0);
-                const toggle = (side: 'LEFT' | 'RIGHT') => {
-                  const base: Array<'LEFT' | 'RIGHT'> = sides ? [...sides] : (editing.cornerSide ? [editing.cornerSide] : []);
-                  setCornerFillerSides(base.includes(side) ? base.filter((x) => x !== side) : [...base, side]);
-                };
-                const setPreset = (value: 'AUTO' | 'NONE' | 'LEFT' | 'RIGHT' | 'BOTH') => {
-                  if (value === 'AUTO') return setCornerFillerSides(undefined);
-                  if (value === 'NONE') return setCornerFillerSides([]);
-                  if (value === 'BOTH') return setCornerFillerSides(['LEFT', 'RIGHT']);
-                  setCornerFillerSides([value]);
-                };
-                const sidesKey = sides === undefined ? 'AUTO' : sides.length === 0 ? 'NONE' : sides.length === 2 ? 'BOTH' : sides[0];
-                const anyPanel = on('LEFT') || on('RIGHT');
-                // the front spans from the left panel edge to the right one; the 0.5 outer reveal only where no panel stands
-        const frontMm = Math.round((Math.min(boxWidth - 0.5, boxWidth - widthOn('RIGHT')) - Math.max(0.5, widthOn('LEFT'))) * 10) / 10;
-                const btn = (active: boolean) => `px-1.5 py-0.5 rounded border text-[9px] font-bold cursor-pointer ${active ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'}`;
-                return (
-                  <div className="rounded border border-amber-300 bg-amber-50 p-1.5 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-amber-900">ضلفة الزاوية الثابتة</span>
-                      <span className="text-[9px] text-amber-700">جهة الزاوية: {editing.cornerSide === 'LEFT' ? 'يسار' : 'يمين'}</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1" role="group" aria-label="جهات ضلفة الزاوية">
-                      {([['AUTO', 'تلقائي'], ['NONE', 'بلا ضلفة'], ['LEFT', 'اليسرى'], ['RIGHT', 'اليمنى'], ['BOTH', 'الجهتان']] as const).map(([value, label]) => (
-                        <button key={value} type="button" onClick={() => setPreset(value)} className={btn(sidesKey === value)} aria-pressed={sidesKey === value}>{label}</button>
-                      ))}
-                    </div>
-                    {sides !== undefined && (
-                      <div className="flex flex-wrap gap-1">
-                        <button type="button" onClick={() => toggle('LEFT')} className={btn(on('LEFT'))} aria-pressed={on('LEFT')}>ضلفة يسرى</button>
-                        <button type="button" onClick={() => toggle('RIGHT')} className={btn(on('RIGHT'))} aria-pressed={on('RIGHT')}>ضلفة يمنى</button>
-                      </div>
-                    )}
-                    <label className="flex items-center gap-1 text-[10px] font-bold text-amber-900" title="ضلفة ثابتة من أسفل الهيكل إلى أعلاه، بسُمك الواجهات ومادتها، تُقتطع من عرض الذراع">
-                      <span>العرض (مم)</span>
-                      <input
-                        type="number" min={frontThMm} max={CORNER.FILLER_MAX_MM} step={0.5} aria-label="ضلفة الزاوية الثابتة (مم)"
-                        value={chosen ?? ''} placeholder={`تلقائي ${autoCorner}`} disabled={!anyPanel}
-                        onChange={(e) => setCornerFillerMm(e.target.value === '' ? undefined : clamp(Number(e.target.value) || 0))}
-                        className="w-16 px-1 py-0.5 border border-amber-300 rounded font-mono text-center text-[11px] disabled:opacity-40"
-                        style={{ direction: 'ltr' }}
-                      />
-                      <button type="button" onClick={() => setCornerFillerMm(undefined)} className="px-1 rounded border border-amber-300 bg-white text-[9px] text-amber-800 hover:bg-amber-100 cursor-pointer">تلقائي</button>
-                    </label>
-                    <span className="block text-[9px] leading-snug text-amber-800">
-                      {anyPanel
-                        ? `اليسرى ${widthOn('LEFT')} · اليمنى ${widthOn('RIGHT')} مم من عرض ${boxWidth} ⇒ الواجهة ${frontMm} مم. العرض من ${frontThMm} (سُمك الباب المواجه) إلى ${CORNER.FILLER_MAX_MM} مم.`
-                        : `بلا ضلفة: الواجهة تستعمل عرض الذراع كاملاً (${boxWidth} مم). اضغط «اليسرى» أو «اليمنى» أو «الجهتان» لإضافة ضلفة ثابتة.`}
-                    </span>
-                  </div>
-                );
-              })()}              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-[10px]">الأقسام (من الأعلى للأسفل):</span>
-                <button type="button" onClick={addZone} disabled={resolved.zones.length >= LIMITS.ZONES[1]} className="px-2 py-0.5 rounded border border-indigo-300 bg-white text-indigo-700 text-[10px] font-bold hover:bg-indigo-50 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">➕ قسم</button>
-              </div>
-
-              {resolved.zones.map((z, i) => ({ z, i })).reverse().map(({ z, i }) => {
-                const band = previewPricing.model.layout.bands[i];
-                const raw = baseZones()[i];
-                return (
-                  <div key={i} className="bg-white border rounded p-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <select aria-label="نوع القسم" value={z.kind} onChange={(e) => replaceZone(i, zoneOfKind(e.target.value as ZoneKind, z))} className="border bg-white rounded p-0.5 text-[11px] font-bold">
-                        {ZONE_KINDS.map((k) => (
-                          <option key={k} value={k} disabled={k === 'DRAWERS' && resolved.category === 'WALL_UNIT'}>{ZONE_LABELS[k]}</option>
-                        ))}
-                      </select>
-                      {(z.kind === 'DOORS' || z.kind === 'DRAWERS') && (
-                        <label className="flex items-center gap-1 text-[10px] font-bold">
-                          {z.kind === 'DOORS' ? 'عدد الأبواب' : 'عدد الأدراج'}
-                          <select value={z.count ?? 1} onChange={(e) => updateZone(i, { count: Number(e.target.value) })} className="border bg-white rounded p-0.5 text-[11px]" style={{ direction: 'ltr' }}>
-                            {FRONT_COUNT_OPTIONS.map((n) => (<option key={n} value={n}>{n}</option>))}
-                          </select>
-                        </label>
-                      )}
-                      {z.kind === 'DOORS' && !z.split && (
-                        <label className="flex items-center gap-1 text-[10px] font-bold" title="المفصلات على أي جهة من الباب؛ الباب يُفتح من الجهة المقابلة">
-                          المفصلات (كل الأبواب)
-                          <select value={z.hingeSide ?? 'AUTO'} onChange={(e) => updateZone(i, { hingeSide: e.target.value === 'AUTO' ? undefined : (e.target.value as 'LEFT' | 'RIGHT') })} className="border bg-white rounded p-0.5 text-[11px]">
-                            <option value="AUTO">تلقائي</option>
-                            <option value="LEFT">يسار</option>
-                            <option value="RIGHT">يمين</option>
-                          </select>
-                        </label>
-                      )}
-                      {z.kind === 'DOORS' && !z.split && (z.count ?? 1) >= 1 && (() => {
-                        const n = Math.max(1, Math.round(z.count ?? 1));
-                        const effective = hingeSidesOf(n, z.hingeSide); // what AUTO means here: the zone's side, else alternating
-                        const chosen = hingeSidesOf(n, z.hingeSide, z.hingeSides);
-                        const sharedEdges = sharedHingeEdgesOf(chosen);
-                        const sideName = (v: 'LEFT' | 'RIGHT') => (v === 'LEFT' ? 'يسار' : 'يمين');
-                        return (
-                          <div className="basis-full rounded border border-slate-200 bg-white p-1 space-y-1">
-                            <span className="font-bold text-slate-600 block">جهة المفصلات لكل باب (من اليسار إلى اليمين كما تراها من الأمام):</span>
-                            <div className="flex flex-wrap gap-1">
-                              {Array.from({ length: n }, (_, k) => (
-                                <label key={k} className="flex items-center gap-1 font-bold border rounded px-1 py-0.5 bg-slate-50">
-                                  باب {k + 1}
-                                  <select
-                                    value={z.hingeSides?.[k] ?? 'AUTO'}
-                                    onChange={(e) => {
-                                      const next = Array.from({ length: n }, (_, j) => z.hingeSides?.[j] ?? 'AUTO') as Array<'LEFT' | 'RIGHT' | 'AUTO'>;
-                                      next[k] = e.target.value as 'LEFT' | 'RIGHT' | 'AUTO';
-                                      updateZone(i, { hingeSides: next.every((v) => v === 'AUTO') ? undefined : next });
-                                    }}
-                                    className="border bg-white rounded p-0.5 text-[11px]"
-                                  >
-                                    <option value="AUTO">{`تلقائي (${sideName(effective[k])})`}</option>
-                                    <option value="LEFT">مفصلات يسار</option>
-                                    <option value="RIGHT">مفصلات يمين</option>
-                                  </select>
-                                </label>
-                              ))}
-                            </div>
-                            {sharedEdges.length > 0 && (
-                              <label className="flex items-center gap-1 font-bold" title="بابان مفصلاتهما على الحافة نفسها: لوح لكل باب (لوحان متلاحمان)، أو لوح واحد يحمل مفصلات البابين">
-                                <input type="checkbox" checked={!!z.sharedHingeBoard} onChange={(e) => updateZone(i, { sharedHingeBoard: e.target.checked ? true : undefined })} />
-                                لوح مفصلات واحد مشترك بين البابين <span className="font-normal text-slate-500">(الافتراضي: لوح لكل باب)</span>
-                              </label>
-                            )}
-                          </div>
-                        );
-                      })()}
-                      {z.kind === 'APPLIANCE' && (
-                        <select
-                          value={z.appliance ?? 'OVEN'}
-                          onChange={(e) => { const a = e.target.value as ApplianceKind; replaceZone(i, { kind: 'APPLIANCE', appliance: a, heightMm: APPLIANCES[a].nicheHeightMm }); }}
-                          className="border bg-white rounded p-0.5 text-[11px]"
-                        >
-                          {(Object.keys(APPLIANCES) as ApplianceKind[]).map((a) => (<option key={a} value={a}>{APPLIANCES[a].label}</option>))}
-                        </select>
-                      )}
-                      <span className="flex gap-0.5 mr-auto" style={{ direction: 'ltr' }}>
-                        <button type="button" title="نقل القسم للأعلى" disabled={i === resolved.zones.length - 1} onClick={() => moveZone(i, 1)} className="w-5 h-5 text-[10px] rounded border bg-white hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">↑</button>
-                        <button type="button" title="نقل القسم للأسفل" disabled={i === 0} onClick={() => moveZone(i, -1)} className="w-5 h-5 text-[10px] rounded border bg-white hover:bg-slate-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">↓</button>
-                        <button type="button" title="حذف القسم" disabled={resolved.zones.length <= 1} onClick={() => removeZone(i)} className="w-5 h-5 text-[10px] rounded border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed">✕</button>
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px]">
-                      <label className="flex items-center gap-1 font-bold">
-                        الارتفاع
-                        <input type="number" min={LIMITS.ZONE_HEIGHT_MM[0]} max={LIMITS.ZONE_HEIGHT_MM[1]} placeholder="تلقائي" value={raw?.heightMm ?? ''} onChange={(e) => updateZone(i, { heightMm: e.target.value === '' ? undefined : Number(e.target.value) })} onBlur={normalizeDraft} className="w-16 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
-                      </label>
-                      {(z.kind === 'DOORS' || z.kind === 'OPEN') && (
-                        <label className="flex items-center gap-1 font-bold">
-                          رفوف
-                          <input type="number" min={LIMITS.SHELVES[0]} max={LIMITS.SHELVES[1]} value={raw?.shelves ?? 0} onChange={(e) => updateZone(i, { shelves: Number(e.target.value) })} onBlur={normalizeDraft} className="w-10 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
-                        </label>
-                      )}
-                      {z.kind === 'APPLIANCE' && !!z.appliance && OPEN_BAY_APPLIANCES.includes(z.appliance) && (
-                        <label className="flex items-center gap-1 font-bold">
-                          <input type="checkbox" checked={!!z.panelFront} onChange={(e) => updateZone(i, { panelFront: e.target.checked })} />
-                          واجهة لوح
-                        </label>
-                      )}
-                      {z.kind === 'APPLIANCE' && !!z.appliance && (
-                        <div className="basis-full flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-slate-200 bg-slate-50 p-1">
-                          <span className="font-bold text-slate-600">مقاس الجهاز (مم):</span>
-                          {(['w', 'h', 'd'] as const).map((k) => (
-                            <label key={k} className="flex items-center gap-1 font-bold">
-                              {k === 'w' ? 'عرض' : k === 'h' ? 'ارتفاع' : 'عمق'}
-                              <input
-                                type="number"
-                                min={50}
-                                max={2700}
-                                placeholder={String(APPLIANCES[z.appliance!][k === 'w' ? 'nicheWidthMm' : k === 'h' ? 'nicheHeightMm' : 'nicheDepthMm'])}
-                                value={raw?.applianceSizeMm?.[k] ?? ''}
-                                onChange={(e) => updateZone(i, { applianceSizeMm: { ...raw?.applianceSizeMm, [k]: e.target.value === '' ? undefined : Number(e.target.value) } })}
-                                onBlur={normalizeDraft}
-                                className="w-14 border p-0.5 text-center bg-white rounded"
-                              />
-                            </label>
-                          ))}
-                          <select
-                            value={z.libraryApplianceId ?? ''}
-                            onChange={(e) => {
-                              const entry = libraryAppliances().find((x) => x.item.id === e.target.value);
-                              if (!entry) return updateZone(i, { libraryApplianceId: undefined });
-                              replaceZone(i, { ...(raw ?? z), kind: 'APPLIANCE', appliance: entry.kind, libraryApplianceId: entry.item.id, applianceSizeMm: { w: entry.item.sizeMm.w, h: entry.item.sizeMm.h, d: entry.item.sizeMm.d } });
-                            }}
-                            className="border bg-white rounded p-0.5 max-w-[190px]"
-                            aria-label="جهاز من مكتبة الأجهزة"
-                          >
-                            <option value="">جهاز من المكتبة...</option>
-                            {libraryAppliances().map(({ item }) => (
-                              <option key={item.id} value={item.id}>{item.nameAr} ({item.sizeMm.w}×{item.sizeMm.h}×{item.sizeMm.d})</option>
-                            ))}
-                          </select>
-                          <button
-                            type="button"
-                            onClick={() => patchDraft(fitCabinetToAppliance({ width: resolved.width, height: resolved.height, depth: resolved.depth, zones: resolved.zones }, woods.find((w) => w.id === resolved.carcaseMaterialId)?.thickness ?? 18))}
-                            className="px-2 py-0.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-bold cursor-pointer"
-                          >
-                            ضبط الخزانة على الجهاز
-                          </button>
-                        </div>
-                      )}
-                      {band && <span className="text-slate-500">الفتحة الفعلية: {Math.round(band.openingHeightMm)} مم</span>}
-                      {(() => {
-                        // The mechanisms a zone can DECLARE itself (rules/kinematics.ts: selectedBy ZONE). A hinge, a lift or a
-                        // runner is chosen through the stock item instead, so it is not offered here. Only MODELLED ones are
-                        // offered: a PLANNED mechanism would promise a movement the 3D does not draw.
-                        const declared = (Object.values(KINEMATICS) as KinematicSpec[])
-                          .filter((k) => k.selectedBy === 'ZONE' && k.status === 'MODELLED' && k.zoneKinds.includes(z.kind) && k.categories.includes(resolved.category));
-                        if (declared.length === 0 && !z.kinematic) return null;
-                        const current = z.kinematic ? KINEMATICS[z.kinematic] : undefined;
-                        return (
-                          <label className="flex items-center gap-1 font-bold">
-                            آلية القسم
-                            <select
-                              aria-label="آلية القسم"
-                              value={z.kinematic ?? ''}
-                              onChange={(e) => updateZone(i, { kinematic: (e.target.value || undefined) as KinematicId | undefined })}
-                              className="border bg-white rounded p-0.5 text-[10px] font-normal"
-                            >
-                              <option value="">افتراضي ({z.kind === 'DOORS' ? 'مفصلات / رفع' : 'سكك أدراج'})</option>
-                              {declared.map((k) => (<option key={k.id} value={k.id}>{k.label}</option>))}
-                            </select>
-                            {current && current.status === 'PLANNED' && <span className="text-amber-700 font-normal">(غير مجسَّدة بعد)</span>}
-                          </label>
-                        );
-                      })()}
-                      {z.kind === 'APPLIANCE' && z.appliance && <span className="text-slate-500">الجهاز يوفره الزبون · {APPLIANCES[z.appliance].note}</span>}
-                    </div>
-                    {(z.kind === 'DOORS' || z.kind === 'DRAWERS' || z.kind === 'APRON' || (z.kind === 'APPLIANCE' && !!z.panelFront)) && (() => {
-                      // Full control of THIS zone's fronts: the way they open, their sheet (= their thickness) and their edge band.
-                      // Every choice left on "like the cabinet" follows the cabinet-wide setting below.
-                      const canOpen = z.kind === 'DOORS' || z.kind === 'DRAWERS';
-                      const modeName = (m: OpeningMode) => (m === 'GOLA' ? 'Gola' : m === 'PUSH' ? 'Push' : 'مقبض');
-                      const cabSheet = woods.find((m) => m.id === resolved.frontMaterialId);
-                      const effSheet = (z.frontMaterialId ? woods.find((m) => m.id === z.frontMaterialId) : undefined) ?? cabSheet;
-                      const cabRoll = edgeRolls.find((r) => r.id === resolved.frontEdgeRollId);
-                      const effRoll = z.frontEdgeRollId === 'NONE' ? undefined : (z.frontEdgeRollId ? edgeRolls.find((r) => r.id === z.frontEdgeRollId) : undefined) ?? cabRoll;
-                      const effMode: OpeningMode = z.openingMode ?? resolved.openingMode;
-                      return (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-indigo-100 bg-indigo-50/50 p-1 text-[10px]">
-                          <span className="font-bold text-indigo-700">واجهات هذا القسم:</span>
-                          {canOpen && (
-                            <label className="flex items-center gap-1 font-bold">
-                              نمط الفتح
-                              <select
-                                aria-label="نمط فتح القسم"
-                                value={z.openingMode ?? ''}
-                                onChange={(e) => updateZone(i, { openingMode: e.target.value ? (e.target.value as OpeningMode) : undefined })}
-                                className="border bg-white rounded p-0.5 text-[10px] font-normal"
-                              >
-                                <option value="">{`مثل الخزانة (${modeName(resolved.openingMode)})`}</option>
-                                <option value="HANDLE">مقبض</option>
-                                <option value="GOLA" disabled={!canUseGola(resolved.category, [z])}>Gola (قناة)</option>
-                                <option value="PUSH">فتح بالضغط (Push)</option>
-                              </select>
-                            </label>
-                          )}
-                          <label className="flex items-center gap-1 font-bold">
-                            خامة الواجهات (السمك)
-                            <select
-                              aria-label="خامة واجهات القسم"
-                              value={z.frontMaterialId ?? ''}
-                              disabled={!canSave}
-                              onChange={(e) => updateZone(i, { frontMaterialId: e.target.value || undefined })}
-                              className="border bg-white rounded p-0.5 text-[10px] font-normal max-w-[190px]"
-                            >
-                              <option value="">{`مثل الخزانة (${cabSheet ? `${cabSheet.thickness}مم` : '—'})`}</option>
-                              {woods.map((m) => (<option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>))}
-                            </select>
-                          </label>
-                          <label className="flex items-center gap-1 font-bold">
-                            شريط الحافة
-                            <select
-                              aria-label="شريط حافة واجهات القسم"
-                              value={z.frontEdgeRollId ?? ''}
-                              disabled={!canSave || edgeRolls.length === 0}
-                              onChange={(e) => updateZone(i, { frontEdgeRollId: e.target.value || undefined })}
-                              className="border bg-white rounded p-0.5 text-[10px] font-normal max-w-[190px]"
-                            >
-                              <option value="">{`مثل الخزانة (${cabRoll ? `${cabRoll.thickness}مم` : 'بدون'})`}</option>
-                              <option value="NONE">بدون شريط</option>
-                              {edgeRolls.map((r) => (<option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>))}
-                            </select>
-                          </label>
-                          <span className="text-slate-500">
-                            الفعلي: السمك {effSheet ? `${effSheet.thickness} مم` : '—'} · الشريط {effRoll ? `${effRoll.thickness} مم` : 'بدون'}{canOpen ? ` · ${modeName(effMode)}` : ''}
-                          </span>
-                        </div>
-                      );
-                    })()}
-                    {canSplitZone(z) && !isOpenCarcase(resolved.zones) && (() => {
-                      const sp = band?.split;
-                      const fillW = sp ? Math.round(sp.fill.innerHiMm - sp.fill.innerLoMm) : undefined;
-                      return (
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] border-t pt-0.5">
-                          <label className="flex items-center gap-1 font-bold">
-                            <input type="checkbox" checked={!!z.split} onChange={(e) => updateZone(i, { split: e.target.checked ? { mainSide: 'LEFT', fill: 'AUTO' } : undefined })} />
-                            لوح عمودي (عمودان)
-                          </label>
-                          {z.split && (
-                            <>
-                              <select value={z.split.mainSide} onChange={(e) => updateZone(i, { split: { ...z.split!, mainSide: e.target.value === 'RIGHT' ? 'RIGHT' : 'LEFT' } })} className="border bg-white rounded p-0.5 text-[10px]">
-                                <option value="LEFT">{z.kind === 'APPLIANCE' ? 'الجهاز يسارًا' : 'الأبواب يسارًا'}</option>
-                                <option value="RIGHT">{z.kind === 'APPLIANCE' ? 'الجهاز يمينًا' : 'الأبواب يمينًا'}</option>
-                              </select>
-                              {z.kind === 'DOORS' && (
-                                <label className="flex items-center gap-1 font-bold">
-                                  عرض عمود الأبواب
-                                  <input type="number" min={20} placeholder="تلقائي" value={z.split.mainWidthMm ?? ''} onChange={(e) => updateZone(i, { split: { ...z.split!, mainWidthMm: e.target.value === '' ? undefined : Number(e.target.value) } })} onBlur={normalizeDraft} className="w-14 border p-0.5 text-center bg-white rounded" style={{ direction: 'ltr' }} />
-                                </label>
-                              )}
-                              {band?.join && band.join.lowIndex !== i ? (
-                                <span className="font-bold text-indigo-700">العمود الآخر: مدموج مع القسم {band.join.lowIndex + 1} (يتبع اختياره)</span>
-                              ) : (
-                                <label className="flex items-center gap-1 font-bold">
-                                  العمود الآخر
-                                  <select value={z.split.fill ?? 'AUTO'} onChange={(e) => updateZone(i, { split: { ...z.split!, fill: e.target.value as ColumnFillChoice } })} className="border bg-white rounded p-0.5 text-[10px] font-normal">
-                                    <option value="AUTO">{`تلقائي${fillW !== undefined ? ` (${FILL_LABELS[suggestFill(fillW)]})` : ''}`}</option>
-                                    {COLUMN_FILLS.map((f) => (<option key={f} value={f}>{FILL_LABELS[f]}</option>))}
-                                  </select>
-                                </label>
-                              )}
-                              {i > 0 && resolved.zones[i - 1].split && (
-                                <label
-                                  className={`flex items-center gap-1 font-bold ${resolved.zones[i - 1].split!.mainSide !== z.split.mainSide ? 'opacity-50' : ''}`}
-                                  title="يصبح العمود الآخر عموداً واحداً يجمع القسمين: لوح عمودي واحد، ولا يمرّ الرف الأفقي عبر هذا الجانب، وواجهة واحدة تغطيهما."
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={!!z.split.joinBelow}
-                                    disabled={resolved.zones[i - 1].split!.mainSide !== z.split.mainSide}
-                                    onChange={(e) => updateZone(i, { split: { ...z.split!, joinBelow: e.target.checked ? true : undefined } })}
-                                  />
-                                  دمج العمود الآخر مع القسم {i} (بلا رف فاصل في هذا الجانب)
-                                  {resolved.zones[i - 1].split!.mainSide !== z.split.mainSide && <span className="font-normal text-slate-500"> — يلزم أن يكون الجهازان على الجهة نفسها</span>}
-                                </label>
-                              )}
-                              {sp && <span className="text-slate-500">عمود {z.kind === 'APPLIANCE' ? 'الجهاز' : 'الأبواب'} {Math.round(sp.main.innerHiMm - sp.main.innerLoMm)} مم · الباقي {fillW} مم ← {FILL_LABELS[sp.fill.fill ?? 'PANEL']}</span>}
-                              {!sp && <span className="text-red-600 font-bold">لا مكان للوح: وسّع الخزانة أو قلّل عرض عمود الأبواب</span>}
-                            </>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                );
-              })}
-              </div>
-
-              {resolved.zones.length > 1 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-[10px] whitespace-nowrap">الفاصل بين الأقسام:</span>
-                  <select value={resolved.dividerBoards} onChange={(e) => patchDraft({ dividerBoards: Number(e.target.value) === 2 ? 2 : 1 })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                    <option value={1}>لوح واحد مشترك</option>
-                    <option value={2}>لوحان متلاحمان</option>
-                  </select>
-                </div>
-              )}
-
-              {resolved.category === 'WALL_UNIT' && (() => {
-                // Where THIS wall unit hangs: the standard gap above the worktop, its own gap, from the ceiling, or from the floor.
-                const mount = draft.wallMount;
-                const bottom = wallBottomMmOf({ height: resolved.height, wallMount: resolved.wallMount }, wallRef);
-                const top = bottom + resolved.height;
-                const over = top - wallRef.roomHeightMm;
-                const startFor = (from: 'COUNTER' | 'CEILING' | 'FLOOR') => (from === 'CEILING' ? 0 : from === 'COUNTER' ? wallRef.defaultGapMm : Math.max(0, Math.round(bottom)));
-                return (
-                  <div className="space-y-1 bg-sky-50/60 border border-sky-100 rounded p-1.5">
-                    <span className="block font-bold text-[10px]">📏 تعليق الخزانة العلوية</span>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
-                      <select
-                        aria-label="طريقة تعليق الخزانة"
-                        value={mount?.from ?? 'DEFAULT'}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          patchDraft({ wallMount: v === 'DEFAULT' ? undefined : { from: v as 'COUNTER' | 'CEILING' | 'FLOOR', mm: startFor(v as 'COUNTER' | 'CEILING' | 'FLOOR') } });
-                        }}
-                        className="border bg-white rounded p-0.5 text-[10px]"
-                      >
-                        <option value="DEFAULT">{`القياسي: ${wallRef.defaultGapMm} مم فوق سطح العمل`}</option>
-                        <option value="COUNTER">فراغ خاص فوق سطح العمل</option>
-                        <option value="CEILING">معلّقة من السقف (نحو الأسفل)</option>
-                        <option value="FLOOR">ارتفاع من الأرض</option>
-                      </select>
-                      {mount && (
-                        <label className="flex items-center gap-1 font-bold">
-                          {mount.from === 'CEILING' ? 'البعد عن السقف' : mount.from === 'FLOOR' ? 'الارتفاع عن الأرض' : 'الفراغ فوق السطح'} (مم)
-                          <input
-                            type="number"
-                            min={0}
-                            max={4000}
-                            step={10}
-                            value={mount.mm}
-                            onChange={(e) => patchDraft({ wallMount: { from: mount.from, mm: Number(e.target.value) || 0 } })}
-                            className="w-16 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center"
-                            style={{ direction: 'ltr' }}
-                          />
-                        </label>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => patchDraft({ height: 400, wallMount: { from: 'CEILING', mm: 0 } })}
-                        className="px-1.5 py-0.5 rounded border border-sky-300 bg-white text-sky-800 font-bold cursor-pointer hover:bg-sky-100"
-                        title="خزانة ارتفاعها 40 سم ملاصقة للسقف"
-                      >
-                        علوية 40 سم من السقف
-                      </button>
-                    </div>
-                    <span className={`block text-[9px] leading-snug ${over > 0.5 ? 'text-red-700 font-bold' : 'text-slate-600'}`}>
-                      أسفل الخزانة عند {Math.round(bottom)} مم · أعلاها عند {Math.round(top)} مم · السقف عند {Math.round(wallRef.roomHeightMm)} مم
-                      {over > 0.5 ? ` ⛔ تتجاوز السقف بـ ${Math.round(over)} مم` : ''}
-                      {bottom < wallRef.counterTopMm - 0.5 ? ' ⚠️ أسفلها تحت سطح العمل' : ''}
-                    </span>
-                  </div>
-                );
-              })()}
-
-              <div className={isCornerBuilder ? 'hidden' : 'contents'}>
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-[10px] whitespace-nowrap" title="الافتراضي لكل الأقسام؛ كل قسم يستطيع اختيار نمطه الخاص من بطاقته">نمط الفتح (للخزانة):</span>
-                <select value={resolved.openingMode} onChange={(e) => patchDraft({ openingMode: e.target.value as OpeningMode, golaSlots: [] })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                  <option value="HANDLE">مقبض</option>
-                  <option value="GOLA" disabled={!golaAllowed}>Gola (قناة){golaAllowed ? '' : ' — يلزم قسم أبواب أو أدراج'}</option>
-                  <option value="PUSH" disabled={!hasDoorZone && !hasDrawerZone}>فتح بالضغط (Push)</option>
-                </select>
-              </div>
-
-              {hasDoorZone && (
-                <label className="flex items-center gap-1 text-[10px] font-bold">
-                  <input type="checkbox" checked={resolved.frontStyle === 'GLASS'} onChange={(e) => patchDraft({ frontStyle: e.target.checked ? 'GLASS' : 'SOLID' })} />
-                  أبواب زجاجية (إطار ألمنيوم + زجاج)
-                </label>
-              )}
-              </div>
-
-              {hasDoorZone && (doorOptions.length > 0 ? (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-[10px] whitespace-nowrap">عتاد الأبواب:</span>
-                  <select value={resolved.hardwareItemId} onChange={(e) => patchDraft({ hardwareItemId: e.target.value })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                    {doorOptions.map((h) => (<option key={h.id} value={h.id}>{h.brand} — {h.modelType}</option>))}
-                  </select>
-                </div>
-              ) : (
-                <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا يوجد في المخزن مفصلات{resolved.category === 'WALL_UNIT' ? ' أو رافعة' : ''}: لن تُسعَّر الأبواب.</span>
-              ))}
-              {isLift && <span className="block text-[9px] text-slate-500">رافعة: كل باب يرتفع بعدّته المستقلة (بابان = رافعتان).</span>}
-
-              {hasDrawerZone && (drawerOptions.length > 0 ? (
-                <div className="flex items-center gap-1.5">
-                  <span className="font-bold text-[10px] whitespace-nowrap">سكك الأدراج:</span>
-                  <select value={resolved.drawerHardwareItemId} onChange={(e) => patchDraft({ drawerHardwareItemId: e.target.value })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                    {drawerOptions.map((h) => (<option key={h.id} value={h.id}>{h.brand} — {h.modelType}</option>))}
-                  </select>
-                </div>
-              ) : (
-                <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا توجد سكك أدراج في المخزن: لن تُسعَّر.</span>
-              ))}
-
-              {resolved.zones.some((z) => (z.openingMode ?? resolved.openingMode) === 'GOLA' && canUseGola(resolved.category, [z])) && !(soleZoneGola(resolved.zones, resolved.openingMode) && resolved.zones[0].kind === 'DRAWERS') && (
-                <p className="text-[10px] text-slate-500 leading-snug">
-                  قناة Gola واحدة لكل قسم أبواب أو أدراج: فوق الأبواب في السفلية، وتحتها في العلوية وفي الأبواب التي يعلو حافتها {PANEL.GOLA_REACH_MM / 1000} م. تنقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع واجهات القسم.
-                </p>
-              )}
-
-              {/* Gola placement: for drawers the user decides exactly where each channel goes */}
-              {soleZoneGola(resolved.zones, resolved.openingMode) && resolved.zones[0].kind === 'DRAWERS' && (() => {
-                const n = resolved.zones[0].count ?? 1;
-                return (
-                  <div className="bg-white border rounded p-1.5 space-y-1">
-                    <span className="block font-bold text-[10px]">مواضع الـ Gola (اضغط الشريط لتفعيله / إلغائه):</span>
-                    <div className="flex items-stretch gap-3" style={{ direction: 'ltr' }}>
-                      <div className="flex flex-col w-24 flex-shrink-0">
-                        {Array.from({ length: n }).map((_, k) => {
-                          const active = resolved.golaSlots.includes(k);
-                          return (
-                            <React.Fragment key={k}>
-                              <button
-                                type="button"
-                                title={k === 0 ? 'Gola في أعلى الخزانة (فوق الدرج 1)' : `Gola بين الدرج ${k} والدرج ${k + 1}`}
-                                onClick={() => {
-                                  const next = active ? resolved.golaSlots.filter((x) => x !== k) : [...resolved.golaSlots, k].sort((a, b) => a - b);
-                                  patchDraft({ golaSlots: next });
-                                }}
-                                className={`h-3.5 my-0.5 rounded-sm border text-[8px] leading-none font-bold cursor-pointer transition-colors ${active ? 'bg-slate-800 border-slate-800 text-white' : 'bg-white border-dashed border-slate-300 text-slate-400 hover:bg-slate-100'}`}
-                              >
-                                {active ? 'GOLA' : '+'}
-                              </button>
-                              <div className="h-6 rounded-sm border border-slate-300 bg-amber-50 text-[9px] font-bold text-slate-500 flex items-center justify-center">درج {k + 1}</div>
-                            </React.Fragment>
-                          );
-                        })}
-                      </div>
-                      <div className="text-[9px] leading-snug text-slate-500 self-center">
-                        الأعلى = الدرج 1. كل شريط Gola ينقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع الواجهات، ويُوزَّع الباقي بالتساوي على الأدراج.
-                        <br />
-                        <span className="font-bold text-slate-700">المفعّل: {resolved.golaSlots.length}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-
-            <div className="space-y-1 bg-slate-50 p-1.5 rounded border">
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-[10px] whitespace-nowrap w-14">الهيكل:</span>
-                <select value={resolved.carcaseMaterialId} onChange={(e) => patchDraft({ carcaseMaterialId: e.target.value })} disabled={!canSave} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                  {woods.map((m) => (
-                    <option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>
-                  ))}
-                </select>
-                <select
-                  value={resolved.carcaseEdgeRollId}
-                  onChange={(e) => patchDraft({ carcaseEdgeRollId: e.target.value })}
-                  disabled={!canSave || edgeRolls.length === 0}
-                  title="شريط الحافة (edge band) من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة"
-                  className="w-44 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
-                >
-                  <option value="">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
-                  {edgeRolls.map((r) => (
-                    <option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-[10px] whitespace-nowrap w-14">الواجهات:</span>
-                <select value={resolved.frontMaterialId} onChange={(e) => patchDraft({ frontMaterialId: e.target.value })} disabled={!canSave} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
-                  {woods.map((m) => (
-                    <option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>
-                  ))}
-                </select>
-                <select
-                  value={resolved.frontEdgeRollId}
-                  onChange={(e) => patchDraft({ frontEdgeRollId: e.target.value })}
-                  disabled={!canSave || edgeRolls.length === 0}
-                  title="شريط الحافة (edge band) من المخزن: سمكه يُطرح من مقاسات القص وثمنه يدخل في التكلفة"
-                  className="w-44 flex-shrink-0 border bg-white rounded p-1 text-[11px]"
-                >
-                  <option value="">{edgeRolls.length === 0 ? 'لا يوجد شريط حافة في المخزن' : '— بدون شريط حافة —'}</option>
-                  {edgeRolls.map((r) => (
-                    <option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>
-                  ))}
-                </select>
-              </div>
-              <span className="block text-[9px] leading-snug text-slate-500">
-                اختر لفّة شريط الحافة من المخزن: سمكها يُطرح من مقاسات القص وثمنها (سعر اللفّة ÷ طولها × الأمتار المستعملة) يدخل في التكلفة والفاتورة. الواجهات: الحافة على الجوانب الأربعة (العرض والارتفاع − 2×الحافة). الهيكل: الحافة الأمامية فقط (العمق − الحافة).
-              </span>
-            </div>
-
-            <div className="bg-slate-50 border rounded p-1.5 space-y-1">
-              <div className="flex items-center justify-between text-[11px] font-bold">
-                <span>التكلفة التقديرية للتصنيع</span>
-                <span className="font-mono" style={{ direction: 'ltr' }}>{previewPricing.totalDA.toLocaleString('fr-DZ')} دج</span>
-              </div>
-              <div className="text-[9px] text-slate-500">نفس الرقم الذي يجمعه تقرير BOM لهذه الخزانة (ألواح + شريط حافة + عتاد).</div>
-              {designIssues.map((i, k) => (
-                <span key={k} className={`block text-[9px] leading-snug rounded p-1 border ${i.severity === 'error' ? 'text-red-800 bg-red-50 border-red-200' : 'text-amber-800 bg-amber-50 border-amber-200'}`}>
-                  {i.severity === 'error' ? '⛔' : '⚠️'} {i.message}
-                </span>
-              ))}
-            </div>
-
-            <div className="pt-1 space-y-1.5">
-              <button type="button" disabled={!canAddNow} title={blockingIssues.length > 0 ? 'أصلح الأخطاء المعلَّمة بـ ⛔ أولاً' : isCornerBuilder && !cornerWall ? 'اختر مطبخ L أو U أولاً' : undefined} onClick={handleSaveCabinet} className={`w-full text-white font-bold py-1.5 rounded-lg text-[11px] shadow-xs ${canAddNow ? 'bg-indigo-600 hover:bg-indigo-700 cursor-pointer' : 'bg-slate-400 cursor-not-allowed'}`}>
-                {editing ? '💾 تحديث الوحدة المحددة' : isCornerBuilder ? '➕ إضافة زاوية L إلى المطبخ' : '➕ حقن وتثبيت الوحدة في المطبخ'}
-              </button>
-              {editing && (
-                <button type="button" onClick={() => { setEditingId(null); setCornerDims(null); }} className="w-full bg-white border border-slate-300 text-slate-700 font-bold py-1 rounded-lg text-[11px] hover:bg-slate-50 cursor-pointer">
-                  ✖ إلغاء التعديل
-                </button>
-              )}
-              <div className="grid grid-cols-2 gap-1.5">
-                <button type="button" onClick={handleExportFactoryBOM} className="bg-slate-900 text-white font-mono font-bold text-[9px] py-1 rounded hover:bg-slate-800 transition-colors cursor-pointer">🏭 تقرير BOM</button>
-                <button type="button" onClick={handlePrintCustomerInvoice} className="bg-emerald-600 text-white font-mono font-bold text-[9px] py-1 rounded hover:bg-emerald-700 transition-colors cursor-pointer">🧾 الفاتورة</button>
-              </div>
-            </div>
-
-            {/* الوحدات المثبّتة: تعديل وحذف دائمان (لا يتطلبان النقر على الخزانة في المشهد) */}
-            <div className="border-t border-slate-100 pt-2 space-y-1">
-              <div className="flex items-center justify-between gap-1">
-                <span className="font-bold text-[11px]">🗂️ الوحدات المثبّتة ({cabinets.length})</span>
-                {cabinets.length > 1 && (
-                  <button type="button" onClick={handleAutoArrange} title="ترصّ الوحدات متجاورة من بداية كل جدار حسب ترتيبها الحالي (زاوية L تبقى مكانها)" className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 text-[10px] font-bold cursor-pointer">⟲ ترتيب تلقائي</button>
-                )}
-              </div>
-              {stockShortages.length > 0 && (
-                <div className="text-[9px] leading-snug rounded p-1 border text-amber-900 bg-amber-50 border-amber-300 space-y-0.5">
-                  <span className="font-bold block">📦 المخزون لا يكفي هذه المطبخ ({stockShortages.length}):</span>
-                  {stockShortages.slice(0, 4).map((s) => (
-                    <span key={`${s.kind}-${s.itemId}`} className="block" style={{ direction: 'rtl' }}>
-                      {s.kind === 'SHEET' ? '🪵 ألواح' : s.kind === 'EDGE_BAND' ? '🎗️ شريط حواف' : '🔩 عتاد'} — {s.label}: المطلوب {s.required} · المتوفر {s.available} · الناقص <b>{s.shortfall}</b>
-                    </span>
-                  ))}
-                  {stockShortages.length > 4 && <span className="block text-slate-600">… و{stockShortages.length - 4} أخرى (تجدها كاملة في تصدير BOM)</span>}
-                </div>
-              )}
-              {cabinets.some((c) => fits[c.id] === 'OUT_OF_BOUNDS') && (
-                <span className="block text-[9px] leading-snug rounded p-1 border text-red-900 bg-red-100 border-red-300">🚧 خارج الجدار: وحدة تتجاوز نهاية جدارها (أو بدايته). قصّرها أو حرّكها داخله، أو أطل الجدار من «شكل المطبخ».</span>
-              )}
-              {cabinets.some((c) => fits[c.id] === 'OVERLAP') && (
-                <span className="block text-[9px] leading-snug rounded p-1 border text-red-800 bg-red-50 border-red-200">🔴 وحدات متداخلة: الأحمر يعني أن وحدة تأخذ مكان أخرى. حرّكها أو اضغط «ترتيب تلقائي».</span>
-              )}
-              {layoutNotice && <span className="block text-[9px] leading-snug rounded p-1 border text-amber-900 bg-amber-50 border-amber-300">{layoutNotice}</span>}
-              <span className="block text-[9px] text-slate-500">الإطار الأخضر: وحدة ملاصقة لجارتها. الأحمر: تداخل.</span>
-              {cabinets.length === 0 && <span className="text-[10px] text-slate-400 block">لا توجد وحدات بعد.</span>}
-              {listRows.map((row) => row.kind === 'group' ? (
-                <div key={row.groupId} className="border border-indigo-200 bg-indigo-50/40 rounded p-1 text-[10px] space-y-1">
-                  <div className="flex items-center justify-between gap-1">
-                    <div className="min-w-0">
-                      <div className="font-bold truncate" title={row.name}>📐 {row.name}</div>
-                      <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{row.cabs.length} boxes · {row.cabs[0].category === 'WALL_UNIT' ? 'wall' : 'base'} · {row.cabs.reduce((s, x) => s + x.calculatedCostDA, 0).toLocaleString('fr-DZ')} دج</div>
-                    </div>
-                    <button type="button" onClick={() => handleDeleteFromList(row.cabs[0].id)} title="حذف الزاوية كلها" className="px-1.5 py-0.5 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer">🗑</button>
-                  </div>
-                  {row.cabs.map((c) => (
-                    <div key={c.id} onClick={() => setActiveCabinetId(c.id)} className={`flex items-center justify-between gap-1 border rounded px-1 py-0.5 cursor-pointer ${fitClass(c.id, c.id === editing?.id)}`}>
-                      <span className="truncate" title={c.name}>{c.name.split(' — ')[1] ?? c.name} <span className="text-slate-400 font-mono">· {RUN_LABELS[runOf(c)]} · {c.width}</span></span>
-                      <button type="button" onClick={(e) => { e.stopPropagation(); handleEditCabinet(c.id); }} title="تعديل" className="px-1 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">✏️</button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                (() => { const c = row.cab; return (
-                <div key={c.id} className={`flex items-center justify-between gap-1 border rounded p-1 text-[10px] ${fitClass(c.id, c.id === editing?.id, c.id === activeCabinetId)}`}>
-                  <div className="min-w-0">
-                    <div className="font-bold truncate" title={c.name}>{c.name}{layoutRuns.length > 1 || runOf(c) !== 'A' ? <span className="text-slate-400 font-normal"> · {RUN_LABELS[runOf(c)]}</span> : null}</div>
-                    <div className="text-slate-500 font-mono" style={{ direction: 'ltr', textAlign: 'right' }}>{c.width}×{c.height}×{c.depth} · {frontSummary(c)} · {c.calculatedCostDA.toLocaleString('fr-DZ')} دج</div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <div className="flex items-center gap-0.5" title="موضع الوحدة على جدارها (مم)" style={{ direction: 'ltr' }}>
-                      <button type="button" onClick={() => nudgeCabinet(c.id, -MOVE_STEP_MM)} className="px-1 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">◀</button>
-                      <CommitNumber value={c.positionX} onCommit={(v) => setCabinetPosition(c.id, v)} />
-                      <button type="button" onClick={() => nudgeCabinet(c.id, MOVE_STEP_MM)} className="px-1 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">▶</button>
-                    </div>
-                    {layoutRuns.length > 1 && (
-                      <select value={runOf(c)} onChange={(e) => moveToRun(c.id, e.target.value as RunId)} title="الجدار" className="border bg-white rounded p-0.5 text-[10px]">
-                        {layoutRuns.map((r) => (<option key={r} value={r}>{r}</option>))}
-                      </select>
-                    )}
-                    <button type="button" onClick={() => handleEditCabinet(c.id)} title="تعديل" className="px-1.5 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 cursor-pointer">✏️</button>
-                    <button type="button" onClick={() => handleDeleteFromList(c.id)} title="حذف" className="px-1.5 py-0.5 rounded border border-red-200 bg-red-50 hover:bg-red-100 text-red-600 cursor-pointer">🗑</button>
-                  </div>
-                </div>
-                ); })()
-              ))}
-            </div>
+            <LayoutPanel layout={layout} rawLayout={rawLayout} onLayoutChange={handleLayoutChange} wallIssues={wallIssues} layoutRuns={layoutRuns} activeRun={activeRun} setActiveRun={setActiveRun} />
+            <CabinetFormPanel
+              draft={draft} resolved={resolved} family={family} onFamilyChange={handleFamilyChange} onSubtypeChange={handleSubtypeChange}
+              isCornerBuilder={isCornerBuilder} editing={editing} editingCornerRole={editingCornerRole} cornerDims={cornerDims} setCornerDims={setCornerDims}
+              armA={armA} setArmA={setArmA} armB={armB} setArmB={setArmB} cornerWall={cornerWall} setCornerWall={setCornerWall}
+              cornerWallList={cornerWallList} cornerTaken={cornerTaken} cornerDepth={cornerDepth} cornerArm={cornerArm} cornerDimKeyOf={cornerDimKeyOf}
+              layout={layout} baseNow={baseNow} setBase={setBase} setBaseType={setBaseType} onApplyBaseToAll={applyBaseToAll} onApplyBackToAll={applyBackToAll}
+              patchDraft={patchDraft} normalizeDraft={normalizeDraft} numOrUndef={numOrUndef} woods={woods} cabinets={cabinets}
+            />
+            <ZonesEditor
+              draft={draft} resolved={resolved} previewPricing={previewPricing} isCornerBuilder={isCornerBuilder} editing={editing}
+              woods={woods} edgeRolls={edgeRolls} doorOptions={doorOptions} drawerOptions={drawerOptions}
+              hasDoorZone={hasDoorZone} hasDrawerZone={hasDrawerZone} isLift={isLift} golaAllowed={golaAllowed}
+              designIssues={designIssues} blockingIssues={blockingIssues} canSave={canSave} canAddNow={canAddNow} wallRef={wallRef}
+              cornerWall={cornerWall} patchDraft={patchDraft} normalizeDraft={normalizeDraft} baseZones={baseZones}
+              updateZone={updateZone} replaceZone={replaceZone} addZone={addZone} moveZone={moveZone} removeZone={removeZone}
+              cornerFillerMm={cornerFillerMm} cornerFillerSides={cornerFillerSides} setCornerFillerMm={setCornerFillerMm} setCornerFillerSides={setCornerFillerSides}
+              onCancelEdit={() => { setEditingId(null); setCornerDims(null); }}
+              onSaveCabinet={handleSaveCabinet} onExportFactoryBOM={handleExportFactoryBOM} onPrintCustomerInvoice={handlePrintCustomerInvoice}
+            />
+            <InstalledUnitsPanel
+              cabinets={cabinets} listRows={listRows} fits={fits} fitClass={fitClass} editing={editing}
+              activeCabinetId={activeCabinetId} setActiveCabinetId={setActiveCabinetId} stockShortages={stockShortages}
+              layoutNotice={layoutNotice} layoutRuns={layoutRuns} onAutoArrange={handleAutoArrange}
+              onEditCabinet={handleEditCabinet} onDeleteFromList={handleDeleteFromList} onSetCabinetPosition={setCabinetPosition}
+              onNudgeCabinet={nudgeCabinet} onMoveToRun={moveToRun}
+            />
           </div>
         )}
 

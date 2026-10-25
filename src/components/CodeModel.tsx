@@ -1,7 +1,7 @@
 // src/components/CodeModel.tsx
 // Draws a detailed model built in code (src/components/codeModels) inside the box of its catalog piece. Like GlbModel, a failure
 // (no canvas, no WebGL feature...) falls back to the built-in shapes instead of breaking the scene.
-import React, { ReactNode, useEffect, useMemo } from 'react';
+import { ReactNode, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { CodeModelId } from '../data/accessoryCatalog';

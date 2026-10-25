@@ -1,7 +1,7 @@
 // src/components/OnlineTextureBrowser.tsx
 // Browse the CC0 textures of Poly Haven and ambientCG from inside the "Workshop Matrix Online" tab and apply one with a tap:
 // no download, no visit to the sites. Every refusal (CORS, a bad status, a page that is not an image) is shown in clear words.
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   OnlineSource,
   OnlineTexture,

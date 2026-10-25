@@ -117,3 +117,31 @@ test('the 3D floor: cabinets stand ON the grid whatever the room height — the 
   assert.ok(src.includes('<Grid position={[0, 0, 0]}'), 'the floor grid must sit at y = 0, where the legs end');
   assert.ok(!src.includes('[0, -0.4, 0]'), 'the floor grid was lowered below the legs again');
 });
+
+// ------------------------------------------------------------------------------------------------ stacked wall units (regression guard)
+
+test('stacked wall units: one at the ceiling and one flush under it is a hang, not a clash — and a real overlap is named', () => {
+  // A 400 mm unit flush with the 2600 ceiling (bottom 2200) over a second wall unit hung 400 down from the
+  // ceiling (bottom 1800, top 2200): same wall, same stretch, edges touching — no warning may fire.
+  const upper = wallCab({ id: 'up', height: 400, wallMount: { from: 'CEILING', mm: 0 } });
+  const lower = wallCab({ id: 'lo', height: 400, wallMount: { from: 'CEILING', mm: 400 } });
+  assert.deepEqual(K.wallMountIssues([upper, lower], REF), []);
+  // the same pair pushed 100 mm into each other (lower hung only 300 down: bottom 1900, top 2300) is a clash
+  const pushed = wallCab({ id: 'lo', height: 400, wallMount: { from: 'CEILING', mm: 300 } });
+  const issues = K.wallMountIssues([upper, pushed], REF);
+  assert.deepEqual(issues.map((i) => i.code), ['WALL_OVERLAP']);
+  assert.equal(issues[0].cabinetId, 'lo');
+  // beside each other (another stretch of wall), even at the same height, nothing is shared
+  assert.deepEqual(K.wallMountIssues([upper, wallCab({ id: 'side', positionX: 700, height: 400, wallMount: { from: 'CEILING', mm: 0 } })], REF), []);
+});
+
+test('the 3D frame: the camera contains the whole room, so a ceiling-hung unit is inside the picture', () => {
+  // The sister promise of the floor guard above: the unit is drawn by the scene, but the camera used to be
+  // placed from the cabinets' width alone and aimed at the floor — a unit at the ceiling was rendered outside
+  // the frame and "did not appear in the design" while the list showed it installed. The framing must be
+  // derived from the room (height included), and the user must be able to ask for it again.
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../src/components/Kitchen3DCanvas.tsx'), 'utf8');
+  assert.ok(src.includes('CameraFitter'), 'Kitchen3DCanvas must frame the scene with CameraFitter (room-derived camera + target)');
+  assert.ok(src.includes('roomHM * 0.44'), 'the camera target must sit near the middle of the room height, not on the floor');
+  assert.ok(src.includes('إظهار كل المطبخ'), 'the reset-view button («show the whole kitchen») must exist');
+});

@@ -8,12 +8,12 @@
 // A zone without `heightMm` is flexible and shares what is left; if every zone has a height the TOP one absorbs the
 // difference. Cabinets saved without `zones` are ONE zone built from frontConfig + shelvesCount, and keep exactly
 // the facade sizes the BOM always produced for them.
-import { ApplianceKind, CabinetObject, CabinetZone } from '../types/flatma';
+import { CabinetObject, CabinetZone } from '../types/flatma';
 import { LIMITS, PANEL, PULL_OUT, SPLIT } from './constants';
 import { cornerFillers } from './cornerFiller';
 import { SplitLayout, ZoneColumn, frontStripOf, splitLayoutOf } from './columns';
 import { golaSlotsOfZone } from './gola';
-import { APPLIANCES, OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
+import { APPLIANCES, nicheOf } from '../rules/appliances';
 import { canUseGola } from '../rules/openings';
 import { dividerBoardsOf } from '../rules/construction';
 import { carcaseSidesOf } from './carcaseSides';
@@ -423,7 +423,6 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
       const fronts = z.kind === 'DRAWERS' ? Math.max(1, Math.round(z.count ?? 1)) : 1;
       if (extent - slots.length * PANEL.GOLA_OFFSET_MM < fronts * PANEL.GOLA_MIN_FRONT_MM) { slots = []; golaSkipped.push(i); }
     }
-    const fullWidth = Math.max(0, cab.width - PANEL.FRONT_GAP_TOTAL_MM);
     const mech = validKinematic(z.kinematic, z.kind, cab.category);
     const mark = mech ? { kinematic: mech, ...(mech === 'PULL_OUT_FRAME' ? { levels: pullOutLevels(z) } : {}) } : {};
 

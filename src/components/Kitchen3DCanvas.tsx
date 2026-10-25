@@ -1,6 +1,6 @@
 // src/components/Kitchen3DCanvas.tsx
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas } from '@react-three/fiber';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Center } from '@react-three/drei';
 import * as THREE from 'three';
 import CabinetAssembly3D from './CabinetAssembly3D';
@@ -41,6 +41,28 @@ interface Kitchen3DCanvasProps {
 /** The room behind the kitchen: the colour and the two grid tones derived from it (math/palette.ts). */
 const ROOM = { ...DEFAULT_PALETTE.background, grid: gridColoursOf(DEFAULT_PALETTE.background.color) };
 
+/**
+ * Frames the WHOLE room — floor to ceiling, the full back wall — whenever the room or the kitchen's extent
+ * changes, and when the user asks for it (the «إظهار كل المطبخ» button, via `nonce`).
+ *
+ * Why this exists: the scene is recentred by <Center> on the room outline, but the camera used to be placed
+ * from the cabinets' width alone and aimed at the floor origin. A kitchen occupying part of its wall slid
+ * out of the left edge, and a wall unit hung from the ceiling (bottom at 2200 mm in a 2600 mm room) sat
+ * wholly above the frame: the unit was in the list, drawn in the scene, and invisible. Manual orbiting is
+ * left alone — this only reframes when the numbers it depends on actually change.
+ */
+function CameraFitter({ position, target, nonce }: { position: [number, number, number]; target: [number, number, number]; nonce: number }) {
+  const camera = useThree((s) => s.camera);
+  const controls = useThree((s) => s.controls) as unknown as { target: { set: (x: number, y: number, z: number) => void }; update: () => void } | null;
+  const key = `${position.join(',')}|${target.join(',')}|${nonce}`;
+  useEffect(() => {
+    camera.position.set(position[0], position[1], position[2]);
+    if (controls) { controls.target.set(target[0], target[1], target[2]); controls.update(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, controls]);
+  return null;
+}
+
 export default function Kitchen3DCanvas({
   cabinets,
   hardware,
@@ -64,6 +86,7 @@ export default function Kitchen3DCanvas({
   const [urlInput, setUrlInput] = useState<string>('');
   const [urlError, setUrlError] = useState<string>('');
   const [browserOpen, setBrowserOpen] = useState<boolean>(false);
+  const [viewNonce, setViewNonce] = useState(0); // «show the whole kitchen»: bumped by the reset-view button
 
   // Colour strip: arrows to scroll it (touch swipe and the mouse wheel also work). Arrows hide at either end.
   const stripRef = useRef<HTMLDivElement>(null);
@@ -193,6 +216,14 @@ export default function Kitchen3DCanvas({
   // Wall units hang above the worktop (its thickness included), whatever the real base height is — unless a unit chose its own place
   // (from the ceiling, from the floor, or its own gap above the worktop: CabinetObject.wallMount).
   const roomHeightMm = roomHeightOf(layout);
+
+  // The frame the camera must contain: the room itself (its outline is what <Center> centres on), never less
+  // than the cabinets' own extent. Distance is capped by the controls' own maxDistance below.
+  const roomHM = roomHeightMm / 1000;
+  const frameWM = Math.max(layout.widthMm / 1000, sceneWidthMeters, layout.type !== 'STRAIGHT' ? (layout.depthMm ?? DEFAULT_ROOM_DEPTH_MM) / 1000 : 0);
+  const camDist = Math.min(7.6, Math.max(3.4, frameWM * 1.05, roomHM * 1.8));
+  const camPos: [number, number, number] = [0, Math.max(1.5, roomHM * 0.58), camDist];
+  const camTarget: [number, number, number] = [0, roomHM * 0.44, 0];
   const wallBottomMeters = (c: CabinetObject): number => wallBottomMmOf(c, { counterTopMm: baseHeightMm + countertop.thicknessMm, defaultGapMm: hardware.wallSplashHeight, roomHeightMm }) / 1000;
   // The ceiling and the corners of the room as thin lines, so a unit hung from the ceiling can be seen against it.
   const roomOutline = useMemo(() => {
@@ -220,7 +251,8 @@ export default function Kitchen3DCanvas({
 
       {/* 🧊 Three.js Spatial Layer Viewport */}
       <div className="flex-1 w-full h-full relative">
-        <Canvas camera={{ position: layout.type === 'STRAIGHT' ? [sceneWidthMeters / 2, 1.2, 2.5] : [0, 2.6, sceneWidthMeters * 0.9 + 1.5], fov: 40 }} shadows gl={{ antialias: true }} className="w-full h-full absolute inset-0">
+        <Canvas camera={{ position: camPos, fov: 40 }} shadows gl={{ antialias: true }} className="w-full h-full absolute inset-0">
+          <CameraFitter position={camPos} target={camTarget} nonce={viewNonce} />
           {/* Cold slate room: without it the canvas is transparent and the scene floats on the white panel. */}
           <color attach="background" args={[ROOM.color]} />
           <ambientLight intensity={0.65} />
@@ -278,6 +310,14 @@ export default function Kitchen3DCanvas({
           <OrbitControls makeDefault enableDamping dampingFactor={0.05} maxPolarAngle={Math.PI / 2} minDistance={0.4} maxDistance={8.0} />
           <Grid position={[0, 0, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />
         </Canvas>
+        <button
+          type="button"
+          onClick={() => setViewNonce((n) => n + 1)}
+          title="إعادة تأطير المشهد بحيث تظهر كل خزائن المطبخ من الأرض إلى السقف"
+          className="absolute bottom-3 right-3 z-30 bg-white/80 backdrop-blur border border-[#E5E5E5] px-3 py-1.5 rounded-xl shadow-xs text-[10px] font-bold text-slate-700 hover:bg-white cursor-pointer"
+        >
+          ⟲ إظهار كل المطبخ
+        </button>
       </div>
 
       {/* 🚀 MINIMALIST GLASSMORPHISM CAROUSEL SYSTEM (Sleek Aesthetic Overlay) */}

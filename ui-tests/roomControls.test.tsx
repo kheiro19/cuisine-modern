@@ -3,7 +3,6 @@
 // the button that merges the other column with the zone below (no separating board on that side).
 // If any of these controls disappears or stops driving the numbers, `npm run test:ui` fails here.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

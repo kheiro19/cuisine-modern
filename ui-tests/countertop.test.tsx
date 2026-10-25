@@ -1,7 +1,6 @@
 // The worktop is drawn in the 3D showcase and the panel decides what is drawn: shown or hidden, 20–40 mm thick,
 // 580–650 mm deep. It is never priced (the customer buys the slab): no control here may appear in the invoice.
 import { describe, it, expect, afterEach } from 'vitest';
-import React from 'react';
 import { render, fireEvent, cleanup } from '@testing-library/react';
 import { FurnitureProvider } from '../src/context/FurnitureContext';
 import App from '../src/App';

@@ -1,19 +1,17 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "noEmit": true,
+    // Test helpers are deliberately loose (untyped builders over the matrix). The shipped code in
+    // tsconfig.json is fully strict; tightening the suites themselves is a separate, later step.
+    "strict": false,
     "strictNullChecks": false,
+    "noUnusedLocals": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": false,
     "target": "ES2022",
-    "lib": [
-      "DOM",
-      "DOM.Iterable",
-      "ES2022"
-    ]
+    "lib": ["DOM", "DOM.Iterable", "ES2022"]
   },
-  "include": [
-    "tests"
-  ]
+  "include": ["tests"]
 }

@@ -2,7 +2,6 @@
 // The dimension lines of the 3D atomic workspace, in the style of the reference screenshots: a chain of openings and the total on the
 // left, the inner and the overall width at the bottom, the depth along the top edge, a bracket across every front gap, and the axes.
 // Everything comes from math/dimensions.ts (millimetres); this file only draws it (metres). Place it in the SAME group as the assembly.
-import React from 'react';
 import { Html, Line } from '@react-three/drei';
 import { DimensionLine, dimensionGraphics } from '../math/dimensions';
 
