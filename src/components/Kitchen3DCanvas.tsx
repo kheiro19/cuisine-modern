@@ -226,7 +226,11 @@ export default function Kitchen3DCanvas({
           <ambientLight intensity={0.65} />
           <directionalLight position={[sceneWidthMeters / 2, 5, 3]} intensity={0.85} castShadow shadow-bias={-0.00005} />
 
-          <Center>
+          {/* disableY: the scene is built with the floor at y = 0 (legs, wall-unit heights and the room outline
+              all start there). A plain <Center> re-centres the bounding box vertically, so once the room outline
+              reached the ceiling the whole kitchen sank by half the room height and the floor grid cut through
+              the base units instead of passing under their legs. */}
+          <Center disableY>
             <group>
               {runs.map((run) => {
                 const frame = runFrame(layout, run);
@@ -272,7 +276,7 @@ export default function Kitchen3DCanvas({
           </Center>
 
           <OrbitControls makeDefault enableDamping dampingFactor={0.05} maxPolarAngle={Math.PI / 2} minDistance={0.4} maxDistance={8.0} />
-          <Grid position={[0, -0.4, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />
+          <Grid position={[0, 0, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />
         </Canvas>
       </div>
 
