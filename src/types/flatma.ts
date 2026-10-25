@@ -108,6 +108,15 @@ export interface CabinetZone {
   libraryApplianceId?: string;
   /** How this zone's facades move (see rules/kinematics.ts). Missing = the default of the zone kind (doors swing, drawers slide). */
   kinematic?: KinematicId;
+  /**
+   * Per-zone control of the fronts (doors / drawers / panels) of THIS zone. Each field is optional: missing = the cabinet's own choice.
+   *  - frontMaterialId: a sheet from the stock; its thickness is the thickness of this zone's fronts.
+   *  - frontEdgeRollId: an edge-band roll from the stock for this zone's fronts ('NONE' = no band on them).
+   *  - openingMode: HANDLE / GOLA / PUSH for this zone only.
+   */
+  frontMaterialId?: string;
+  frontEdgeRollId?: string;
+  openingMode?: OpeningMode;
   /** DOORS / APPLIANCE only: one vertical board splits the zone into two columns (see math/columns.ts). Missing = one column, the whole width. */
   split?: ZoneSplit;
   /** DOORS only, no split: the side the hinges are on, for every door of the zone. Missing = the first door on the left, then alternating. */

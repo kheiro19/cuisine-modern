@@ -30,8 +30,8 @@ export function expectedParts(geo: AssemblyGeometry, opts: { facades: boolean; f
   if (opts.facades) {
     geo.facades.forEach((f) => out.push({
       key: facadeKey(f),
-      min: [f.xMm, f.yMm, f.zMm - opts.frontThicknessMm / 2],
-      max: [f.xMm + f.widthMm, f.yMm + f.heightMm, f.zMm + opts.frontThicknessMm / 2],
+      min: [f.xMm, f.yMm, f.zMm - (f.thicknessMm ?? opts.frontThicknessMm) / 2],
+      max: [f.xMm + f.widthMm, f.yMm + f.heightMm, f.zMm + (f.thicknessMm ?? opts.frontThicknessMm) / 2],
     }));
   }
   geo.appliances.forEach((a: ApplianceGeo) => {

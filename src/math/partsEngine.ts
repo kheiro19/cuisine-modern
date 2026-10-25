@@ -17,6 +17,8 @@ import {
 import { BASE, CORNER, EDGE, FASTENER_STOCK, PANEL } from './constants';
 import { drawerBoxDims, minDrawerFrontMm } from './drawerBox';
 import { KINEMATICS, KinematicId, KinematicIssueCode, OPENING_HARDWARE, constructionOf, topOf, dividerBoardsOf, effectiveKinematic, hardwareCategoriesFor, kinematicOfHardware, liftZoneIsTop, openingModeOf } from '../rules';
+import { zoneOpeningModeOf } from '../rules/openings';
+import { ZoneFrontChoice, zoneFrontChoicesOf } from './zoneFronts';
 import { APPLIANCES, Facade, FrontPlan, ZoneLayout, backPanelBottomMm, isOpenCarcase, layoutZones, nicheOf, planFronts, zonesOf } from './zones';
 import { backInsideMm, backPanelModeOf, backPartsOf } from './backPanel';
 import { cornerDeckPieceOf } from './cornerDeck';
@@ -47,6 +49,9 @@ export interface CabinetPart {
    * deck is one piece with TWO front edges (one per arm); its lengthMm is the developed length round the corner.
    */
   edgeLengthMm?: number;
+  /** Fronts of a zone with a sheet / band roll of its own: the stock ids chosen on that zone (missing = the cabinet's). 'NONE' = no band. */
+  materialId?: string;
+  edgeRollId?: string;
 }
 
 export type HardwareGroup = 'Front Hardware' | 'Gola Profile' | 'Push-Open' | 'Assembly Fixings' | 'Base Fixing System' | 'Wall Fixing System';
@@ -120,11 +125,11 @@ export interface CabinetModel {
 }
 
 /** Layout + fronts + the list of parts, from the cabinet and the two board thicknesses. Pure geometry. */
-export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean } = {}): CabinetModel {
+export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: number, opts: { glass?: boolean; lift?: boolean; inset?: boolean; zoneFront?: ReadonlyArray<ZoneFrontChoice | undefined> } = {}): CabinetModel {
   const cab = bodyView(cabIn); // the body above the base (math/base.ts): the boards are cut for it, the base is cut apart below
   const zones = zonesOf(cab);
   const layout = layoutZones(cab, carcaseTh, { inset: opts.inset });
-  const plan = planFronts(cab, layout, { inset: opts.inset, frontThMm: frontTh });
+  const plan = planFronts(cab, layout, { inset: opts.inset, frontThMm: frontTh, zoneFrontThMm: opts.zoneFront?.map((c) => c?.thicknessMm) });
   const sides = carcaseSidesOf(cab, carcaseTh);
   const inner = sides.innerMm;
   const open = isOpenCarcase(zones);
@@ -228,7 +233,8 @@ export function modelCabinet(cabIn: CabinetObject, carcaseTh: number, frontTh: n
     else if (f.kind === 'APRON') { partType = `Fixed Apron Panel${tag}`; grain = 'horizontal'; }
     else if (f.kind === 'FILLER') partType = `Corner Filler Panel${tag}`;
     else partType = f.column === 'FILL' ? `Fixed Filler Panel${tag}` : `Appliance Front Panel${tag}`;
-    parts.push({ partType, role: 'front', thicknessMm: frontTh, widthMm: f.widthMm, lengthMm: f.heightMm, quantity: list.length, grain, edge: 'ALL' });
+    const zf = f.kind === 'FILLER' ? undefined : opts.zoneFront?.[zoneIndex]; // the corner fillers belong to the cabinet, not to a zone
+    parts.push({ partType, role: 'front', thicknessMm: zf?.thicknessMm ?? frontTh, widthMm: f.widthMm, lengthMm: f.heightMm, quantity: list.length, grain, edge: 'ALL', ...(zf?.materialId ? { materialId: zf.materialId } : {}), ...(zf?.edgeRollId ? { edgeRollId: zf.edgeRollId } : {}) });
     // The corner filler is an L, not a flap: the return leg behind it is cut apart, from the cabinet's own board (the same
     // board and the same place as the box assemblyGeometry draws). It is what the drawer runners are fixed to.
     if (f.kind === 'FILLER') {
@@ -281,14 +287,14 @@ export function hardwareRequirements(
   cabIn: CabinetObject,
   items: InjectedHardwareItem[],
   plan?: FrontPlan,
-  dims?: { carcaseTh: number; frontTh: number },
+  dims?: { carcaseTh: number; frontTh: number; zoneFrontTh?: ReadonlyArray<number | undefined> },
 ): HardwareRequirement[] {
   const cab = bodyView(cabIn); // fronts, connectors and runners belong to the body; the legs and the plinth to the base (below)
   const th = dims?.carcaseTh ?? (cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM);
   const fTh = dims?.frontTh ?? (cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM);
   const doorHwForPlan = pickFrontHardware(cab, 'DOORS', items);
   const insetHw = !!doorHwForPlan && doorHwForPlan.modelType.includes('Inset Hinge');
-  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th, { inset: insetHw }), { inset: insetHw, frontThMm: fTh });
+  const frontPlan = plan ?? planFronts(cab, layoutZones(cab, th, { inset: insetHw }), { inset: insetHw, frontThMm: fTh, zoneFrontThMm: dims?.zoneFrontTh });
   const out: HardwareRequirement[] = [];
   const add = (item: InjectedHardwareItem | undefined, quantity: number, group: HardwareGroup) => {
     if (!item || quantity <= 0) return;
@@ -319,8 +325,11 @@ export function hardwareRequirements(
     });
 
   // Opening mode extras (rules/openings.ts).
-  if (openingModeOf(cab) === 'PUSH') {
-    add(items.find((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory), (doors.length + drawers.length) * OPENING_HARDWARE.PUSH.perFacade, 'Push-Open');
+  // Each zone opens its own way (zone.openingMode, else the cabinet's): a latch for every door / drawer of a zone that opens by push.
+  const zoneList = zonesOf(cab);
+  const pushFacades = [...doors, ...drawers].filter((f) => zoneOpeningModeOf(zoneList[f.zoneIndex] ?? { kind: 'DOORS' }, cab) === 'PUSH').length;
+  if (pushFacades > 0) {
+    add(items.find((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory), pushFacades * OPENING_HARDWARE.PUSH.perFacade, 'Push-Open');
   }
   if (frontPlan.channels.length > 0) {
     const gola = items.find((h) => h.id === cab.frontConfig.golaProfileItemId) ?? items.find((h) => h.category === OPENING_HARDWARE.GOLA.hardwareCategory);
@@ -328,7 +337,7 @@ export function hardwareRequirements(
   }
 
   // Connectors: the very ones the atomic workspace draws (cams, dowels, back screws, shelf pins).
-  const geo = assemblyGeometry(cab, { carcaseTh: th, frontTh: fTh, lift: isLiftItem(doorHw), inset: !!doorHw && doorHw.modelType.includes('Inset Hinge') });
+  const geo = assemblyGeometry(cab, { carcaseTh: th, frontTh: fTh, zoneFrontTh: dims?.zoneFrontTh, lift: isLiftItem(doorHw), inset: !!doorHw && doorHw.modelType.includes('Inset Hinge') });
   const counts = fastenerCounts(buildFasteners(geo, cab, { carcaseTh: th, frontTh: fTh }));
   FASTENER_STOCK.forEach((rule) => add(items.find((h) => h.modelType.includes(rule.keyword)), counts[rule.kind], 'Assembly Fixings'));
 
@@ -348,6 +357,8 @@ export function hardwareRequirements(
 
 export interface PricedPart extends CabinetPart {
   material?: InjectedWoodMaterial;
+  /** The band roll glued on this part (missing = none). */
+  edgeRoll?: EdgeBandRoll;
   /** Thickness (mm) of the band glued on this part (0 = none). */
   edgeMm: number;
   /** Size to CUT: finished size minus the band that is glued on. */
@@ -419,6 +430,8 @@ export function priceCabinet(
   const hdfMat = woods.find((m) => /hdf/i.test(m.type) && m.thickness === PANEL.BACK_THICKNESS_MM);
   const carcaseTh = carcaseMat ? carcaseMat.thickness : cab.carcaseThickness > 0 ? cab.carcaseThickness : PANEL.DEFAULT_THICKNESS_MM;
   const frontTh = frontMat ? frontMat.thickness : cab.frontThickness > 0 ? cab.frontThickness : PANEL.DEFAULT_THICKNESS_MM;
+  // A zone may have its own front sheet (its thickness), band roll and opening mode: what it chooses wins, the rest follows the cabinet.
+  const zoneFront = zoneFrontChoicesOf(cab, woods, frontTh);
 
   const dimsOk = [cab.width, cab.height, cab.depth].every((v) => Number.isFinite(v) && v > 0);
   const zones = zonesOf(cab);
@@ -432,15 +445,14 @@ export function priceCabinet(
 
   const doorHw = pickFrontHardware(cab, 'DOORS', hardwareItems);
   const inset = !!doorHw && doorHw.modelType.includes('Inset Hinge');
-  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw), inset });
+  const model = modelCabinet(cab, carcaseTh, frontTh, { glass: isGlassFront(cab, frontMat), lift: isLiftItem(doorHw), inset, zoneFront });
 
   model.layout.issues.forEach((i) => issues.push({ code: i.code, severity: i.code === 'ZONES_TOO_TALL' ? 'error' : 'warning', message: `Cabinet "${name}": ${i.message}` }));
   if (!carcaseMat) issues.push({ code: 'NO_CARCASE_MATERIAL', severity: 'error', message: `Cabinet "${name}": carcase material is not in stock — carcase not priced` });
-  if (hasFacades && !frontMat) issues.push({ code: 'NO_FRONT_MATERIAL', severity: 'error', message: `Cabinet "${name}": front material is not in stock — fronts not priced` });
   const needs = frontHardwareNeeds(zones, cab, carcaseTh, isOpenCarcase(zones));
   if (needs.doors && !doorHw) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no hinge / lift selected for the doors — not priced` });
   if (needs.drawers && !pickFrontHardware(cab, 'DRAWERS', hardwareItems)) issues.push({ code: 'NO_FRONT_HARDWARE', severity: 'warning', message: `Cabinet "${name}": no drawer runners selected — not priced` });
-  if (openingModeOf(cab) === 'PUSH' && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
+  if (zones.some((z) => zoneOpeningModeOf(z, cab) === 'PUSH' && (z.kind === 'DOORS' || z.kind === 'DRAWERS' || !!z.split)) && !hardwareItems.some((h) => h.category === OPENING_HARDWARE.PUSH.hardwareCategory)) issues.push({ code: 'NO_PUSH_ITEM', severity: 'warning', message: `Cabinet "${name}": push-to-open selected but no "Push-Open Systems" item in stock — not priced` });
   if (model.plan.golaSkipped?.length) issues.push({ code: 'GOLA_ZONE_TOO_SHORT', severity: 'warning', message: `Cabinet "${name}": zone ${model.plan.golaSkipped.map((i) => i + 1).join(', ')} too short for a Gola channel plus fronts of at least ${PANEL.GOLA_MIN_FRONT_MM} mm: no channel there` });
   if (model.plan.golaDroppedByInset) issues.push({ code: 'GOLA_NOT_WITH_INSET', severity: 'warning', message: `Cabinet "${name}": inset hinges put the fronts inside the carcase, where a Gola channel cannot go: no channel is drawn or priced` });
   if (isLiftItem(doorHw) && !liftZoneIsTop(zones)) issues.push({ code: 'LIFT_ZONE_NOT_TOP', severity: 'error', message: `Cabinet "${name}": an overhead lift opens upward through everything above it, so it only fits the doors zone that is the top one and the only one with doors: use hinges here` });
@@ -467,8 +479,9 @@ export function priceCabinet(
   const round2 = (n: number) => Math.round(n * 100) / 100;
 
   const parts: PricedPart[] = model.parts.map((p) => {
-    const material = p.role === 'front' ? frontMat : p.role === 'back' ? hdfMat ?? carcaseMat : carcaseMat;
-    const roll = p.role === 'front' ? frontRoll : p.role === 'carcase' ? carcaseRoll : undefined;
+    // A front of a zone with its own sheet / band roll uses them ('NONE' = no band); every other front follows the cabinet.
+    const material = p.role === 'front' ? (p.materialId ? woods.find((m) => m.id === p.materialId) ?? frontMat : frontMat) : p.role === 'back' ? hdfMat ?? carcaseMat : carcaseMat;
+    const roll = p.role === 'front' ? (p.edgeRollId ? (p.edgeRollId === 'NONE' ? undefined : edgeRolls.find((r) => r.id === p.edgeRollId)) : frontRoll) : p.role === 'carcase' ? carcaseRoll : undefined;
     const edgeMm = p.edge === 'NONE' ? 0 : Math.max(0, roll ? roll.thickness : material?.edgeThickness ?? 0);
     const cutWidth = p.edge === 'ALL' ? p.widthMm - 2 * edgeMm : p.edge === 'FRONT' ? p.widthMm - edgeMm : p.widthMm;
     const cutLength = p.edge === 'ALL' ? p.lengthMm - 2 * edgeMm : p.lengthMm;
@@ -482,6 +495,7 @@ export function priceCabinet(
     return {
       ...p,
       material,
+      edgeRoll: roll,
       edgeMm,
       cutWidthMm: cutW,
       cutLengthMm: cutL,
@@ -492,16 +506,24 @@ export function priceCabinet(
     };
   });
 
+  if (hasFacades && parts.some((p) => p.role === 'front' && !p.material)) issues.push({ code: 'NO_FRONT_MATERIAL', severity: 'error', message: `Cabinet "${name}": front material is not in stock — fronts not priced` });
+  zones.forEach((z, i) => {
+    if (z.frontMaterialId && !woods.some((m) => m.id === z.frontMaterialId)) issues.push({ code: 'NO_FRONT_MATERIAL', severity: 'warning', message: `Cabinet "${name}": the front sheet chosen for zone ${i + 1} is not in stock — the cabinet's front sheet is used there` });
+  });
+
+  // One row per roll: the carcase band first, then the band of each front roll (a zone may choose a roll of its own).
   const edgeUsage: EdgeUsage[] = [];
   const usage = (part: 'carcase' | 'front', roll: EdgeBandRoll | undefined) => {
     if (!roll) return;
-    const meters = parts.filter((p) => (part === 'front' ? p.role === 'front' : p.role === 'carcase')).reduce((s, p) => s + p.edgeMeters, 0);
+    const meters = parts.filter((p) => (part === 'front' ? p.role === 'front' : p.role === 'carcase') && p.edgeRoll?.id === roll.id).reduce((s, p) => s + p.edgeMeters, 0);
     if (meters > 0) edgeUsage.push({ part, roll, meters, costDA: Math.round(meters * bandPricePerMeterDA(roll)) });
   };
   usage('carcase', carcaseRoll);
-  usage('front', frontRoll);
+  const frontRolls = new Map<string, EdgeBandRoll>();
+  parts.forEach((p) => { if (p.role === 'front' && p.edgeRoll) frontRolls.set(p.edgeRoll.id, p.edgeRoll); });
+  frontRolls.forEach((roll) => usage('front', roll));
 
-  const requirements = hardwareRequirements(cab, hardwareItems, model.plan, { carcaseTh, frontTh });
+  const requirements = hardwareRequirements(cab, hardwareItems, model.plan, { carcaseTh, frontTh, zoneFrontTh: zoneFront.map((c) => c?.thicknessMm) });
   const fixing = constructionOf(cab.category).fixing;
   const baseHw = baseHardwareOf(cab);
   const needsFixing = cab.category !== 'BASE_UNIT' || baseHw.legacy || baseHw.legs > 0; // a wooden frame or the floor needs no legs

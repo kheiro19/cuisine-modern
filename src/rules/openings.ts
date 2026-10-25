@@ -31,6 +31,26 @@ export const openingModeOf = (cab: Pick<CabinetObject, 'openingMode' | 'frontCon
   cab.openingMode ?? (cab.frontConfig.hasGolaProfile ? 'GOLA' : 'HANDLE');
 
 /**
+ * How the fronts of ONE zone open: the zone's own choice, else the cabinet's. Gola needs a doors / drawers zone in a category that
+ * accepts it (a zone that cannot carry a channel opens by handle). Cabinets with no per-zone choice behave exactly as before.
+ */
+export function zoneOpeningModeOf(
+  zone: { kind: ZoneKind; openingMode?: OpeningMode },
+  cab: Pick<CabinetObject, 'openingMode' | 'frontConfig' | 'category'>,
+): OpeningMode {
+  const mode = zone.openingMode ?? openingModeOf(cab);
+  if (mode === 'GOLA') return canUseGola(cab.category, [zone]) ? 'GOLA' : 'HANDLE';
+  return mode;
+}
+
+/** The zone's own opening mode made valid for the category (Gola only where a channel can go; no fronts = nothing to open). */
+export function resolveZoneOpeningMode(requested: OpeningMode | undefined, category: CabinetCategory, zone: { kind: ZoneKind }): OpeningMode | undefined {
+  if (!requested || !isFrontZone(zone)) return undefined;
+  if (requested === 'GOLA' && !canUseGola(category, [zone])) return 'HANDLE';
+  return requested;
+}
+
+/**
  * An overhead lift swings its door UP through everything above it, so it only fits when the doors are in the top zone and in no other
  * (a lower lift door would sweep through the zone above; hinged doors below need a second hardware item). A zone also carries a door
  * when it is split and its filler column is, or may become (AUTO), a small door beside an appliance.

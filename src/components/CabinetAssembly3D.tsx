@@ -9,6 +9,7 @@ import { Edges } from '@react-three/drei';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';
 import { facadeMaterialSignature, materialKeyOf, parseMaterialKey } from '../math/materialLifecycle';
+import { zoneFrontChoicesOf } from '../math/zoneFronts';
 import { useDisposeMaterials } from './useDisposeMaterials';
 import { ApplianceGeo, AssemblyGeometry, FacadeGeo, applianceKey, assemblyGeometry, facadeKey } from '../math/assemblyGeometry';
 import { FastenerKind, buildFasteners, explodeOffsets } from '../math/fasteners';
@@ -75,7 +76,10 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   const glass = isGlassFront(cabinet, frontMat);
   const inset = !!doorHardware && doorHardware.modelType.includes('Inset Hinge');
 
-  const geo = useMemo(() => assemblyGeometry(cabinet, { carcaseTh: th, frontTh: fTh, lift, inset }), [cabinet, th, fTh, lift, inset]);
+  // A zone may have a front sheet of its own: its fronts are as thick as that sheet and look like it (math/zoneFronts.ts).
+  const zoneFronts = useMemo(() => zoneFrontChoicesOf(cabinet, woodPanels, fTh), [cabinet, woodPanels, fTh]);
+  const zoneFrontTh = useMemo(() => zoneFronts.map((c) => c?.thicknessMm), [zoneFronts]);
+  const geo = useMemo(() => assemblyGeometry(cabinet, { carcaseTh: th, frontTh: fTh, zoneFrontTh, lift, inset }), [cabinet, th, fTh, zoneFrontTh, lift, inset]);
 
   useEffect(() => { onGeometry?.({ geo, thicknessMm: th, frontThicknessMm: fTh, glass }); }, [geo, th, fTh, glass]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -101,15 +105,23 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   const overrideFinish = cabinet.frontTextureOverride?.finishType;
   // Keyed by the SIZES the fronts need (not by `geo`, which is a new object after every cabinet edit): a cabinet that only moves,
   // or whose fronts keep their size, keeps its materials instead of uploading new texture clones to the GPU.
-  const facadeSig = facadeMaterialSignature(geo.facades);
+  // A facade of a zone with its own sheet gets its own material (the key says which sheet); the showcase texture only dresses the fronts that follow the cabinet.
+  const ownSheetOf = (zoneIndex: number): string | undefined => zoneFronts[zoneIndex]?.materialId;
+  const frontKeyOf = (f: { zoneIndex: number; kind: string; widthMm: number; heightMm: number }): string => {
+    const own = ownSheetOf(f.zoneIndex);
+    return own ? `${materialKeyOf(f)}@@${own}` : materialKeyOf(f);
+  };
+  const facadeSig = [...new Set(geo.facades.map(frontKeyOf))].sort().join('|') || facadeMaterialSignature(geo.facades);
   const frontMaterials = useMemo(() => {
     const out: Record<string, ReturnType<typeof TextureEngine.compileProceduralMaterial>> = {};
     (facadeSig ? facadeSig.split('|') : []).forEach((key) => {
-      const { widthMm, heightMm, grain } = parseMaterialKey(key);
-      out[key] = TextureEngine.compileProceduralMaterial(frontMat, widthMm, heightMm, ghost, DEFAULT_PALETTE.front.color, grain, cabinet.frontTextureOverride, DEFAULT_PALETTE.front);
+      const [sizeKey, ownId] = key.split('@@');
+      const { widthMm, heightMm, grain } = parseMaterialKey(sizeKey);
+      const sheet = ownId ? woodPanels.find((x) => x.id === ownId) ?? frontMat : frontMat;
+      out[key] = TextureEngine.compileProceduralMaterial(sheet, widthMm, heightMm, ghost, DEFAULT_PALETTE.front.color, grain, ownId ? undefined : cabinet.frontTextureOverride, DEFAULT_PALETTE.front);
     });
     return out;
-  }, [facadeSig, frontMat, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [facadeSig, frontMat, woodPanels, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // These materials own GPU memory (one texture clone each) that nothing frees by itself: release the old ones when they are replaced.
   const ownedMaterials = useMemo(() => [sideMaterial, boardMaterial, ...Object.values(frontMaterials)], [sideMaterial, boardMaterial, frontMaterials]);
@@ -121,8 +133,8 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   const drawerTravel = openProgress * m(D) * 0.75;
 
   const facadeBody = (f: FacadeGeo) => {
-    const w = m(f.widthMm), h = m(f.heightMm), t = m(fTh);
-    const material = frontMaterials[materialKeyOf(f)];
+    const w = m(f.widthMm), h = m(f.heightMm), t = m(f.thicknessMm ?? fTh);
+    const material = frontMaterials[frontKeyOf(f)];
     if (glass && f.kind === 'DOOR') {
       const fr = GLASS_FRAME_M;
       return (

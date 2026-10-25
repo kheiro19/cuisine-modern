@@ -23,6 +23,7 @@ import {
   fitCabinetToAppliance,
   frontHardwareNeedsOf,
   resolveDraft,
+  soleZoneGola,
 } from './math/cabinetPresets';
 import { libraryAppliances } from './math/applianceModels';
 import {
@@ -69,11 +70,17 @@ const ZONE_KINDS: ZoneKind[] = ['DOORS', 'DRAWERS', 'OPEN', 'APPLIANCE', 'APRON'
 
 /** A zone of another kind starts from sensible values (an appliance zone from the appliance's own niche height). */
 const zoneOfKind = (kind: ZoneKind, previous: CabinetZone): CabinetZone => {
-  if (kind === 'DOORS') return { kind, count: previous.count ?? 2, shelves: 0 };
-  if (kind === 'DRAWERS') return { kind, count: previous.count ?? 2 };
+  // What the zone chose for its own fronts (sheet, band roll, opening mode) survives a change of kind; resolveDraft drops what the new kind cannot use.
+  const own: Partial<CabinetZone> = {
+    ...(previous.frontMaterialId ? { frontMaterialId: previous.frontMaterialId } : {}),
+    ...(previous.frontEdgeRollId ? { frontEdgeRollId: previous.frontEdgeRollId } : {}),
+    ...(previous.openingMode ? { openingMode: previous.openingMode } : {}),
+  };
+  if (kind === 'DOORS') return { kind, count: previous.count ?? 2, shelves: 0, ...own };
+  if (kind === 'DRAWERS') return { kind, count: previous.count ?? 2, ...own };
   if (kind === 'OPEN') return { kind, shelves: 2 };
   if (kind === 'APPLIANCE') return { kind, appliance: 'OVEN', heightMm: APPLIANCES.OVEN.nicheHeightMm };
-  return { kind: 'APRON', heightMm: 150 };
+  return { kind: 'APRON', heightMm: 150, ...own };
 };
 
 const FRONT_COUNT_OPTIONS = Array.from(
@@ -1325,6 +1332,68 @@ export default function App() {
                       })()}
                       {z.kind === 'APPLIANCE' && z.appliance && <span className="text-slate-500">الجهاز يوفره الزبون · {APPLIANCES[z.appliance].note}</span>}
                     </div>
+                    {(z.kind === 'DOORS' || z.kind === 'DRAWERS' || z.kind === 'APRON' || (z.kind === 'APPLIANCE' && !!z.panelFront)) && (() => {
+                      // Full control of THIS zone's fronts: the way they open, their sheet (= their thickness) and their edge band.
+                      // Every choice left on "like the cabinet" follows the cabinet-wide setting below.
+                      const canOpen = z.kind === 'DOORS' || z.kind === 'DRAWERS';
+                      const modeName = (m: OpeningMode) => (m === 'GOLA' ? 'Gola' : m === 'PUSH' ? 'Push' : 'مقبض');
+                      const cabSheet = woods.find((m) => m.id === resolved.frontMaterialId);
+                      const effSheet = (z.frontMaterialId ? woods.find((m) => m.id === z.frontMaterialId) : undefined) ?? cabSheet;
+                      const cabRoll = edgeRolls.find((r) => r.id === resolved.frontEdgeRollId);
+                      const effRoll = z.frontEdgeRollId === 'NONE' ? undefined : (z.frontEdgeRollId ? edgeRolls.find((r) => r.id === z.frontEdgeRollId) : undefined) ?? cabRoll;
+                      const effMode: OpeningMode = z.openingMode ?? resolved.openingMode;
+                      return (
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded border border-indigo-100 bg-indigo-50/50 p-1 text-[10px]">
+                          <span className="font-bold text-indigo-700">واجهات هذا القسم:</span>
+                          {canOpen && (
+                            <label className="flex items-center gap-1 font-bold">
+                              نمط الفتح
+                              <select
+                                aria-label="نمط فتح القسم"
+                                value={z.openingMode ?? ''}
+                                onChange={(e) => updateZone(i, { openingMode: e.target.value ? (e.target.value as OpeningMode) : undefined })}
+                                className="border bg-white rounded p-0.5 text-[10px] font-normal"
+                              >
+                                <option value="">{`مثل الخزانة (${modeName(resolved.openingMode)})`}</option>
+                                <option value="HANDLE">مقبض</option>
+                                <option value="GOLA" disabled={!canUseGola(resolved.category, [z])}>Gola (قناة)</option>
+                                <option value="PUSH">فتح بالضغط (Push)</option>
+                              </select>
+                            </label>
+                          )}
+                          <label className="flex items-center gap-1 font-bold">
+                            خامة الواجهات (السمك)
+                            <select
+                              aria-label="خامة واجهات القسم"
+                              value={z.frontMaterialId ?? ''}
+                              disabled={!canSave}
+                              onChange={(e) => updateZone(i, { frontMaterialId: e.target.value || undefined })}
+                              className="border bg-white rounded p-0.5 text-[10px] font-normal max-w-[190px]"
+                            >
+                              <option value="">{`مثل الخزانة (${cabSheet ? `${cabSheet.thickness}مم` : '—'})`}</option>
+                              {woods.map((m) => (<option key={m.id} value={m.id}>{m.brand} · {m.type} · {m.thickness}مم</option>))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 font-bold">
+                            شريط الحافة
+                            <select
+                              aria-label="شريط حافة واجهات القسم"
+                              value={z.frontEdgeRollId ?? ''}
+                              disabled={!canSave || edgeRolls.length === 0}
+                              onChange={(e) => updateZone(i, { frontEdgeRollId: e.target.value || undefined })}
+                              className="border bg-white rounded p-0.5 text-[10px] font-normal max-w-[190px]"
+                            >
+                              <option value="">{`مثل الخزانة (${cabRoll ? `${cabRoll.thickness}مم` : 'بدون'})`}</option>
+                              <option value="NONE">بدون شريط</option>
+                              {edgeRolls.map((r) => (<option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>))}
+                            </select>
+                          </label>
+                          <span className="text-slate-500">
+                            الفعلي: السمك {effSheet ? `${effSheet.thickness} مم` : '—'} · الشريط {effRoll ? `${effRoll.thickness} مم` : 'بدون'}{canOpen ? ` · ${modeName(effMode)}` : ''}
+                          </span>
+                        </div>
+                      );
+                    })()}
                     {canSplitZone(z) && !isOpenCarcase(resolved.zones) && (() => {
                       const sp = band?.split;
                       const fillW = sp ? Math.round(sp.fill.innerHiMm - sp.fill.innerLoMm) : undefined;
@@ -1377,7 +1446,7 @@ export default function App() {
 
               <div className={isCornerBuilder ? 'hidden' : 'contents'}>
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-[10px] whitespace-nowrap">نمط الفتح:</span>
+                <span className="font-bold text-[10px] whitespace-nowrap" title="الافتراضي لكل الأقسام؛ كل قسم يستطيع اختيار نمطه الخاص من بطاقته">نمط الفتح (للخزانة):</span>
                 <select value={resolved.openingMode} onChange={(e) => patchDraft({ openingMode: e.target.value as OpeningMode, golaSlots: [] })} className="flex-1 min-w-0 border bg-white rounded p-1 text-[11px]">
                   <option value="HANDLE">مقبض</option>
                   <option value="GOLA" disabled={!golaAllowed}>Gola (قناة){golaAllowed ? '' : ' — يلزم قسم أبواب أو أدراج'}</option>
@@ -1416,14 +1485,14 @@ export default function App() {
                 <span className="block text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">⚠️ لا توجد سكك أدراج في المخزن: لن تُسعَّر.</span>
               ))}
 
-              {resolved.openingMode === 'GOLA' && !(resolved.zones.length === 1 && resolved.zones[0].kind === 'DRAWERS') && (
+              {resolved.zones.some((z) => (z.openingMode ?? resolved.openingMode) === 'GOLA' && canUseGola(resolved.category, [z])) && !(soleZoneGola(resolved.zones, resolved.openingMode) && resolved.zones[0].kind === 'DRAWERS') && (
                 <p className="text-[10px] text-slate-500 leading-snug">
                   قناة Gola واحدة لكل قسم أبواب أو أدراج: فوق الأبواب في السفلية، وتحتها في العلوية وفي الأبواب التي يعلو حافتها {PANEL.GOLA_REACH_MM / 1000} م. تنقص {PANEL.GOLA_OFFSET_MM} مم من ارتفاع واجهات القسم.
                 </p>
               )}
 
               {/* Gola placement: for drawers the user decides exactly where each channel goes */}
-              {resolved.openingMode === 'GOLA' && resolved.zones.length === 1 && resolved.zones[0].kind === 'DRAWERS' && (() => {
+              {soleZoneGola(resolved.zones, resolved.openingMode) && resolved.zones[0].kind === 'DRAWERS' && (() => {
                 const n = resolved.zones[0].count ?? 1;
                 return (
                   <div className="bg-white border rounded p-1.5 space-y-1">

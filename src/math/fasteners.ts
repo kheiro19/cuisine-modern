@@ -136,7 +136,7 @@ export function buildFasteners(geo: AssemblyGeometry, cab: Pick<CabinetObject, '
   // ---- facades: hinges, lift kits, drawer runners
   geo.facades.forEach((f: FacadeGeo) => {
     const key = facadeKey(f);
-    const zRear = f.zMm - frontTh / 2;
+    const zRear = f.zMm - (f.thicknessMm ?? frontTh) / 2;
     if (f.motion === 'SWING' && f.hinge) {
       const left = f.hinge === 'LEFT';
       const xCup = left ? f.xMm + FASTENER.HINGE_CUP_EDGE_MM : f.xMm + f.widthMm - FASTENER.HINGE_CUP_EDGE_MM;

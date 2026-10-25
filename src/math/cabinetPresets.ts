@@ -24,7 +24,8 @@ import { BackPanelMode, backPanelModeOf } from './backPanel';
 import { COLUMN_FILLS, canSplitZone, frontHardwareNeeds } from './columns';
 import { CabinetSubtype, SUBTYPES, TEMPLATES, TemplateDef } from '../rules/templates';
 import { hardwareCategoriesFor, hardwareKindOfZone, validKinematic } from '../rules/kinematics';
-import { liftZoneIsTop, openingModeOf, resolveOpeningMode } from '../rules/openings';
+import { liftZoneIsTop, openingModeOf, resolveOpeningMode, resolveZoneOpeningMode } from '../rules/openings';
+import { maxFrontThicknessOf, zoneFrontChoicesOf } from './zoneFronts';
 import { dividerBoardsOf } from '../rules/construction';
 import { OPEN_BAY_APPLIANCES, nicheOf } from '../rules/appliances';
 import { getAccessory } from '../data/accessoryCatalog';
@@ -130,7 +131,24 @@ function normalizeZone(z: CabinetZone, category: CabinetCategory): CabinetZone {
   const n = normalizeZoneShape(z, category);
   const kinematic = validKinematic(z.kinematic, n.kind, category);
   const split = normalizeSplit(z, n);
-  return kinematic || split ? { ...n, ...(kinematic ? { kinematic } : {}), ...(split ? { split } : {}) } : n;
+  const own = normalizeZoneFronts(z, n, category);
+  return kinematic || split || own ? { ...n, ...(kinematic ? { kinematic } : {}), ...(split ? { split } : {}), ...own } : n;
+}
+
+/**
+ * What the zone chooses for its own fronts (front sheet, band roll, opening mode): kept only on a zone that has fronts, and the
+ * opening mode only where it can work (Gola needs a doors / drawers zone in a category that takes it). Stock ids are checked in resolveDraft.
+ */
+function normalizeZoneFronts(z: CabinetZone, n: CabinetZone, category: CabinetCategory): Pick<CabinetZone, 'frontMaterialId' | 'frontEdgeRollId' | 'openingMode'> | undefined {
+  const hasFronts = n.kind === 'DOORS' || n.kind === 'DRAWERS' || n.kind === 'APRON' || (n.kind === 'APPLIANCE' && !!n.panelFront);
+  if (!hasFronts) return undefined;
+  const openingMode = resolveZoneOpeningMode(z.openingMode, category, n);
+  const out = {
+    ...(z.frontMaterialId ? { frontMaterialId: z.frontMaterialId } : {}),
+    ...(z.frontEdgeRollId ? { frontEdgeRollId: z.frontEdgeRollId } : {}),
+    ...(openingMode ? { openingMode } : {}),
+  };
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 /** A vertical board only splits a doors / appliance zone; a bad side, width or fill falls back to the default. */
@@ -221,6 +239,16 @@ export function resolveDraft(
   let zones = (raw.zones ?? []).slice(0, LIMITS.ZONES[1]).map((z) => normalizeZone(z, d.category));
   if (zones.length === 0) zones = [{ kind: 'DOORS', count: 2, shelves: 0 }];
   if (zones.every((z) => z.heightMm !== undefined)) zones[zones.length - 1] = { ...zones[zones.length - 1], heightMm: undefined }; // the top zone absorbs the rest
+  // A zone's own front sheet / band roll that is no longer in stock goes back to "follow the cabinet" ('NONE' = no band stays).
+  zones = zones.map((z) => {
+    if (!z.frontMaterialId && !z.frontEdgeRollId) return z;
+    const { frontMaterialId, frontEdgeRollId, ...rest } = z;
+    return {
+      ...rest,
+      ...(frontMaterialId && woods.some((m) => m.id === frontMaterialId) ? { frontMaterialId } : {}),
+      ...(frontEdgeRollId && (frontEdgeRollId === 'NONE' || edgeRolls.some((r) => r.id === frontEdgeRollId)) ? { frontEdgeRollId } : {}),
+    };
+  });
   d.zones = zones;
 
   // Which hardware pickers the cabinet needs follows each zone's mechanism: hinged / lifting doors want hinges or a lift,
@@ -230,7 +258,7 @@ export function resolveDraft(
   // Opening mode: the rules live in rules/openings.ts (Gola only where canUseGola; no fronts = nothing to open).
   d.openingMode = resolveOpeningMode(d.openingMode, d.category, zones);
   d.dividerBoards = zones.length > 1 && d.dividerBoards === 2 ? 2 : 1; // a divider needs two zones
-  d.golaSlots = d.openingMode === 'GOLA' && zones.length === 1 // slots are chosen on a single drawers zone; a stack gets one channel per zone
+  d.golaSlots = soleZoneGola(zones, d.openingMode) // slots are chosen on a single drawers zone; a stack gets one channel per zone
     ? golaSlotsOf({ openingType: zones[0].kind as FrontOpeningType, elementCount: zones[0].count ?? 1, hasGolaProfile: true, golaSlots: raw.golaSlots })
     : [];
 
@@ -270,6 +298,10 @@ export function primaryFront(zones: CabinetZone[]): { openingType: FrontOpeningT
 export const totalShelves = (zones: CabinetZone[]): number =>
   zones.reduce((sum, z) => sum + (z.kind === 'DOORS' || z.kind === 'OPEN' ? z.shelves ?? 0 : 0), 0);
 
+/** A cabinet with ONE zone whose fronts open with Gola (its own choice, else the cabinet's): the one place where the user picks the channel slots. */
+export const soleZoneGola = (zones: ReadonlyArray<CabinetZone>, cabinetMode: OpeningMode | undefined): boolean =>
+  zones.length === 1 && (zones[0].openingMode ?? cabinetMode) === 'GOLA';
+
 function frontConfigOf(d: CabinetDraft): CabinetObject['frontConfig'] {
   const { openingType, elementCount } = primaryFront(d.zones);
   // Hinges are stored first when the cabinet has door fronts; a small door beside an appliance counts (its hinge id is set).
@@ -281,7 +313,7 @@ function frontConfigOf(d: CabinetDraft): CabinetObject['frontConfig'] {
     hardwareItemId: drawersOnly ? d.drawerHardwareItemId : d.hardwareItemId,
     drawerHardwareItemId: d.drawerHardwareItemId || undefined,
     hasGolaProfile: d.openingMode === 'GOLA',
-    golaSlots: d.openingMode === 'GOLA' && openingType === 'DRAWERS' && d.zones.length === 1 ? d.golaSlots : undefined,
+    golaSlots: soleZoneGola(d.zones, d.openingMode) && openingType === 'DRAWERS' ? d.golaSlots : undefined,
   };
 }
 
@@ -354,10 +386,12 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
 export function draftToPreviewCabinet(d: CabinetDraft, woods: InjectedWoodMaterial[]): CabinetObject {
   const carcase = woods.find((m) => m.id === d.carcaseMaterialId);
   const front = woods.find((m) => m.id === d.frontMaterialId);
+  const frontTh = front ? front.thickness : 18;
+  const cabinet = draftToNewCabinet(d, { id: 'preview', name: 'preview', positionX: 0 });
   return {
-    ...draftToNewCabinet(d, { id: 'preview', name: 'preview', positionX: 0 }),
+    ...cabinet,
     carcaseThickness: carcase ? carcase.thickness : 18,
-    frontThickness: front ? front.thickness : 18,
+    frontThickness: maxFrontThicknessOf(zoneFrontChoicesOf(cabinet, woods, frontTh), frontTh), // the thickest front sticks out the most
     calculatedCostDA: 0,
   };
 }

@@ -312,6 +312,8 @@ export interface Facade {
   kinematic?: KinematicId;
   /** Pull-out frames: how many baskets the frame carries. */
   levels?: number;
+  /** Real thickness of THIS facade's sheet (mm) when its zone has a front sheet of its own; missing = the cabinet's front thickness. */
+  thicknessMm?: number;
 }
 
 /** Baskets in a pull-out frame: the zone's shelves, or the default when it has none (a drawers zone has no shelves). */
@@ -340,6 +342,8 @@ export interface FrontPlanOptions {
   inset?: boolean;
   /** Real thickness of the front sheet (mm); missing = the one cached on the cabinet. */
   frontThMm?: number;
+  /** Per-zone front thickness (mm), by zone index: the facades of that zone carry it. A missing entry = the cabinet's thickness. */
+  zoneFrontThMm?: ReadonlyArray<number | undefined>;
 }
 
 export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> & Partial<Pick<CabinetObject, 'frontThickness' | 'frontSetbackSides' | 'cornerSide' | 'cornerFillerMm' | 'cornerFillerSides'>>, layout: ZoneLayout, opts: FrontPlanOptions = {}): FrontPlan {
@@ -367,12 +371,14 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
   const doorSetLeft = Math.max(setLeft, fillers.left);
   const doorSetRight = Math.max(setRight, fillers.right);
 
-  // Where Gola channels may exist is decided in rules/openings.ts (canUseGola).
-  const golaOn = cab.frontConfig.hasGolaProfile && canUseGola(cab.category, layout.bands.map((b) => b.zone));
+  // Where Gola channels may exist is decided in rules/openings.ts (canUseGola). Each zone may choose its own opening mode
+  // (zone.openingMode); a zone with no choice follows the cabinet.
+  const golaOf = (z: CabinetZone) => (z.openingMode ? z.openingMode === 'GOLA' : cab.frontConfig.hasGolaProfile) && canUseGola(cab.category, [z]);
+  const golaFc = { ...cab.frontConfig, hasGolaProfile: true };
 
   layout.bands.forEach((band, i) => {
     const z = band.zone;
-    let slots = golaOn ? golaSlotsOfZone(cab.frontConfig, z, n) : []; // this zone's channels
+    let slots = golaOf(z) ? golaSlotsOfZone(golaFc, z, n) : []; // this zone's channels
     // Half millimetres: the middle of a divider can fall on one, and the 1 mm gap between two zones is centred on it.
     const round2 = (v: number) => Math.round(2 * v) / 2;
     const yLo = round2(band.bandBottomMm + (i === 0 ? half : reveal));
@@ -487,6 +493,9 @@ export function planFronts(cab: SizedCabinet & Pick<CabinetObject, 'category'> &
   };
   pushFiller('LEFT', fillers.left);
   pushFiller('RIGHT', fillers.right);
+
+  // Zones with a front sheet of their own: their facades carry its thickness (the fixed corner fillers stay with the cabinet's).
+  if (opts.zoneFrontThMm) facades.forEach((f) => { const t = f.kind === 'FILLER' ? undefined : opts.zoneFrontThMm?.[f.zoneIndex]; if (t && t > 0) f.thicknessMm = t; });
 
   const plan: FrontPlan = golaSkipped.length > 0 ? { facades, channels, golaSkipped } : { facades, channels };
   return opts.inset ? insetPlan(cab, layout, plan) : plan;

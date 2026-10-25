@@ -2,6 +2,7 @@
 import React, { createContext, useContext, useRef, useState } from 'react';
 import { CabinetObject, RunId, WorkshopInventoryState, EdgeBandRoll, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { computeCabinetTotalCost } from '../math/costEngine';
+import { maxFrontThicknessOf, zoneFrontChoicesOf } from '../math/zoneFronts';
 import { applyConsumptionDelta, registerHardwareItem, totalConsumption } from '../math/stockDelta';
 
 type Inventory = WorkshopInventoryState & { edgeBandRolls: EdgeBandRoll[] };
@@ -110,7 +111,8 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     const thick = {
       ...cab,
       carcaseThickness: carcaseMat ? carcaseMat.thickness : 18,
-      frontThickness: frontMat ? frontMat.thickness : 18,
+      // The thickest front: a zone may have a front sheet of its own (what sticks out in front of the carcase is the thickest).
+      frontThickness: maxFrontThicknessOf(zoneFrontChoicesOf(cab, inventory.woodPanels, frontMat ? frontMat.thickness : 18), frontMat ? frontMat.thickness : 18),
     };
     return { ...thick, calculatedCostDA: computeCabinetTotalCost(thick, inventory.woodPanels, inventory.hardwareItems, inventory.edgeBandRolls) };
   };

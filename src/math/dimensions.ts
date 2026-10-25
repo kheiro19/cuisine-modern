@@ -80,7 +80,7 @@ export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height
 
   // A bracket across every gap between two fronts, floating a little in front of them.
   const fronts: PartBox[] = geo.facades.map((f) => ({ key: facadeKey(f), min: [f.xMm, f.yMm, f.zMm - 1], max: [f.xMm + f.widthMm, f.yMm + f.heightMm, f.zMm + 1] })); // 2 mm deep: they must overlap in z to face each other
-  const faceZ = Math.max(...geo.facades.map((f) => f.zMm), 0) + frontThicknessMm / 2; // the brackets float just in front of the fronts' face
+  const faceZ = Math.max(...geo.facades.map((f) => f.zMm + (f.thicknessMm ?? frontThicknessMm) / 2), 0); // the brackets float just in front of the fronts' face (the thickest one)
   gapsBetween(fronts).forEach((g, i) => {
     if (g.axis === 'z') return;
     const k = g.axis === 'x' ? 0 : 1;
@@ -95,7 +95,7 @@ export function dimensionsOf(geo: AssemblyGeometry, cab: { width: number; height
   geo.facades.forEach((f) => {
     if (f.widthMm <= 0 || f.heightMm <= 0) return;
     const key = facadeKey(f);
-    const z = f.zMm + frontThicknessMm / 2; // the outer face of the front
+    const z = f.zMm + (f.thicknessMm ?? frontThicknessMm) / 2; // the outer face of the front
     const yW = f.yMm + f.heightMm - Math.min(60, f.heightMm * 0.2);
     const xH = f.xMm + Math.min(60, f.widthMm * 0.2);
     // Fronts are banded on all four edges: the board is cut smaller than the finished size by the band on each side.

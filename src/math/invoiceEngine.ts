@@ -1,6 +1,6 @@
 // src/math/invoiceEngine.ts
 
-import { FinalBOMReport } from './bomEngine';
+import { BOMHardwareRow, FinalBOMReport } from './bomEngine';
 import { COMMERCIAL } from './constants';
 
 export interface InvoiceLineItem {
@@ -19,6 +19,23 @@ export interface CustomerInvoiceReport {
   profitMarginFeeDA: number;
   grandTotalCustomerPriceDA: number;
   itemizedSummary: InvoiceLineItem[];
+}
+
+/**
+ * How a line reads on the CUSTOMER's invoice. Every hardware row used to be called «Mechanical Architectural System», so the
+ * edge band of the doors was billed to the client as a mechanical system, with its own name repeated twice inside the line
+ * («PVC 0.4 Edge Band PVC 0.4x22mm»). The roll the workshop picks in the stock panel is a FINISH line: it is named here as
+ * one, with its own thickness and width, and it is sold per metre.
+ */
+function customerLine(h: BOMHardwareRow): string {
+  if (h.category === 'Edge Band') {
+    const m = /Edge Band PVC ([\d.]+)x([\d.]+)mm/i.exec(h.modelType ?? '');
+    const size = m ? ` · ${m[1]} × ${m[2]} mm` : '';
+    return `Edge Band Finish (per metre): ${h.brand}${size}`;
+  }
+  if (h.category === 'Gola Profile') return `Gola Handle Profile: ${h.brand} ${h.modelType}`;
+  if (h.category === 'Push-Open') return `Push-Open Mechanism: ${h.brand} ${h.modelType}`;
+  return `Mechanical Architectural System: ${h.brand} ${h.modelType}`;
 }
 
 /**
@@ -73,7 +90,7 @@ export function generateCustomerInvoice(
     const clientHwPrice = Math.round(baseHwPrice * (1 + laborRatePercentage / 100) * (1 + profitMarginPercentage / 100));
 
     items.push({
-      description: `Mechanical Architectural System: ${h.brand} ${h.modelType}`,
+      description: customerLine(h),
       quantity: h.quantityRequired,
       unitPriceDA: unitOf(clientHwPrice, h.quantityRequired),
       totalPriceDA: clientHwPrice

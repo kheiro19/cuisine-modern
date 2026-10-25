@@ -76,6 +76,8 @@ export const applianceKey = (zoneIndex: number): string => `appliance-${zoneInde
 export interface AssemblyOptions {
   carcaseTh: number;
   frontTh: number;
+  /** Per-zone front thickness (mm), by zone index: the facades of that zone are that thick. Missing entry = frontTh. */
+  zoneFrontTh?: ReadonlyArray<number | undefined>;
   /** The doors lift up (overhead lift hardware) instead of swinging. */
   lift: boolean;
   /** Inset hinges: the facade sits inside the carcase instead of in front of it. */
@@ -93,7 +95,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   const zones = zonesOf(cab);
   const open = isOpenCarcase(zones);
   const layout = layoutZones(cab, th, { inset: o.inset });
-  const plan = planFronts(cab, layout, { inset: o.inset, frontThMm: frontTh });
+  const plan = planFronts(cab, layout, { inset: o.inset, frontThMm: frontTh, zoneFrontThMm: o.zoneFrontTh });
   const boxes: BoxGeo[] = [];
   // A full back panel is fitted inside the rear (math/backPanel.ts): what runs from the back to the front stops at it.
   const backIn = backInsideMm(cab, th);
@@ -185,7 +187,8 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
     });
   });
 
-  const frontZ = o.inset ? D / 2 - frontTh / 2 : D / 2 + frontTh / 2;
+  // Every front is as thick as its own sheet; they all sit against the same plane (the face of the carcase, or the opening for inset fronts).
+  const frontZOf = (th: number) => (o.inset ? D / 2 - th / 2 : D / 2 + th / 2);
   // The room a front really has behind it: the carcase between its sides AND the width the front itself covers. In an L corner
   // arm one side is open and a fixed filler takes the first 19.5 mm, so the box must start where the front starts — otherwise
   // it pokes out beside the filler and is seen from the open side of the corner (the front would not cover it).
@@ -195,8 +198,10 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
   });
   const facades: FacadeGeo[] = plan.facades.map((f) => {
     const motion: FacadeMotion = motionOf(f.kind, { lift: o.lift, kinematic: f.kinematic });
+    const fTh = f.thicknessMm ?? frontTh;
+    const frontZ = frontZOf(fTh);
     const geo: FacadeGeo = { ...f, motion, hinge: motion === 'SWING' ? (f.hingeSide ?? (f.index % 2 === 0 ? 'LEFT' : 'RIGHT')) : null, zMm: frontZ };
-    if (motion === 'SLIDE') geo.box = drawerBoxBoards(f, cab, { carcaseTh: th, frontBackZMm: frontZ - frontTh / 2, spanMm: roomOf(f) });
+    if (motion === 'SLIDE') geo.box = drawerBoxBoards(f, cab, { carcaseTh: th, frontBackZMm: frontZ - fTh / 2, spanMm: roomOf(f) });
     if (motion === 'PULL_OUT') {
       // One frame per front, between the runners: a door zone shares the inner width among its fronts, drawers use all of it.
       // In a split zone the frame sits in its own column (between the side board and the vertical board).
@@ -208,7 +213,7 @@ export function assemblyGeometry(cabIn: CabinetObject, o: AssemblyOptions): Asse
       const h = Math.max(100, f.heightMm - 2 * PULL_OUT.VERTICAL_MARGIN_MM);
       const d = runnerLengthMm(D);
       const cx = f.kind === 'DOOR' ? lo + (f.index + 0.5) * column : (lo + hi) / 2;
-      const zRear = frontZ - frontTh / 2; // back face of the front
+      const zRear = frontZ - fTh / 2; // back face of the front
       geo.frame = { sizeMm: [w, h, d], centerMm: [cx, f.yMm + f.heightMm / 2, zRear - PULL_OUT.FRONT_GAP_MM - d / 2], levels: f.levels ?? PULL_OUT.DEFAULT_LEVELS };
     }
     return geo;
