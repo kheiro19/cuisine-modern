@@ -27,8 +27,8 @@ import {
 } from './math/cabinetPresets';
 import { libraryAppliances } from './math/applianceModels';
 import {
-  DEFAULT_LAYOUT, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WIDTH_LIMITS_MM,
-  autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, placeAlongWall, runOf, runsOf, wallLengthOf,
+  DEFAULT_LAYOUT, DEFAULT_ROOM_HEIGHT_MM, DEFAULT_WALL_GAP_MM, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, HEIGHT_LIMITS_MM, KitchenLayout, LAYOUT_LABELS, LayoutType, RUN_LABELS, WALL_GAP_LIMITS_MM, WIDTH_LIMITS_MM,
+  autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, nextFreeX, placeAlongWall, runOf, runsOf, wallBottomMmOf, wallLengthOf, wallMountIssues,
 } from './math/kitchenLayout';
 import { clampCornerFillerMm, CORNER_ROLE_LABELS, cornerDeckOf, cornerDimsOf, cornerFitsWalls, cornerGroupSpan, L_CORNER_LIMITS, lCornerCabinets, lCornerSpan, relayoutCornerGroup, withCornerExtension } from './math/lCorner';
 import type { CornerGroupDims, CornerRole } from './math/lCorner';
@@ -137,7 +137,6 @@ export default function App() {
   const [countertop, setCountertop] = useState<CountertopSettings>(COUNTERTOP_DEFAULT);
   const setCountertopSettings = (fields: Partial<CountertopSettings>) => setCountertop((v) => clampCountertopSettings({ ...v, ...fields }));
 
-  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, hardwareSettings.wallSplashHeight);
 
   // How far the fronts reach from the wall (carcase + door + nosing). The slab is NEVER stretched to it any more: the number
   // typed is the number drawn, and when it stops short the panel says by how many millimetres and offers the one click that
@@ -178,7 +177,18 @@ export default function App() {
     widthMm: clampInt(rawLayout.widthMm, WIDTH_LIMITS_MM[0], WIDTH_LIMITS_MM[1], DEFAULT_LAYOUT.widthMm),
     // Side walls (L / U) are as long as the room is deep: this is what stops a unit from leaving the room.
     depthMm: clampInt(rawLayout.depthMm ?? DEFAULT_ROOM_DEPTH_MM, DEPTH_LIMITS_MM[0], DEPTH_LIMITS_MM[1], DEFAULT_ROOM_DEPTH_MM),
+    // Floor to ceiling, and the standard gap between the worktop and the wall units (a wall unit may choose its own).
+    heightMm: clampInt(rawLayout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM, HEIGHT_LIMITS_MM[0], HEIGHT_LIMITS_MM[1], DEFAULT_ROOM_HEIGHT_MM),
+    wallGapMm: clampInt(rawLayout.wallGapMm ?? DEFAULT_WALL_GAP_MM, WALL_GAP_LIMITS_MM[0], WALL_GAP_LIMITS_MM[1], DEFAULT_WALL_GAP_MM),
   }), [rawLayout]);
+  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, layout.heightMm);
+  // Where the worktop and the ceiling are: what a wall unit's place (standard gap, from the ceiling, from the floor) is measured from.
+  const wallRef = useMemo(() => {
+    const counters = cabinets.filter(carriesCountertop);
+    const baseHeight = counters.length > 0 ? Math.max(...counters.map((c) => c.height)) : LAYOUT.DEFAULT_BASE_HEIGHT_MM;
+    return { counterTopMm: baseHeight + countertop.thicknessMm, defaultGapMm: layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, roomHeightMm: layout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM };
+  }, [cabinets, countertop.thicknessMm, layout.wallGapMm, layout.heightMm]);
+  const wallIssues = useMemo(() => wallMountIssues(cabinets, wallRef), [cabinets, wallRef]);
   /** Why the last add / move was refused (a full wall, a unit wider than its wall). Cleared on the next success. */
   const [layoutNotice, setLayoutNotice] = useState<string | null>(null);
   // Width of the FIXED filler panel that closes the corner side of an L-corner arm (math/cornerFiller.ts). undefined = automatic
@@ -776,7 +786,7 @@ export default function App() {
             <div className={`w-full ${isWorkspaceMinimized ? 'h-[80vh]' : 'h-full'} rounded-xl overflow-hidden relative mt-6 flex flex-col flex-1`}>
               <Kitchen3DCanvas
                 cabinets={cabinets}
-                hardware={hardwareSettings}
+                hardware={{ ...hardwareSettings, wallSplashHeight: layout.wallGapMm ?? DEFAULT_WALL_GAP_MM }}
                 showFronts={showFronts}
                 isXRayMode={isXRayMode}
                 countertopPath={countertopPath}
@@ -821,14 +831,31 @@ export default function App() {
                   <button key={t} type="button" onClick={() => handleLayoutChange({ type: t })} className={`rounded-md border p-1.5 text-[11px] font-bold cursor-pointer ${layout.type === t ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-700 hover:bg-slate-50'}`}>{LAYOUT_LABELS[t]}</button>
                 ))}
               </div>
-              {layout.type !== 'STRAIGHT' && (
-                <label className="flex items-center justify-between gap-2 text-[10px]">
-                  <span>طول الجدار الخلفي (مم)</span>
-                  <input type="number" min={WIDTH_LIMITS_MM[0]} max={WIDTH_LIMITS_MM[1]} step={100} value={rawLayout.widthMm}
-                    onChange={(e) => handleLayoutChange({ widthMm: Number(e.target.value) })}
-                    onBlur={() => handleLayoutChange({ widthMm: layout.widthMm })}
-                    className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
-                </label>
+              <label className="flex items-center justify-between gap-2 text-[10px]">
+                <span>{layout.type === 'STRAIGHT' ? 'طول الجدار (مم)' : 'طول الجدار الخلفي (مم)'}</span>
+                <input type="number" min={WIDTH_LIMITS_MM[0]} max={WIDTH_LIMITS_MM[1]} step={100} value={rawLayout.widthMm}
+                  onChange={(e) => handleLayoutChange({ widthMm: Number(e.target.value) })}
+                  onBlur={() => handleLayoutChange({ widthMm: layout.widthMm })}
+                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-[10px]">
+                <span>ارتفاع الغرفة (من الأرض إلى السقف، مم)</span>
+                <input type="number" min={HEIGHT_LIMITS_MM[0]} max={HEIGHT_LIMITS_MM[1]} step={50} value={rawLayout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM}
+                  onChange={(e) => handleLayoutChange({ heightMm: Number(e.target.value) })}
+                  onBlur={() => handleLayoutChange({ heightMm: layout.heightMm })}
+                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
+              </label>
+              <label className="flex items-center justify-between gap-2 text-[10px]">
+                <span title="الفراغ القياسي بين سطح العمل وأسفل الخزائن العلوية؛ كل خزانة علوية تستطيع اختيار تعليقها الخاص من نموذجها">الفراغ القياسي فوق سطح العمل (مم)</span>
+                <input type="number" min={WALL_GAP_LIMITS_MM[0]} max={WALL_GAP_LIMITS_MM[1]} step={10} value={rawLayout.wallGapMm ?? DEFAULT_WALL_GAP_MM}
+                  onChange={(e) => handleLayoutChange({ wallGapMm: Number(e.target.value) })}
+                  onBlur={() => handleLayoutChange({ wallGapMm: layout.wallGapMm })}
+                  className="w-20 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center" style={{ direction: 'ltr' }} />
+              </label>
+              {wallIssues.length > 0 && (
+                <ul className="space-y-0.5 text-[9px] leading-snug text-amber-800 bg-amber-50 border border-amber-200 rounded p-1">
+                  {wallIssues.map((w) => (<li key={`${w.cabinetId}-${w.code}`}>⚠️ {w.message}</li>))}
+                </ul>
               )}
               {layout.type !== 'STRAIGHT' && (
                 <label className="flex items-center justify-between gap-2 text-[10px]">
@@ -1462,6 +1489,64 @@ export default function App() {
                   </select>
                 </div>
               )}
+
+              {resolved.category === 'WALL_UNIT' && (() => {
+                // Where THIS wall unit hangs: the standard gap above the worktop, its own gap, from the ceiling, or from the floor.
+                const mount = draft.wallMount;
+                const bottom = wallBottomMmOf({ height: resolved.height, wallMount: resolved.wallMount }, wallRef);
+                const top = bottom + resolved.height;
+                const over = top - wallRef.roomHeightMm;
+                const startFor = (from: 'COUNTER' | 'CEILING' | 'FLOOR') => (from === 'CEILING' ? 0 : from === 'COUNTER' ? wallRef.defaultGapMm : Math.max(0, Math.round(bottom)));
+                return (
+                  <div className="space-y-1 bg-sky-50/60 border border-sky-100 rounded p-1.5">
+                    <span className="block font-bold text-[10px]">📏 تعليق الخزانة العلوية</span>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+                      <select
+                        aria-label="طريقة تعليق الخزانة"
+                        value={mount?.from ?? 'DEFAULT'}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          patchDraft({ wallMount: v === 'DEFAULT' ? undefined : { from: v as 'COUNTER' | 'CEILING' | 'FLOOR', mm: startFor(v as 'COUNTER' | 'CEILING' | 'FLOOR') } });
+                        }}
+                        className="border bg-white rounded p-0.5 text-[10px]"
+                      >
+                        <option value="DEFAULT">{`القياسي: ${wallRef.defaultGapMm} مم فوق سطح العمل`}</option>
+                        <option value="COUNTER">فراغ خاص فوق سطح العمل</option>
+                        <option value="CEILING">معلّقة من السقف (نحو الأسفل)</option>
+                        <option value="FLOOR">ارتفاع من الأرض</option>
+                      </select>
+                      {mount && (
+                        <label className="flex items-center gap-1 font-bold">
+                          {mount.from === 'CEILING' ? 'البعد عن السقف' : mount.from === 'FLOOR' ? 'الارتفاع عن الأرض' : 'الفراغ فوق السطح'} (مم)
+                          <input
+                            type="number"
+                            min={0}
+                            max={4000}
+                            step={10}
+                            value={mount.mm}
+                            onChange={(e) => patchDraft({ wallMount: { from: mount.from, mm: Number(e.target.value) || 0 } })}
+                            className="w-16 px-1 py-0.5 border border-slate-300 rounded text-[11px] font-mono text-center"
+                            style={{ direction: 'ltr' }}
+                          />
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => patchDraft({ height: 400, wallMount: { from: 'CEILING', mm: 0 } })}
+                        className="px-1.5 py-0.5 rounded border border-sky-300 bg-white text-sky-800 font-bold cursor-pointer hover:bg-sky-100"
+                        title="خزانة ارتفاعها 40 سم ملاصقة للسقف"
+                      >
+                        علوية 40 سم من السقف
+                      </button>
+                    </div>
+                    <span className={`block text-[9px] leading-snug ${over > 0.5 ? 'text-red-700 font-bold' : 'text-slate-600'}`}>
+                      أسفل الخزانة عند {Math.round(bottom)} مم · أعلاها عند {Math.round(top)} مم · السقف عند {Math.round(wallRef.roomHeightMm)} مم
+                      {over > 0.5 ? ` ⛔ تتجاوز السقف بـ ${Math.round(over)} مم` : ''}
+                      {bottom < wallRef.counterTopMm - 0.5 ? ' ⚠️ أسفلها تحت سطح العمل' : ''}
+                    </span>
+                  </div>
+                );
+              })()}
 
               <div className={isCornerBuilder ? 'hidden' : 'contents'}>
               <div className="flex items-center gap-1.5">

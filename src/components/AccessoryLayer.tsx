@@ -17,13 +17,15 @@ interface AccessoryLayerProps {
   accessories: ReadonlyArray<PlacedAccessory>;
   cabinets: ReadonlyArray<CabinetLite>;
   wallSplashHeightMm: number;
+  /** Floor to ceiling (wall units may hang from the ceiling). */
+  roomHeightMm?: number;
   isXRayMode: boolean;
 }
 
-export default function AccessoryLayer({ accessories, cabinets, wallSplashHeightMm, isXRayMode }: AccessoryLayerProps) {
+export default function AccessoryLayer({ accessories, cabinets, wallSplashHeightMm, roomHeightMm, isXRayMode }: AccessoryLayerProps) {
   const library = useModelLibrary();
   const drawn = useMemo(() => {
-    const scene = sceneRefOf(cabinets, wallSplashHeightMm);
+    const scene = sceneRefOf(cabinets, wallSplashHeightMm, roomHeightMm);
     const list: Array<{ id: string; x: number; y: number; z: number; prims: Prim[]; size: { w: number; h: number; d: number }; glb?: GlbResolution; code?: CodeModelId; finish: FinishStyle }> = [];
     accessories.forEach((a) => {
       const item = getAccessory(a.catalogId);
@@ -33,7 +35,7 @@ export default function AccessoryLayer({ accessories, cabinets, wallSplashHeight
       list.push({ id: a.id, x: f.xMm, y: f.yMm, z: f.zMm, size: { w: f.w, h: f.h, d: f.d }, glb: resolveGlb(item.id, item.model, library.manifest), ...(item.codeModel ? { code: item.codeModel } : {}), finish, prims: modelPrims(item.model, f.w, f.h, f.d, item.opts ?? {}, finish) });
     });
     return list;
-  }, [accessories, cabinets, wallSplashHeightMm, library.manifest]);
+  }, [accessories, cabinets, wallSplashHeightMm, roomHeightMm, library.manifest]);
 
   return (
     <group>

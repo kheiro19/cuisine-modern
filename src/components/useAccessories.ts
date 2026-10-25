@@ -17,9 +17,9 @@ import {
 } from '../math/accessoryPlacement';
 import type { FinishKey } from '../data/accessoryCatalog';
 
-export function useAccessories(cabinets: ReadonlyArray<CabinetLite>, wallSplashHeightMm: number) {
+export function useAccessories(cabinets: ReadonlyArray<CabinetLite>, wallSplashHeightMm: number, roomHeightMm?: number) {
   const [stored, setStored] = useState<PlacedAccessory[]>([]);
-  const scene = useMemo(() => sceneRefOf(cabinets, wallSplashHeightMm), [cabinets, wallSplashHeightMm]);
+  const scene = useMemo(() => sceneRefOf(cabinets, wallSplashHeightMm, roomHeightMm), [cabinets, wallSplashHeightMm, roomHeightMm]);
   // A cabinet or a sink deleted elsewhere takes its pieces away.
   const accessories = useMemo(() => reconcileAccessories(stored, cabinets), [stored, cabinets]);
 

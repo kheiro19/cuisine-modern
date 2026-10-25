@@ -6,6 +6,7 @@
 // the user. A cabinet's back is at z = -positionZ and its front at z = -positionZ + depth.
 import type { CabinetObject } from '../types/flatma';
 import { LAYOUT } from './constants';
+import { DEFAULT_ROOM_HEIGHT_MM, wallBottomMmOf } from './kitchenLayout';
 import { AccessoryItem, FinishKey, getAccessory, isHob, isSink } from '../data/accessoryCatalog';
 
 export interface PlacedAccessory {
@@ -24,7 +25,7 @@ export interface PlacedAccessory {
   finish?: FinishKey;
 }
 
-export type CabinetLite = Pick<CabinetObject, 'id' | 'category' | 'positionX' | 'positionZ' | 'width' | 'height' | 'depth' | 'frontThickness' | 'carcaseThickness'> & { name?: string };
+export type CabinetLite = Pick<CabinetObject, 'id' | 'category' | 'positionX' | 'positionZ' | 'width' | 'height' | 'depth' | 'frontThickness' | 'carcaseThickness'> & { name?: string; wallMount?: CabinetObject['wallMount'] };
 
 export interface SceneRef {
   hasCounter: boolean;
@@ -35,18 +36,24 @@ export interface SceneRef {
   counterXEndMm: number;
   zBackMm: number;
   zFrontMm: number;
-  /** Bottom face of the wall units. */
+  /** Bottom face of the wall units that hang at the standard gap (a unit with its own wallMount: see wallBottomOf). */
   wallBottomYMm: number;
+  /** Floor to ceiling. */
+  roomHeightMm: number;
   /** Height of the wall strip between the worktop and the wall units. */
   splashMm: number;
 }
 
+/** Where this wall unit really hangs (its own wallMount, else the standard gap above the worktop). */
+export const wallBottomOf = (cab: Pick<CabinetLite, 'height' | 'wallMount'>, scene: SceneRef): number =>
+  wallBottomMmOf(cab, { counterTopMm: scene.counterTopYMm, defaultGapMm: scene.splashMm, roomHeightMm: scene.roomHeightMm });
+
 /** The same numbers Kitchen3DCanvas uses for the worktop and the wall units. */
-export function sceneRefOf(cabinets: ReadonlyArray<CabinetLite>, wallSplashHeightMm: number): SceneRef {
+export function sceneRefOf(cabinets: ReadonlyArray<CabinetLite>, wallSplashHeightMm: number, roomHeightMm: number = DEFAULT_ROOM_HEIGHT_MM): SceneRef {
   const counter = cabinets.filter((c) => c.category === 'BASE_UNIT' && c.height <= LAYOUT.COUNTERTOP_MAX_UNIT_HEIGHT_MM);
   const baseHeightMm = counter.length > 0 ? Math.max(...counter.map((c) => c.height)) : LAYOUT.DEFAULT_BASE_HEIGHT_MM;
   const counterTopYMm = baseHeightMm + LAYOUT.COUNTERTOP_THICKNESS_MM;
-  const common = { baseHeightMm, counterTopYMm, wallBottomYMm: counterTopYMm + wallSplashHeightMm, splashMm: wallSplashHeightMm };
+  const common = { baseHeightMm, counterTopYMm, wallBottomYMm: counterTopYMm + wallSplashHeightMm, splashMm: wallSplashHeightMm, roomHeightMm };
   if (counter.length === 0) return { hasCounter: false, counterXStartMm: 0, counterXEndMm: 0, zBackMm: 0, zFrontMm: 600, ...common };
   return {
     hasCounter: true,
@@ -140,12 +147,12 @@ export function footprintOf(
       const width = item.autoWidth ? cab.width - 40 : Math.min(w, cab.width - 20);
       const back = -cab.positionZ;
       const z = item.zPlace === 'FRONT' ? back + cab.depth - d / 2 - 30 : back + d / 2 + CABINET_BACK_CLEARANCE_MM;
-      return { xMm: cab.positionX + cab.width / 2, yMm: scene.wallBottomYMm - h, zMm: z, w: width, h, d };
+      return { xMm: cab.positionX + cab.width / 2, yMm: wallBottomOf(cab, scene) - h, zMm: z, w: width, h, d };
     }
     case 'CABINET_INSIDE': {
       const cab = cabinetOf(cabs, p.cabinetId);
       if (!cab) return null;
-      const floor = cab.category === 'WALL_UNIT' ? scene.wallBottomYMm : 0;
+      const floor = cab.category === 'WALL_UNIT' ? wallBottomOf(cab, scene) : 0;
       const z = item.zPlace === 'FRONT' ? -cab.positionZ + cab.depth - d / 2 - 20 : -cab.positionZ + cab.depth / 2;
       return { xMm: cab.positionX + cab.width / 2, yMm: floor + cab.carcaseThickness + stackBelow(all, p), zMm: z, w, h, d };
     }

@@ -9,7 +9,7 @@ import OnlineTextureBrowser from './OnlineTextureBrowser';
 import type { PlacedAccessory } from '../math/accessoryPlacement';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem, RunId } from '../types/flatma';
-import { KitchenLayout, DEFAULT_LAYOUT, alongToFrame, runFrame, runOf, runsOf, toFrame } from '../math/kitchenLayout';
+import { KitchenLayout, DEFAULT_LAYOUT, DEFAULT_ROOM_DEPTH_MM, alongToFrame, roomHeightOf, runFrame, runOf, runsOf, toFrame, wallBottomMmOf } from '../math/kitchenLayout';
 import { useTextureCatalog } from '../data/textureCatalog';
 import type { TextureEntry } from '../data/textureCatalog';
 import { onlineTextureCatalog, makeOnlineTextureEntry } from '../data/onlineTextures';
@@ -190,8 +190,21 @@ export default function Kitchen3DCanvas({
       .map(a => (run === 'B' ? { ...a, xMm: alongToFrame(a.xMm, run), ...(a.dxMm !== undefined ? { dxMm: alongToFrame(a.dxMm, run) } : {}) } : a));
   }, [accessories, cabinets]);
 
-  // Wall units hang above the worktop (its thickness included), whatever the real base height is.
-  const wallElevationMeters = (baseHeightMm + countertop.thicknessMm + hardware.wallSplashHeight) / 1000;
+  // Wall units hang above the worktop (its thickness included), whatever the real base height is — unless a unit chose its own place
+  // (from the ceiling, from the floor, or its own gap above the worktop: CabinetObject.wallMount).
+  const roomHeightMm = roomHeightOf(layout);
+  const wallBottomMeters = (c: CabinetObject): number => wallBottomMmOf(c, { counterTopMm: baseHeightMm + countertop.thicknessMm, defaultGapMm: hardware.wallSplashHeight, roomHeightMm }) / 1000;
+  // The ceiling and the corners of the room as thin lines, so a unit hung from the ceiling can be seen against it.
+  const roomOutline = useMemo(() => {
+    const H = roomHeightMm / 1000, W = layout.widthMm / 1000, Dp = (layout.depthMm ?? DEFAULT_ROOM_DEPTH_MM) / 1000;
+    const pts: THREE.Vector3[] = [];
+    const seg = (a: [number, number, number], b: [number, number, number]) => pts.push(new THREE.Vector3(...a), new THREE.Vector3(...b));
+    seg([0, H, 0], [W, H, 0]); seg([0, 0, 0], [0, H, 0]); seg([W, 0, 0], [W, H, 0]);
+    if (runs.includes('B')) { seg([0, H, 0], [0, H, Dp]); seg([0, 0, Dp], [0, H, Dp]); }
+    if (runs.includes('C')) { seg([W, H, 0], [W, H, Dp]); seg([W, 0, Dp], [W, H, Dp]); }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  }, [roomHeightMm, layout.widthMm, layout.depthMm, runs]);
+  useEffect(() => () => roomOutline.dispose(), [roomOutline]);
 
   return (
     <div className="w-full h-full min-h-[580px] bg-[#FAF9F6] rounded-xl overflow-hidden relative flex flex-col shadow-inner select-none">
@@ -221,7 +234,7 @@ export default function Kitchen3DCanvas({
                   <group key={run} position={[frame.xMm / 1000, 0, frame.zMm / 1000]} rotation={[0, frame.rotY, 0]}>
                     {framed[run].map((cabinet) => {
                       const isWallNode = cabinet.category === 'WALL_UNIT';
-                      const verticalYOffset = isWallNode ? wallElevationMeters : 0;
+                      const verticalYOffset = isWallNode ? wallBottomMeters(cabinet) : 0;
                       // Back planes are flush against the wall (z = 0): a 350 mm wall unit and a 600 mm base unit share
                       // the same back, instead of both being centred on z = 0 (which floated wall units off the wall).
                       const zMeters = (-cabinet.positionZ + cabinet.depth / 2) / 1000;
@@ -250,10 +263,11 @@ export default function Kitchen3DCanvas({
                     )}
 
                     {/* Accessories library: sockets, sinks, hobs, hoods, lighting, organisers */}
-                    <AccessoryLayer accessories={accessoriesOf(run)} cabinets={framed[run]} wallSplashHeightMm={hardware.wallSplashHeight} isXRayMode={isXRayMode} />
+                    <AccessoryLayer accessories={accessoriesOf(run)} cabinets={framed[run]} wallSplashHeightMm={hardware.wallSplashHeight} roomHeightMm={roomHeightMm} isXRayMode={isXRayMode} />
                   </group>
                 );
               })}
+              <lineSegments geometry={roomOutline}><lineBasicMaterial color="#94a3b8" /></lineSegments>
             </group>
           </Center>
 

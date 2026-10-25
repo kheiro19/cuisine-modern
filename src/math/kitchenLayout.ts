@@ -8,7 +8,7 @@
 // To draw a run, the 3D scene puts a group at runFrame(layout, run) and the cabinets inside it use toFrame(cab, run).
 // Inside that group everything is exactly the straight-kitchen code (x along the wall, z away from it), so worktop, accessories
 // and cabinets need no special case for the side walls.
-import type { CabinetCategory, CabinetObject, RunId } from '../types/flatma';
+import type { CabinetCategory, CabinetObject, RunId, WallMount } from '../types/flatma';
 
 export type LayoutType = 'STRAIGHT' | 'L' | 'U';
 
@@ -23,6 +23,10 @@ export interface KitchenLayout {
   depthMm?: number;
   /** L only: the side wall that carries the second run. */
   lSide: 'LEFT' | 'RIGHT';
+  /** Height of the room (floor to ceiling), every layout. Missing = DEFAULT_ROOM_HEIGHT_MM. */
+  heightMm?: number;
+  /** The standard free space between the worktop and the wall units (a wall unit may choose its own, CabinetObject.wallMount). Missing = DEFAULT_WALL_GAP_MM. */
+  wallGapMm?: number;
 }
 
 export const DEFAULT_LAYOUT: KitchenLayout = { type: 'STRAIGHT', widthMm: 3000, lSide: 'LEFT' };
@@ -34,6 +38,65 @@ export const WIDTH_LIMITS_MM: [number, number] = [1500, 8000];
 /** How deep the room may be: the length of the side walls (runs B and C). */
 export const DEPTH_LIMITS_MM: [number, number] = [1200, 6000];
 export const DEFAULT_ROOM_DEPTH_MM = 2400;
+/** The height of the room, floor to ceiling. */
+export const HEIGHT_LIMITS_MM: [number, number] = [2000, 4000];
+export const DEFAULT_ROOM_HEIGHT_MM = 2600;
+/** The standard gap between the worktop and the bottom of the wall units. */
+export const WALL_GAP_LIMITS_MM: [number, number] = [0, 1500];
+export const DEFAULT_WALL_GAP_MM = 600;
+
+export const roomHeightOf = (layout: Pick<KitchenLayout, 'heightMm'>): number => layout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM;
+export const wallGapOf = (layout: Pick<KitchenLayout, 'wallGapMm'>): number => layout.wallGapMm ?? DEFAULT_WALL_GAP_MM;
+
+// ------------------------------------------------------------------------------------------------ wall units: how high they hang
+
+export interface WallMountRef {
+  /** Top face of the worktop, from the floor. */
+  counterTopMm: number;
+  /** The standard gap above the worktop, for a wall unit that does not choose its own. */
+  defaultGapMm: number;
+  roomHeightMm: number;
+}
+
+/** The bottom of a wall unit, from the floor: the standard gap above the worktop, or what the unit itself chose (CabinetObject.wallMount). */
+export function wallBottomMmOf(cab: { height: number; wallMount?: WallMount }, ref: WallMountRef): number {
+  const m = cab.wallMount;
+  if (!m) return ref.counterTopMm + ref.defaultGapMm;
+  const mm = Math.max(0, m.mm);
+  if (m.from === 'CEILING') return ref.roomHeightMm - mm - cab.height;
+  if (m.from === 'FLOOR') return mm;
+  return ref.counterTopMm + mm;
+}
+
+export interface WallMountIssue {
+  cabinetId: string;
+  code: 'ABOVE_CEILING' | 'BELOW_WORKTOP';
+  message: string;
+}
+
+/**
+ * Wall units that cannot hang where they were put: they poke through the ceiling, or they come down into the worktop / a base unit
+ * standing under them (same wall, same stretch of it).
+ */
+export function wallMountIssues(
+  cabinets: ReadonlyArray<Pick<CabinetObject, 'id' | 'name' | 'category' | 'run' | 'positionX' | 'width' | 'height' | 'wallMount'>>,
+  ref: WallMountRef,
+): WallMountIssue[] {
+  const out: WallMountIssue[] = [];
+  const bases = cabinets.filter((c) => c.category === 'BASE_UNIT' && c.height <= ref.counterTopMm);
+  cabinets.filter((c) => c.category === 'WALL_UNIT').forEach((w) => {
+    const bottom = wallBottomMmOf(w, ref);
+    const top = bottom + w.height;
+    if (top > ref.roomHeightMm + TOL_MM) {
+      out.push({ cabinetId: w.id, code: 'ABOVE_CEILING', message: `${w.name}: أعلى الخزانة ${Math.round(top)} مم، وارتفاع الغرفة ${Math.round(ref.roomHeightMm)} مم (تتجاوز السقف بـ ${Math.round(top - ref.roomHeightMm)} مم).` });
+    }
+    const over = bases.some((b) => runOf(b) === runOf(w) && b.positionX < w.positionX + w.width - TOL_MM && w.positionX < b.positionX + b.width - TOL_MM);
+    if (over && bottom < ref.counterTopMm - TOL_MM) {
+      out.push({ cabinetId: w.id, code: 'BELOW_WORKTOP', message: `${w.name}: أسفل الخزانة على ${Math.round(bottom)} مم، أي تحت سطح العمل (${Math.round(ref.counterTopMm)} مم): تصطدم بالخزانة السفلية.` });
+    }
+  });
+  return out;
+}
 
 export const runOf = (c: { run?: RunId }): RunId => c.run ?? 'A';
 

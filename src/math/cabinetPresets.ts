@@ -14,6 +14,7 @@ import {
   InjectedHardwareItem,
   InjectedWoodMaterial,
   OpeningMode,
+  WallMount,
   ZoneSplit,
 } from '../types/flatma';
 import { LIMITS, PANEL, SPLIT } from './constants';
@@ -48,6 +49,8 @@ export interface CabinetDraft {
   depth: number;
   /** Interior zones, bottom -> top (the form shows them top -> bottom). */
   zones: CabinetZone[];
+  /** Wall units only: where the unit hangs (missing = the standard gap above the worktop). */
+  wallMount?: WallMount;
   openingMode: OpeningMode;
   /** Boards between two zones: 1 shared board, or 2 glued face to face. */
   dividerBoards: 1 | 2;
@@ -257,6 +260,10 @@ export function resolveDraft(
 
   // Opening mode: the rules live in rules/openings.ts (Gola only where canUseGola; no fronts = nothing to open).
   d.openingMode = resolveOpeningMode(d.openingMode, d.category, zones);
+  // Only a wall unit hangs; the number is a distance in mm (a ceiling gap, a gap above the worktop or a height above the floor).
+  d.wallMount = d.category === 'WALL_UNIT' && raw.wallMount
+    ? { from: raw.wallMount.from === 'CEILING' || raw.wallMount.from === 'FLOOR' ? raw.wallMount.from : 'COUNTER', mm: clampInt(raw.wallMount.mm, 0, 4000, 0) }
+    : undefined;
   d.dividerBoards = zones.length > 1 && d.dividerBoards === 2 ? 2 : 1; // a divider needs two zones
   d.golaSlots = soleZoneGola(zones, d.openingMode) // slots are chosen on a single drawers zone; a stack gets one channel per zone
     ? golaSlotsOf({ openingType: zones[0].kind as FrontOpeningType, elementCount: zones[0].count ?? 1, hasGolaProfile: true, golaSlots: raw.golaSlots })
@@ -337,6 +344,7 @@ export function draftToNewCabinet(d: CabinetDraft, meta: { id: string; name: str
     frontEdgeRollId: d.frontEdgeRollId || undefined,
     frontConfig: frontConfigOf(d),
     zones: d.zones.map((z) => (z.split ? { ...z, split: { ...z.split } } : { ...z })),
+    wallMount: d.category === 'WALL_UNIT' && d.wallMount ? { ...d.wallMount } : undefined,
     openingMode: d.openingMode,
     dividerBoards: d.dividerBoards === 2 ? 2 : undefined,
     frontStyle: d.frontStyle,
@@ -366,6 +374,7 @@ export function cabinetToDraft(c: CabinetObject): CabinetDraft {
     height: c.height,
     depth: c.depth,
     zones,
+    ...(c.category === 'WALL_UNIT' && c.wallMount ? { wallMount: { ...c.wallMount } } : {}),
     openingMode: openingModeOf(c),
     dividerBoards: dividerBoardsOf(c),
     frontStyle: c.frontStyle ?? 'SOLID',

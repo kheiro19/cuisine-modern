@@ -134,6 +134,13 @@ export interface CabinetZone {
 }
 
 /** What fills the second column of a split zone. AUTO (or missing) = suggested from its width (math/columns.ts). */
+/** Where a wall unit hangs (see CabinetObject.wallMount). */
+export type WallMountFrom = 'COUNTER' | 'CEILING' | 'FLOOR';
+export interface WallMount {
+  from: WallMountFrom;
+  mm: number;
+}
+
 export type ColumnFillChoice = 'AUTO' | 'PULL_OUT' | 'DOOR' | 'OPEN' | 'PANEL';
 
 export interface ZoneSplit {
@@ -190,6 +197,13 @@ export interface CabinetObject {
   positionX: number;
   positionY: number;
   positionZ: number;
+  /**
+   * WALL units only: where the unit hangs. Missing = the standard gap above the worktop (the kitchen's own setting).
+   *  - COUNTER: `mm` of free space between the top of the worktop and the bottom of the unit.
+   *  - CEILING: the unit hangs from the ceiling, its top `mm` below it (0 = touching the ceiling), whatever its height.
+   *  - FLOOR:   the bottom of the unit is `mm` above the floor.
+   */
+  wallMount?: WallMount;
   
   // Internal Dividers State
   shelvesCount: number;
