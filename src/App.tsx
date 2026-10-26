@@ -1,6 +1,9 @@
 // src/App.tsx
 import { useState, useMemo } from 'react';
 import { useFurniture } from './context/FurnitureContext';
+import { useProjectFile } from './project/useProjectFile';
+import ProjectToolbar from './project/ProjectToolbar';
+import type { ProjectData } from './project/projectFile';
 import { useAccessories } from './components/useAccessories';
 import StockPanel from './app/panels/StockPanel';
 import ShowcasePanel from './app/panels/ShowcasePanel';
@@ -68,6 +71,7 @@ export default function App() {
     patchCabinets,
     triggerUndo,
     canUndo,
+    loadProject,
   } = useFurniture();
 
   // 🧾 The stock checks and the BOM read the stock AS ENTERED (before this project), never the shelf already relieved by it:
@@ -126,7 +130,36 @@ export default function App() {
     heightMm: clampInt(rawLayout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM, HEIGHT_LIMITS_MM[0], HEIGHT_LIMITS_MM[1], DEFAULT_ROOM_HEIGHT_MM),
     wallGapMm: clampInt(rawLayout.wallGapMm ?? DEFAULT_WALL_GAP_MM, WALL_GAP_LIMITS_MM[0], WALL_GAP_LIMITS_MM[1], DEFAULT_WALL_GAP_MM),
   }), [rawLayout]);
-  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories } = useAccessories(cabinets, layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, layout.heightMm);
+  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories, replace: replaceAccessories } = useAccessories(cabinets, layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, layout.heightMm);
+
+  // ---- project files: new / open / save on the user's device (src/project) -----------------------------------
+  // The saved state is exactly what reopening must reproduce: the cabinets, the stock AS ENTERED (the live shelf
+  // is derived from it), the room, the worktop slab and the accessories. Everything else (draft, selection) is
+  // session furniture and stays out of the file.
+  const projectData = useMemo<ProjectData>(() => ({
+    cabinets,
+    baselineInventory,
+    layout,
+    counterTop: countertop,
+    accessories,
+  }), [cabinets, baselineInventory, layout, countertop, accessories]);
+  const applyProject = (data: ProjectData) => {
+    loadProject(data.cabinets, data.baselineInventory);
+    setRawLayout(data.layout);
+    setCountertop(clampCountertopSettings(data.counterTop));
+    replaceAccessories(data.accessories);
+    setEditingId(null);
+    setLayoutNotice(null);
+  };
+  const resetProject = () => {
+    loadProject([], baselineInventory); // a new project keeps the workshop's stock, as entered
+    setRawLayout(DEFAULT_LAYOUT);
+    setCountertop(COUNTERTOP_DEFAULT);
+    clearAccessories();
+    setEditingId(null);
+    setLayoutNotice(null);
+  };
+  const project = useProjectFile({ data: projectData, apply: applyProject, reset: resetProject });
   // Where the worktop and the ceiling are: what a wall unit's place (standard gap, from the ceiling, from the floor) is measured from.
   const wallRef = useMemo(() => {
     const counters = cabinets.filter(carriesCountertop);
@@ -553,6 +586,16 @@ export default function App() {
           ↩️ تراجع خطوة
         </button>
       </header>
+
+      {/* 💾 ملف المشروع: جديد / فتح / حفظ على جهاز المستخدم + الاسترجاع التلقائي (src/project) */}
+      <div className="w-full border border-[#E4E4E7] bg-white rounded-xl px-4 py-2 mb-3 shadow-3xs">
+        <ProjectToolbar
+          name={project.name} onName={project.setName} dirty={project.dirty} lastSavedAt={project.lastSavedAt}
+          inPlace={project.inPlace} status={project.status} onClearStatus={project.clearStatus}
+          onNew={project.newProject} onOpen={project.open} onSave={project.save} onSaveAs={project.saveAs}
+          recovery={project.recovery} onRecover={project.recover} onDismissRecovery={project.dismissRecovery}
+        />
+      </div>
 
       {/* 🔳 الشاشة المدمجة الحركية بنظام النوافذ المتبادلة */}
       <div className={`w-full grid ${gridLayoutClass} gap-3 items-stretch flex-1`}>

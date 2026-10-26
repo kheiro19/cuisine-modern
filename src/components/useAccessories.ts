@@ -44,6 +44,8 @@ export function useAccessories(cabinets: ReadonlyArray<CabinetLite>, wallSplashH
   const remove = useCallback((id: string) => setStored(removeAccessory(accessories, id)), [accessories]);
   const changeFinish = useCallback((id: string, finish: FinishKey) => setStored(setFinish(accessories, id, finish)), [accessories]);
   const clear = useCallback(() => setStored([]), []);
+  /** A saved project brings its own pieces: the stored list is replaced wholesale (reconcile drops any orphan). */
+  const replace = useCallback((list: PlacedAccessory[]) => setStored(list), []);
 
-  return { accessories, add, nudge, remove, changeFinish, clear };
+  return { accessories, add, nudge, remove, changeFinish, clear, replace };
 }

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fileNameFor, fingerprint, parseProject, serializeProject, PROJECT_FORMAT, PROJECT_VERSION } from '../src/project/projectFile';
-import type { ProjectData } from '../src/project/projectFile';
+import { fileNameFor, fingerprint, parseProject, serializeProject, PROJECT_FORMAT, PROJECT_VERSION } from '../../src/project/projectFile';
+import type { ProjectData } from '../../src/project/projectFile';
 
 const cab = (id: string, positionX = 0) => ({ id, name: `خزانة ${id}`, width: 600, depth: 560, height: 720, positionX, calculatedCostDA: 123 });
 const sample = (): ProjectData => ({

@@ -29,6 +29,12 @@ interface FurnitureContextType {
   updateManyCabinets: (ids: string[], fields: Partial<CabinetObject>) => void;  /** One edit that touches several boxes in DIFFERENT ways (an L corner re-laid out): one undo step, one save. */
   patchCabinets: (patches: Array<{ id: string; fields: Partial<CabinetObject> }>) => void;
   deleteCabinet: (id: string) => void;
+  /**
+   * Replaces the whole project in one step (opening a saved file, or a new empty project): the cabinets AND the
+   * stock as entered. The live shelf is rebuilt as «entered − what these cabinets consume», and the previous
+   * kitchen is one undo step, exactly like every other big change.
+   */
+  loadProject: (cabinets: CabinetObject[], baseline: Inventory) => void;
   triggerUndo: () => void;
   canUndo: boolean;
 
@@ -276,6 +282,26 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
     if (!previous.some(c => c.id === activeCabinetId)) setActiveCabinetId('');
   };
 
+  const loadProject = (nextCabinets: CabinetObject[], nextBaseline: Inventory) => {
+    saveToHistory(cabinetsRef.current); // opening a file must itself be undoable
+    const baseline: Inventory = {
+      woodPanels: nextBaseline.woodPanels ?? [],
+      hardwareItems: nextBaseline.hardwareItems ?? [],
+      edgeBandRolls: nextBaseline.edgeBandRolls ?? [],
+    };
+    commitBaseline(baseline);
+    // The shelf as it would be if this project had been built here from the start.
+    const taken = totalConsumption(nextCabinets, baseline.hardwareItems);
+    commitInventory({
+      woodPanels: baseline.woodPanels,
+      edgeBandRolls: baseline.edgeBandRolls,
+      hardwareItems: baseline.hardwareItems.map((h) => ({ ...h, availableQty: h.availableQty - (taken[h.id] ?? 0) })),
+    });
+    cabinetsRef.current = nextCabinets.map(refresh); // costs and thicknesses against the loaded stock
+    setCabinets(cabinetsRef.current);
+    setActiveCabinetId('');
+  };
+
   const canUndo = historyStack.length > 0;
 
   return (
@@ -293,6 +319,7 @@ export function FurnitureProvider({ children }: { children: React.ReactNode }) {
       updateManyCabinets,
       patchCabinets,
       deleteCabinet,
+      loadProject,
       triggerUndo,
       canUndo,
       addWoodMaterial,
