@@ -34,7 +34,7 @@ export interface RenderScene {
   version: 1;
   room: { widthMm: number; depthMm: number; heightMm: number };
   boxes: RenderBox[];
-  cameras: Array<{ name: string; positionMm: [number, number, number]; targetMm: [number, number, number] }>;
+  cameras: Array<{ name: string; positionMm: [number, number, number]; targetMm: [number, number, number]; lensMm?: number }>;
 }
 
 interface SheetRef { id: string; brand: string; type: string; thickness: number }
@@ -60,10 +60,13 @@ export function buildRenderScene(args: {
   const W = layout.widthMm, Dp = layout.depthMm ?? 3000, H = layout.heightMm ?? 2600;
 
   // The room itself: floor and the walls that carry runs (thin boxes; the renderer gives them their finish).
-  boxes.push({ id: 'room-floor', role: 'room', sizeMm: [W, 20, Dp], centerMm: [W / 2, -10, Dp / 2], color: '#9AA3AD' });
-  boxes.push({ id: 'room-wall-a', role: 'room', sizeMm: [W, H, 20], centerMm: [W / 2, H / 2, -10], color: '#C7CDD4' });
-  if (runsOf(layout).includes('B')) boxes.push({ id: 'room-wall-b', role: 'room', sizeMm: [20, H, Dp], centerMm: [-10, H / 2, Dp / 2], color: '#C7CDD4' });
-  if (runsOf(layout).includes('C')) boxes.push({ id: 'room-wall-c', role: 'room', sizeMm: [20, H, Dp], centerMm: [W + 10, H / 2, Dp / 2], color: '#C7CDD4' });
+  const twoSided = runsOf(layout).length > 1;
+  boxes.push({ id: 'room-floor', role: 'room', sizeMm: [W, 20, twoSided ? Dp * 2 : Dp], centerMm: [W / 2, -10, twoSided ? 0 : Dp / 2], color: '#9AA3AD' });
+  // Wall slabs only for a single-wall kitchen. In an L/U the app's own frame puts the side arm behind wall A's
+  // plane (the app draws no walls at all), so a full wall box would hide one arm from every diagonal camera.
+  if (!twoSided) {
+    boxes.push({ id: 'room-wall-a', role: 'room', sizeMm: [W, H, 20], centerMm: [W / 2, H / 2, -10], color: '#C7CDD4' });
+  }
 
   const counters = cabinets.filter(carriesCountertop);
   const baseHeightMm = counters.length > 0 ? Math.max(...counters.map((c) => c.height)) : LAYOUT.DEFAULT_BASE_HEIGHT_MM;
@@ -167,7 +170,11 @@ export function buildRenderScene(args: {
     room: { widthMm: W, depthMm: Dp, heightMm: H },
     boxes,
     cameras: [
-      { name: 'hero', positionMm: [W * 0.8, H * 0.58, Dp * 1.5], targetMm: [W / 2, H * 0.36, Dp * 0.15] },
+      // Corner hero for L/U kitchens: stand opposite the corner so BOTH walls (and their tall towers) are in
+      // frame; a straight-on hero crops the side wall's tower out of the picture entirely.
+      ...(runsOf(layout).length > 1
+        ? [{ name: 'hero', positionMm: [runsOf(layout).includes('B') ? W * 0.9 : W * 0.1, H * 0.6, Dp * 0.95] as [number, number, number], targetMm: [runsOf(layout).includes('B') ? W * 0.2 : W * 0.8, H * 0.35, (runsOf(layout).includes('B') ? -1 : 1) * Dp * 0.15] as [number, number, number], lensMm: 24 }]
+        : [{ name: 'hero', positionMm: [W * 0.8, H * 0.58, Dp * 1.5] as [number, number, number], targetMm: [W / 2, H * 0.36, Dp * 0.15] as [number, number, number] }]),
       { name: 'front', positionMm: [W / 2, H * 0.5, wallLengthOf(layout, 'A') * 1.15], targetMm: [W / 2, H * 0.42, 0] },
       { name: 'top', positionMm: [W / 2, H * 2.1, Dp * 0.55], targetMm: [W / 2, 0, Dp * 0.3] },
     ],

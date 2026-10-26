@@ -553,6 +553,18 @@ test('ai prompt: a forensic spec — doors vs drawers, sizes, hinges, grain, pos
   assert.match(text, /door \d+x\d+ mm \(hinged door, hinged on the right\)/);
   assert.match(text, /wood grain horizontal/);
   assert.match(text, /inside: 2 adjustable shelves/);
+  assert.match(text, /COUNT SUMMARY — your output must contain exactly: 1 base cabinets, 0 wall cabinets; fronts: 2 hinged doors, 3 drawer fronts, 0 lift-up doors/);
+  assert.match(text, /FINAL CHECK before answering: recount the doors and drawer fronts/);
   assert.match(text, /WORKTOP: 40 mm thick/);
   assert.match(text, /centred at 1905 mm along wall A/);
+});
+
+test('render scene: side arms keep the app frame — B cabinets at negative z, wall and hero camera with them', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const d = P.resolveDraft({ ...M.config('deepDrawers'), width: 800, zones: [{ kind: 'DOORS', count: 2 }] }, WOODS_T, [], []);
+  const side = { ...P.draftToNewCabinet(d, { id: 'side1', name: 'side', positionX: 900 }), run: 'B', carcaseThickness: 16, frontThickness: 19, calculatedCostDA: 0 } as never;
+  const rs = buildRenderScene({ cabinets: [side], layout, accessories: [], countertop: { visible: true, thicknessMm: 40, depthMm: 600 }, woods: [], splashMm: 600 });
+  assert.ok(rs.boxes.some((b) => b.id.startsWith('side1') && b.centerMm[2] < -300), 'the B cabinet stands along the side wall (negative z)');
+  assert.ok(!rs.boxes.some((b) => b.id.startsWith('room-wall')), 'no wall slabs in an L: they would hide one arm (the app draws none)');
+  assert.ok(rs.cameras[0]!.positionMm[2] > 0 && rs.cameras[0]!.lensMm === 24, 'the corner hero stands in the room quadrant with a wide lens');
 });

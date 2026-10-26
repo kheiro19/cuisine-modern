@@ -102,6 +102,9 @@ sun = area('Ceiling', (cx, -cz, room['heightMm'] / 1000 - 0.05), 450, 3.0)
 sun.rotation_euler = (0, 0, 0)
 win = area('Window', (cx, -room['depthMm'] / 1000 - 1.5, room['heightMm'] / 1800), 650, 4.0)
 win.rotation_euler = (math.radians(90), 0, 0)
+# Fill from the opposite side: corner heroes view the side arm from there, and a single window leaves it in shade.
+fill = area('Fill', (cx, room['depthMm'] / 1000 + 1.5, room['heightMm'] / 1800), 380, 4.0)
+fill.rotation_euler = (math.radians(-90), 0, 0)
 
 # ---- render settings
 scn = bpy.context.scene
@@ -146,7 +149,7 @@ else:
 scn.render.film_transparent = False
 
 cam_data = bpy.data.cameras.new('cam')
-cam_data.lens = 32  # interiors read better a little wide
+cam_data.lens = 32  # interiors read better a little wide; per-camera lensMm overrides in the loop
 cam_obj = bpy.data.objects.new('cam', cam_data)
 bpy.context.collection.objects.link(cam_obj)
 scn.camera = cam_obj
@@ -161,6 +164,7 @@ def look_at(obj, target_bl):
 
 rendered = []
 for cam in cameras:
+    cam_data.lens = cam.get('lensMm', 32)
     cam_obj.location = to_blender(cam['positionMm'])
     look_at(cam_obj, to_blender(cam['targetMm']))
     path = os.path.join(outdir, cam['name'] + '.png')

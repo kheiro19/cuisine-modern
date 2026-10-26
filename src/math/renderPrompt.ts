@@ -66,10 +66,15 @@ export function buildAiRenderPrompt(args: {
   lines.push(`ROOM: ${layout.widthMm} x ${layout.depthMm ?? 3000} mm, ceiling height ${layout.heightMm ?? 2600} mm.`);
   lines.push(`FRONT STYLE & COLOUR: ${DEFAULT_PALETTE.front.english} (${DEFAULT_PALETTE.front.color}), carcase ${DEFAULT_PALETTE.carcase.english}. Doors are flat slab fronts unless stated; drawers are flat fronts stacked with 3 mm shadow gaps.`);
 
+  // Fidelity anchors for image models: they obey counts far better than millimetre lists, so the spec leads
+  // with a count summary and ends with a recount order (filled in after the per-cabinet pass below).
+  const counts = { base: 0, wall: 0, doors: 0, drawers: 0, lifts: 0, panels: 0 };
+  const summaryAt = { index: 0 };
   const counters = cabinets.filter(carriesCountertop);
   const counterTopMm = (counters.length ? Math.max(...counters.map((c) => c.height)) : LAYOUT.DEFAULT_BASE_HEIGHT_MM) + countertopThicknessMm;
   const wallRef = { counterTopMm, defaultGapMm: splashMm, roomHeightMm: layout.heightMm ?? 2600 };
 
+  summaryAt.index = lines.length;
   for (const run of runsOf(layout)) {
     const onRun = cabinets.filter((c) => runOf(c) === (run as RunId)).sort((a, b) => a.positionX - b.positionX);
     if (!onRun.length) continue;
@@ -85,6 +90,7 @@ export function buildAiRenderPrompt(args: {
       const from = Math.round(cab.positionX);
       const gap = prevEnd !== null && from - prevEnd > 0 ? ` (${from - prevEnd} mm gap before it)` : '';
       prevEnd = from + cab.width;
+      if (isWall) counts.wall += 1; else counts.base += 1;
       const head = `${i + 1}. "${cab.name}" — ${isWall ? 'WALL cabinet' : 'BASE cabinet'} ${cab.width}w x ${cab.height}h x ${cab.depth}d mm, occupying ${from}-${from + cab.width} mm along wall ${run}${gap}.`;
       lines.push(head);
       const mount = isWall
@@ -97,6 +103,11 @@ export function buildAiRenderPrompt(args: {
           carcaseTh: th, frontTh: fTh,
           zoneFrontTh: zoneFrontChoicesOf(cab, woods as never, fTh).map((c) => c?.thicknessMm),
           lift: false, inset: false,
+        });
+        geo.facades.forEach((f) => {
+          if (f.kind === 'DOOR') { if (f.motion === 'LIFT') counts.lifts += 1; else counts.doors += 1; }
+          else if (f.kind === 'DRAWER') counts.drawers += 1;
+          else counts.panels += 1;
         });
         const zones = cab.zones ?? [];
         zones.forEach((zone, zi) => {
@@ -131,6 +142,7 @@ export function buildAiRenderPrompt(args: {
     });
   }
 
+  lines.splice(summaryAt.index, 0, '', `COUNT SUMMARY — your output must contain exactly: ${counts.base} base cabinets, ${counts.wall} wall cabinets; fronts: ${counts.doors} hinged doors, ${counts.drawers} drawer fronts, ${counts.lifts} lift-up doors, ${counts.panels} fixed panels/fillers. If a count is hard to see in the image, trust this summary over guessing.`);
   lines.push('');
   lines.push(`WORKTOP: ${countertopThicknessMm} mm thick${args.countertopDepthMm ? `, ${args.countertopDepthMm} mm deep` : ''}${args.countertopTexturePath ? `, material file ${args.countertopTexturePath.split('/').pop()}` : ', light stone with subtle veining'}, running continuously over the base cabinets; splashback zone ${splashMm} mm up the wall behind it.`);
   if (accessories.length) {
@@ -144,6 +156,7 @@ export function buildAiRenderPrompt(args: {
     }
   }
   lines.push('');
+  lines.push('FINAL CHECK before answering: recount the doors and drawer fronts in your image wall by wall and compare with the COUNT SUMMARY and the per-cabinet zones above; fix any mismatch by restoring the attached render\'s fronts. When in doubt, change nothing but light and material realism.');
   lines.push('PHOTOGRAPHY: bright modern kitchen, soft daylight, realistic wood grain following the stated direction on every front, stone worktop, gentle contact shadows, high-end architectural photography, 16:9.');
   return lines.join('\n');
 }

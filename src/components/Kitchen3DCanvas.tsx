@@ -75,6 +75,7 @@ function StillCapture({ register }: { register: (fn: () => string | null) => voi
         return url;
       } catch { return null; }
     });
+    return () => register(() => null);
   }, [gl, scene, camera, register]);
   return null;
 }
@@ -143,8 +144,16 @@ export default function Kitchen3DCanvas({
   const [selectedAccessoryId, setSelectedAccessoryId] = useState<string | null>(null);
   // Pro rendering (environment light + soft shadows), the cinematic render dialog and the smart audit dialog.
   const [proMode, setProMode] = useState(false);
+  /** Clean AI capture: helpers (the floor grid) hide for a moment so the still fed to image models is a clean interior shot, not an editor screenshot. */
+  const [hideHelpers, setHideHelpers] = useState(false);
   const captureRef = useRef<() => string | null>(() => null);
   const [panel, setPanel] = useState<'none' | 'render' | 'audit' | 'ai'>('none');
+  useEffect(() => {
+    if (panel === 'none') return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPanel('none'); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [panel]);
   const [endpoint, setEndpoint] = useState(() => { try { return localStorage.getItem('cuisine:renderEndpoint') || 'http://localhost:8787'; } catch { return 'http://localhost:8787'; } });
   const [renderQuality, setRenderQuality] = useState<'fast' | 'final'>('fast');
   const [renderBusy, setRenderBusy] = useState(false);
@@ -169,12 +178,30 @@ export default function Kitchen3DCanvas({
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [aiNote, setAiNote] = useState<string | null>(null);
   const openAiPanel = () => {
-    const url = captureRef.current();
-    setAiImage(url);
-    setAiPrompt(buildAiRenderPrompt({ cabinets, layout, accessories, countertopThicknessMm: countertop.thicknessMm, countertopDepthMm: countertop.depthMm, countertopTexturePath: countertop.texturePath, splashMm: hardware.wallSplashHeight, woods: woodPanels }));
-    setAiResult(null);
-    setAiNote(url ? null : 'تعذّر التقاط اللقطة — فعّل «وضع التصيير الاحترافي» ثم أعد المحاولة.');
     setPanel('ai');
+    setAiResult(null);
+    setAiImage(null);
+    setAiPrompt(buildAiRenderPrompt({ cabinets, layout, accessories, countertopThicknessMm: countertop.thicknessMm, countertopDepthMm: countertop.depthMm, countertopTexturePath: countertop.texturePath, splashMm: hardware.wallSplashHeight, woods: woodPanels }));
+    setAiNote('جارٍ تجهيز لقطة نظيفة: وضع احترافي + تأطير كامل + إخفاء الشبكة…');
+    const wasPro = proMode;
+    if (!wasPro) setProMode(true);
+    setViewNonce((n) => n + 1);
+    setHideHelpers(true);
+    const deadline = Date.now() + 12000;
+    const tryCapture = () => {
+      const url = captureRef.current();
+      if (url) {
+        setAiImage(url);
+        setHideHelpers(false);
+        setAiNote(null);
+      } else if (Date.now() < deadline) {
+        window.setTimeout(tryCapture, 400);
+      } else {
+        setHideHelpers(false);
+        setAiNote('تعذّر التقاط اللقطة — أغلق الحوار وأعد المحاولة.');
+      }
+    };
+    window.setTimeout(tryCapture, wasPro ? 500 : 1200);
   };
   const setAiKey = (v: string) => {
     setAiKeys((k) => ({ ...k, [aiProvider]: v }));
@@ -210,6 +237,7 @@ export default function Kitchen3DCanvas({
         form.append('model', aiModels.openai);
         form.append('prompt', aiPrompt);
         form.append('size', '1536x1024');
+        form.append('input_fidelity', 'high'); // gpt-image: hold the input's fronts and layout as hard as the model allows
         const res = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form });
         const data: any = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data?.error?.message || `OpenAI رد ${res.status}`);
@@ -524,7 +552,7 @@ export default function Kitchen3DCanvas({
           </Center>
 
           <OrbitControls makeDefault enableDamping dampingFactor={0.05} maxPolarAngle={Math.PI / 2} minDistance={0.4} maxDistance={8.0} />
-          <Grid position={[0, 0, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />
+          {!hideHelpers && (<Grid position={[0, 0, 0]} args={[Math.max(12, sceneWidthMeters * 2.5), Math.max(12, sceneWidthMeters * 2.5)]} cellSize={0.1} cellThickness={0.4} cellColor={ROOM.grid.cell} sectionSize={0.5} sectionColor={ROOM.grid.section} />)}
         </Canvas>
         <button
           type="button"
@@ -701,12 +729,13 @@ export default function Kitchen3DCanvas({
 
       {/* 🎬 Cinematic render: the scene goes to the render service (Blender Cycles), the picture comes back. */}
       {panel !== 'none' && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-[720px] w-full max-h-[86vh] overflow-y-auto p-4" style={{ direction: 'rtl' }}>
-            <div className="flex items-center justify-between mb-2">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-2 sm:p-4" role="dialog" aria-modal="true" onClick={() => setPanel('none')}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-[720px] w-full max-h-full flex flex-col overflow-hidden" style={{ direction: 'rtl' }} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between gap-2 px-4 pt-3 pb-2 border-b border-slate-200 flex-shrink-0 bg-white">
               <span className="text-[13px] font-black text-slate-800">{panel === 'render' ? '🎬 تصيير سينمائي (Blender Cycles)' : panel === 'audit' ? '🧠 التدقيق الذكي للتصميم' : '📋 التجهيز والتحسين بالذكاء الاصطناعي'}</span>
-              <button type="button" aria-label="إغلاق" onClick={() => setPanel('none')} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-[11px] cursor-pointer">✕</button>
+              <button type="button" aria-label="إغلاق" title="إغلاق (Esc)" onClick={() => setPanel('none')} className="w-8 h-8 flex-shrink-0 rounded-full bg-slate-100 hover:bg-red-100 hover:text-red-600 text-slate-600 font-black text-[13px] cursor-pointer">✕</button>
             </div>
+            <div className="overflow-y-auto min-h-0 p-4">
 
             {panel === 'render' && (
               <div className="flex flex-col gap-2">
@@ -752,6 +781,7 @@ export default function Kitchen3DCanvas({
             {panel === 'ai' && (
               <div className="flex flex-col gap-2">
                 <p className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">⚠️ صورتان مختلفتان تمامًا: لقطة التطبيق وتصيير Blender دقيقان ويُعتمدان للتنفيذ؛ أما ناتج الذكاء الاصطناعي فتصوّر تسويقي تقريبي قد يغيّر تفاصيل — لا يُبنى عليه مقاس.</p>
+                <p className="text-[10px] text-slate-500 -mt-1">لأعلى مطابقة ممكنة: اللقطة بالأسفل نظيفة (احترافية، بلا شبكة ولا واجهة محرّر). والأقوى منها حتى: ارفع للذكاء صورة «التصيير السينمائي» (Blender) إن صيّرتها — فهي مطابقة هندسيًا أصلًا، فيتفرّغ النموذج للخامات والضوء فقط.</p>
                 {aiImage ? (
                   <>
                     <img src={aiImage} alt="لقطة المطبخ الحالية بدقة 4K" className="w-full rounded-xl border border-slate-200" />
@@ -788,6 +818,7 @@ export default function Kitchen3DCanvas({
                 </div>
               </div>
             )}
+            </div>
           </div>
         </div>
       )}
