@@ -150,10 +150,14 @@ test('moving: a cabinet is clamped inside its wall, never pushed past either end
 test('fit: wall units stacked on the same stretch of wall clash only when their heights clash', () => {
   const S = (over: any = {}): K.KitchenLayout => ({ type: 'STRAIGHT', widthMm: 3000, lSide: 'LEFT', ...over });
   const wall = (id: string, positionX: number, over: any = {}) => cab(id, 'A', positionX, 600, { category: 'WALL_UNIT', depth: 350, height: 400, ...over });
-  // a 400 mm unit at the ceiling (2200–2600) and one hung 400 below it (1800–2200), same stretch: stacked, FREE
+  // a 400 mm unit at the ceiling (2200–2600) and one hung 400 below it (1800–2200), same stretch: stacked and
+  // exactly touching edge to edge — TOUCHING, the same green frame as two units side by side
   const upper = wall('up', 0, { wallMount: { from: 'CEILING', mm: 0 } });
   const lower = wall('lo', 0, { wallMount: { from: 'CEILING', mm: 400 } });
-  assert.deepEqual(Object.values(K.fitStates([upper, lower], S())), ['FREE', 'FREE']);
+  assert.deepEqual(Object.values(K.fitStates([upper, lower], S())), ['TOUCHING', 'TOUCHING']);
+  // the same stack with daylight between the units (1700–2100 under 2200–2600) is simply FREE
+  const gapped = wall('lo', 0, { wallMount: { from: 'CEILING', mm: 500 } });
+  assert.deepEqual(Object.values(K.fitStates([upper, gapped], S())), ['FREE', 'FREE']);
   // the lower one raised 100 mm into the upper (1900–2300 against 2200–2600): a real overlap again
   const pushed = wall('lo', 0, { wallMount: { from: 'CEILING', mm: 300 } });
   assert.deepEqual(Object.values(K.fitStates([upper, pushed], S())), ['OVERLAP', 'OVERLAP']);

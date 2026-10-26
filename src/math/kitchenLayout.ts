@@ -232,6 +232,14 @@ export function fitStates(
       })();
       if (!sameGroup && !stackedClear && overlap(footprintOf(a, layout), footprintOf(b, layout))) { clash = true; break; }
       if (runOf(a) === runOf(b) && (Math.abs(a.positionX + a.width - b.positionX) < TOL_MM || Math.abs(b.positionX + b.width - a.positionX) < TOL_MM)) touching = true;
+      // Wall units stacked on the same stretch of wall (one hung wholly above the other) are neighbours too:
+      // when the top edge of one sits exactly on the bottom edge of the other they are TOUCHING, like two units
+      // side by side — the list shows it with the same green frame, so a deliberate stack reads as intentional.
+      if (a.category === 'WALL_UNIT' && runOf(a) === runOf(b)) {
+        const sa = vSpan(a), sb = vSpan(b);
+        const shareStretch = a.positionX < b.positionX + b.width - TOL_MM && b.positionX < a.positionX + a.width - TOL_MM;
+        if (sa && sb && shareStretch && (Math.abs(sa[1] - sb[0]) <= TOL_MM || Math.abs(sb[1] - sa[0]) <= TOL_MM)) touching = true;
+      }
     }
     // Leaving the wall is the worst state: the design cannot be built there, whatever else is true of it.
     out[a.id] = !fitsOnWall(a, layout) ? 'OUT_OF_BOUNDS' : clash ? 'OVERLAP' : touching ? 'TOUCHING' : 'FREE';
