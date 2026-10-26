@@ -292,3 +292,15 @@ test('store: a piece declared in library.json waits (hidden) for its 3D file and
   assert.equal(resolveGlb('ph-carrot-cake', 'placeholder', snap.manifest).entry.file, 'carrot_cake/carrot_cake_1k.gltf');
   resetModelLibrary();
 });
+
+test('fit: contain keeps the proportions, stretch fills the box the user asked for, axis by axis', () => {
+  const unit: BBox = { min: [0, 0, 0], max: [1, 1, 1] };
+  // Halving only the width: 'contain' shrinks the WHOLE model to half (the reported bug), 'stretch' halves the width only.
+  const contain = fitToBox(unit, { w: 500, h: 1000, d: 1000 }, 'contain');
+  assert.deepEqual(contain.scale, [0.5, 0.5, 0.5]);
+  const stretch = fitToBox(unit, { w: 500, h: 1000, d: 1000 }, 'stretch');
+  assert.deepEqual(stretch.scale, [0.5, 1, 1]);
+  // And the stretched model really fills the target on every axis; the contained one only touches the tightest.
+  const filled = [0, 1, 2].map((i) => (unit.max[i] - unit.min[i]) * stretch.scale[i] * 1000);
+  assert.deepEqual(filled, [500, 1000, 1000]);
+});

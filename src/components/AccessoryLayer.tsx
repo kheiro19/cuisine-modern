@@ -29,7 +29,7 @@ export default function AccessoryLayer({ accessories, cabinets, wallSplashHeight
   const library = useModelLibrary();
   const drawn = useMemo(() => {
     const scene = sceneRefOf(cabinets, wallSplashHeightMm, roomHeightMm);
-    const list: Array<{ id: string; x: number; y: number; z: number; prims: Prim[]; size: { w: number; h: number; d: number }; rawSize: { w: number; h: number; d: number }; rotY: number; flip: boolean; glb?: GlbResolution; code?: CodeModelId; finish: FinishStyle }> = [];
+    const list: Array<{ id: string; x: number; y: number; z: number; prims: Prim[]; size: { w: number; h: number; d: number }; rawSize: { w: number; h: number; d: number }; rotY: number; flip: boolean; resized: boolean; glb?: GlbResolution; code?: CodeModelId; finish: FinishStyle }> = [];
     accessories.forEach((a) => {
       const item = getAccessory(a.catalogId);
       const f = footprintOf(a, accessories, cabinets, scene);
@@ -37,7 +37,7 @@ export default function AccessoryLayer({ accessories, cabinets, wallSplashHeight
       const finish = resolveFinish(item, a.finish);
       // The model is built from the CATALOG proportions turned by the quarter turn: intrinsic w/h/d with swapped axes.
       const raw = a.sizeMm ?? item.sizeMm;
-      list.push({ id: a.id, x: f.xMm, y: f.yMm, z: f.zMm, size: { w: f.w, h: f.h, d: f.d }, rawSize: { w: raw.w, h: raw.h, d: raw.d }, rotY: a.rotY ?? 0, flip: !!a.flip, glb: resolveGlb(item.id, item.model, library.manifest), ...(item.codeModel ? { code: item.codeModel } : {}), finish, prims: modelPrims(item.model, raw.w, raw.h, raw.d, item.opts ?? {}, finish) });
+      list.push({ id: a.id, x: f.xMm, y: f.yMm, z: f.zMm, size: { w: f.w, h: f.h, d: f.d }, rawSize: { w: raw.w, h: raw.h, d: raw.d }, rotY: a.rotY ?? 0, flip: !!a.flip, resized: !!a.sizeMm, glb: resolveGlb(item.id, item.model, library.manifest), ...(item.codeModel ? { code: item.codeModel } : {}), finish, prims: modelPrims(item.model, raw.w, raw.h, raw.d, item.opts ?? {}, finish) });
     });
     return list;
   }, [accessories, cabinets, wallSplashHeightMm, roomHeightMm, library.manifest]);
@@ -48,9 +48,9 @@ export default function AccessoryLayer({ accessories, cabinets, wallSplashHeight
         <group key={a.id} position={[mm(a.x), mm(a.y), mm(a.z)]} onClick={onSelect ? (e) => { e.stopPropagation(); onSelect(a.id); } : undefined}>
           <group rotation={[0, (a.rotY * Math.PI) / 180, 0]} scale={[a.flip ? -1 : 1, 1, 1]}>
             {a.glb ? (
-              <GlbModel url={library.baseUrl + a.glb.entry.file} res={a.glb} size={a.rawSize} finish={a.finish} xray={isXRayMode} fallback={<Shapes prims={a.prims} xray={isXRayMode} />} />
+              <GlbModel url={library.baseUrl + a.glb.entry.file} res={a.glb} size={a.rawSize} resized={a.resized} finish={a.finish} xray={isXRayMode} fallback={<Shapes prims={a.prims} xray={isXRayMode} />} />
             ) : a.code ? (
-              <CodeModel codeId={a.code} size={a.rawSize} xray={isXRayMode} fallback={<Shapes prims={a.prims} xray={isXRayMode} />} />
+              <CodeModel codeId={a.code} size={a.rawSize} resized={a.resized} xray={isXRayMode} fallback={<Shapes prims={a.prims} xray={isXRayMode} />} />
             ) : (
               <Shapes prims={a.prims} xray={isXRayMode} />
             )}

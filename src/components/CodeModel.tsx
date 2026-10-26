@@ -13,6 +13,8 @@ interface CodeModelProps {
   codeId: CodeModelId;
   size: { w: number; h: number; d: number };
   xray: boolean;
+  /** The user resized this piece: fill the box axis by axis instead of keeping the authored proportions. */
+  resized?: boolean;
 }
 
 type Disposable = { dispose?: () => void };
@@ -54,7 +56,7 @@ function applyXray(root: THREE.Object3D, on: boolean): void {
   });
 }
 
-function CodeScene({ codeId, size, xray }: CodeModelProps) {
+function CodeScene({ codeId, size, xray, resized }: CodeModelProps) {
   const def = CODE_MODELS[codeId];
   const { root, fit } = useMemo(() => {
     const built = def.build();
@@ -62,9 +64,9 @@ function CodeScene({ codeId, size, xray }: CodeModelProps) {
     const box = new THREE.Box3().setFromObject(built);
     return {
       root: built,
-      fit: fitToBox({ min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] }, size, 'contain'),
+      fit: fitToBox({ min: [box.min.x, box.min.y, box.min.z], max: [box.max.x, box.max.y, box.max.z] }, size, resized ? 'stretch' : 'contain'),
     };
-  }, [def, size.w, size.h, size.d]);
+  }, [def, size.w, size.h, size.d, resized]);
 
   useEffect(() => () => disposeTree(root), [root]);
   useEffect(() => applyXray(root, xray), [root, xray]);

@@ -14,11 +14,14 @@ interface GlbModelProps {
   size: { w: number; h: number; d: number };
   finish?: FinishStyle;
   xray: boolean;
+  /** The user gave this piece their own size: the model must fill exactly that box, axis by axis. Without it the
+   * manifest's 'contain' keeps the file's own proportions at the catalog size it was authored for. */
+  resized?: boolean;
 }
 
 // Draco / Meshopt files download their decoder from the internet the first time (drei's default). To work offline, host the
 // decoder in public/draco/ and call useGLTF.setDecoderPath('/draco/') once.
-function GlbScene({ url, res, size, finish, xray }: GlbModelProps) {
+function GlbScene({ url, res, size, finish, xray, resized }: GlbModelProps) {
   const gltf = useGLTF(url) as unknown as { scene: THREE.Object3D };
 
   const { root, owned, fit } = useMemo(() => {
@@ -46,8 +49,8 @@ function GlbScene({ url, res, size, finish, xray }: GlbModelProps) {
       });
       mesh.material = Array.isArray(mesh.material) ? next : next[0];
     });
-    return { root: clone, owned: created, fit: fitToBox(rotateBBoxY(res.entry.bbox, res.rotateY), size, res.fit) };
-  }, [gltf, res, size.w, size.h, size.d, finish, xray]);
+    return { root: clone, owned: created, fit: fitToBox(rotateBBoxY(res.entry.bbox, res.rotateY), size, resized ? 'stretch' : res.fit) };
+  }, [gltf, res, size.w, size.h, size.d, finish, xray, resized]);
 
   // The clones of the materials belong to this instance: free them when it goes away.
   useEffect(() => () => owned.forEach((m) => m.dispose()), [owned]);
