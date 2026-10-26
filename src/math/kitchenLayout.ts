@@ -263,13 +263,38 @@ export function placeAlongWall(
   category: CabinetCategory,
   widthMm: number,
   fromMm = 0,
+  /** Floor pieces of the accessories library standing on this wall: a new BASE cabinet must fit around them too. */
+  blockers: ReadonlyArray<{ positionX: number; width: number }> = [],
 ): Placement {
   const wallMm = wallLengthOf(layout, run);
   const room = Math.max(0, wallMm - fromMm);
   if (widthMm > room + TOL_MM) return { ok: false, reason: 'TOO_WIDE', wallMm, freeMm: room };
-  const positionX = nextFreeX(cabinets, run, category, widthMm, fromMm);
+  const occupied = category === 'BASE_UNIT' && blockers.length > 0
+    ? [...cabinets, ...blockers.map((b) => ({ run, category: 'BASE_UNIT' as CabinetCategory, positionX: b.positionX, positionZ: 0, width: b.width, depth: 0 }))]
+    : cabinets;
+  const positionX = nextFreeX(occupied, run, category, widthMm, fromMm);
   if (positionX + widthMm > wallMm + TOL_MM) return { ok: false, reason: 'WALL_FULL', wallMm, freeMm: Math.max(0, wallMm - positionX) };
   return { ok: true, positionX };
+}
+
+/** A floor piece of the library, as a span on its wall (centre ± half width). */
+export interface FloorPieceSpan { run?: RunId; xMm: number; w: number }
+
+/**
+ * The BASE cabinets that share floor with a library floor piece on the same wall — the clash the installed list paints
+ * red, exactly like two cabinets in one place. (What stands ON the floor can only clash with what stands on it too.)
+ */
+export function cabinetsClashingPieces(
+  cabinets: ReadonlyArray<Placed & { id: string; category: CabinetCategory }>,
+  pieces: ReadonlyArray<FloorPieceSpan>,
+): string[] {
+  const out: string[] = [];
+  cabinets.forEach((c) => {
+    if (c.category !== 'BASE_UNIT') return;
+    const hit = pieces.some((pc) => (pc.run ?? 'A') === runOf(c) && c.positionX < pc.xMm + pc.w / 2 - TOL_MM && pc.xMm - pc.w / 2 < c.positionX + c.width - TOL_MM);
+    if (hit) out.push(c.id);
+  });
+  return out;
 }
 
 /** The first place along `run` where a cabinet `widthMm` wide fits between the ones already there (same level), from `fromMm`. */

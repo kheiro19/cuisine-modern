@@ -1,7 +1,7 @@
 // src/components/AccessoryLibrary.tsx
 // The accessories library panel: search or browse by category, pick a finish, press "إضافة للتصميم" and the piece appears in
 // the 3D showroom; the list below moves, recolours or removes what was added.
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import {
   ACCESSORY_CATEGORIES,
   AccessoryCategory,
@@ -18,12 +18,24 @@ import {
 } from '../data/accessoryCatalog';
 import { creditsOf, resolveGlb } from '../data/libraryManifest';
 import { useModelLibrary } from './useModelLibrary';
-import { CabinetLite, NudgeResult, PlaceResult, PlacedAccessory } from '../math/accessoryPlacement';
+import { CabinetLite, NudgeResult, PlaceResult, PlacedAccessory, footprintSizeOf } from '../math/accessoryPlacement';
+import { RUN_LABELS, runOf, wallLengthOf, type KitchenLayout } from '../math/kitchenLayout';
+import AccessoryTransformEditor from './AccessoryTransformEditor';
+import type { TransformResult } from '../math/accessoryPlacement';
+import type { RunId } from '../types/flatma';
 
 interface AccessoryLibraryProps {
   cabinets: ReadonlyArray<CabinetLite>;
   accessories: ReadonlyArray<PlacedAccessory>;
-  onAdd: (catalogId: string, hostCabinetId?: string, finish?: FinishKey) => PlaceResult;
+  /** The room and its walls: a free floor piece can be sent to a side wall, and a placed row can flag a piece past its wall or inside a cabinet. */
+  layout?: KitchenLayout;
+  runs?: ReadonlyArray<RunId>;
+  onAdd: (catalogId: string, hostCabinetId?: string, finish?: FinishKey, run?: RunId) => PlaceResult;
+  /** Size & direction editing of placed pieces (optional: hosts that do not wire it simply do not show the editor). */
+  onResize?: (id: string, size: { w: number; h: number; d: number }) => TransformResult;
+  onRotate?: (id: string, dir: 1 | -1) => TransformResult;
+  onFlip?: (id: string) => TransformResult;
+  onResetTransform?: (id: string) => void;
   onNudge: (id: string, dxMm: number) => NudgeResult;
   onRemove: (id: string) => void;
   onFinish: (id: string, finish: FinishKey) => void;
@@ -56,13 +68,17 @@ function FinishSwatches({ item, value, onPick }: { item: AccessoryItem; value?: 
   );
 }
 
-export default function AccessoryLibrary({ cabinets, accessories, onAdd, onNudge, onRemove, onFinish, onClear }: AccessoryLibraryProps) {
+export default function AccessoryLibrary({ cabinets, accessories, layout, runs, onAdd, onNudge, onRemove, onFinish, onClear, onResize, onRotate, onFlip, onResetTransform }: AccessoryLibraryProps) {
   const [open, setOpen] = useState<boolean>(true);
   const [category, setCategory] = useState<AccessoryCategory>('ELECTRICAL');
   const [query, setQuery] = useState<string>('');
   const [hostId, setHostId] = useState<string>('');
   const [finishes, setFinishes] = useState<Record<string, FinishKey>>({});
   const [message, setMessage] = useState<Message | null>(null);
+  /** The wall a NEW standing piece (washer, fridge...) is sent to; meaningless until the room has side walls. */
+  const [floorRun, setFloorRun] = useState<RunId>('A');
+  /** The placed piece whose size & direction editor is open. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const library = useModelLibrary();
   const searching = query.trim().length > 0;
@@ -82,7 +98,7 @@ export default function AccessoryLibrary({ cabinets, accessories, onAdd, onNudge
   };
 
   const add = (item: AccessoryItem) => {
-    const r = onAdd(item.id, hostFor(item), finishes[item.id]);
+    const r = item.mount === 'FLOOR' && item.zPlace !== 'FRONT' ? onAdd(item.id, undefined, finishes[item.id], floorRun) : onAdd(item.id, hostFor(item), finishes[item.id]);
     if (!r.ok) setMessage({ kind: 'err', text: r.error });
     else if (r.warnings.length > 0) setMessage({ kind: 'warn', text: r.warnings.join(' ') });
     else setMessage({ kind: 'ok', text: `أُضيفت «${item.nameAr}» إلى التصميم.` });
@@ -142,6 +158,18 @@ export default function AccessoryLibrary({ cabinets, accessories, onAdd, onNudge
             </label>
           )}
 
+          {runs && runs.length > 1 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-slate-300">
+              <span>🧱 جدار القطع الواقفة الجديدة (غسالة، ثلاجة، جزيرة...):</span>
+              {runs.map((r) => (
+                <button key={r} type="button" onClick={() => setFloorRun(r)}
+                  className={`px-2.5 py-1 rounded-full text-[10px] font-bold border cursor-pointer ${floorRun === r ? 'bg-amber-500 text-slate-900 border-amber-400' : 'bg-slate-800 text-slate-300 border-slate-600 hover:border-amber-400'}`}>
+                  {RUN_LABELS[r]}
+                </button>
+              ))}
+            </div>
+          )}
+
           {message && <p role="status" className={`text-[11px] font-bold border rounded-lg px-3 py-1.5 ${tone[message.kind]}`}>{message.text}</p>}
 
           {searching && <p className="text-[10px] text-slate-400">{items.length > 0 ? `${items.length} نتيجة` : 'لا توجد نتائج لهذا البحث.'}</p>}
@@ -199,13 +227,30 @@ export default function AccessoryLibrary({ cabinets, accessories, onAdd, onNudge
                   const item = getAccessory(a.catalogId);
                   if (!item) return null;
                   const hosted = item.mount === 'CABINET_INSIDE' || item.mount === 'CABINET_UNDER';
+                  // A standing piece is judged on ITS wall: past its end or inside a base cabinet there, it is flagged here
+                  // (the cabinet itself also turns red in the installed list) instead of sitting outside the room quietly.
+                  const floorRunOfA: RunId = a.run ?? 'A';
+                  const wallMm = layout && item.mount === 'FLOOR' && !hosted ? wallLengthOf(layout, floorRunOfA) : undefined;
+                  const effW = footprintSizeOf(a, item).w;
+                  const pastWall = wallMm !== undefined && !item.noCollide && (a.xMm - effW / 2 < -0.5 || a.xMm + effW / 2 > wallMm + 0.5);
+                  const insideCabinet = item.mount === 'FLOOR' && !item.noCollide && cabinets.some((c) => c.category === 'BASE_UNIT' && runOf(c) === floorRunOfA && c.positionX < a.xMm + effW / 2 - 0.5 && a.xMm - effW / 2 < c.positionX + c.width - 0.5);
                   return (
-                    <li key={a.id} className="flex items-center gap-2 bg-slate-800 rounded-lg px-2.5 py-1.5">
+                    <Fragment key={a.id}>
+                    <li className="flex items-center gap-2 bg-slate-800 rounded-lg px-2.5 py-1.5">
                       <span aria-hidden="true">{item.icon}</span>
                       <span className="flex-1 text-[11px] font-bold truncate">
                         {item.nameAr}
                         {hosted && <span className="text-slate-400 font-normal"> — {nameOf(a.cabinetId)}</span>}
+                        {item.mount === 'FLOOR' && !hosted && <span className="text-sky-300 font-normal"> · {RUN_LABELS[floorRunOfA]} · مركز {Math.round(a.xMm)} مم</span>}
+                        {pastWall && <span className="text-rose-300"> · ⚠️ خارج الجدار</span>}
+                        {insideCabinet && <span className="text-rose-300"> · ⚠️ داخل خزانة</span>}
                       </span>
+                      {item.mount === 'FLOOR' && !hosted && !item.autoSpan && (
+                        <input type="number" defaultValue={Math.round(a.xMm)} key={`${a.id}:${Math.round(a.xMm)}`} title="مركز القطعة على جدارها (مم) — Enter للتثبيت" aria-label="مركز القطعة بالمليمتر"
+                          onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                          onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v) !== Math.round(a.xMm)) nudge(a.id, Math.round(v) - Math.round(a.xMm)); }}
+                          className="w-[72px] bg-slate-900 border border-slate-600 rounded-md px-1.5 py-1 text-[10px] text-slate-100" dir="ltr" />
+                      )}
                       {(!glbOf(item) || glbOf(item)!.tintMaterials.length > 0) && <FinishSwatches item={item} value={a.finish} onPick={(k) => onFinish(a.id, k)} />}
                       {!hosted && !item.autoSpan && (
                         <span className="flex gap-1" dir="ltr">
@@ -213,8 +258,17 @@ export default function AccessoryLibrary({ cabinets, accessories, onAdd, onNudge
                           <button type="button" title="تحريك لليمين 5 سم" aria-label="تحريك لليمين" onClick={() => nudge(a.id, NUDGE_MM)} className="w-7 h-7 rounded-md bg-slate-700 hover:bg-slate-600 text-[11px] cursor-pointer">▶</button>
                         </span>
                       )}
+                      {onResize && onRotate && onFlip && onResetTransform && !item.autoSpan && (
+                        <button type="button" title="المقاس والاتجاه" aria-label="المقاس والاتجاه" aria-expanded={editingId === a.id} onClick={() => setEditingId(editingId === a.id ? null : a.id)} className={`h-7 rounded-md px-2 text-[10px] font-black cursor-pointer ${editingId === a.id ? 'bg-amber-500 text-slate-900' : 'bg-slate-700 hover:bg-slate-600'}`}>📐</button>
+                      )}
                       <button type="button" title="حذف" aria-label="حذف" onClick={() => { onRemove(a.id); setMessage(null); }} className="w-7 h-7 rounded-md bg-rose-600/80 hover:bg-rose-500 text-[11px] cursor-pointer">🗑</button>
                     </li>
+                    {editingId === a.id && onResize && onRotate && onFlip && onResetTransform && (
+                      <li className="bg-slate-800/70 rounded-lg px-2.5 py-2 border border-slate-700">
+                        <AccessoryTransformEditor item={item} placed={a} onResize={onResize} onRotate={onRotate} onFlip={onFlip} onReset={onResetTransform} tone="dark" />
+                      </li>
+                    )}
+                    </Fragment>
                   );
                 })}
               </ul>

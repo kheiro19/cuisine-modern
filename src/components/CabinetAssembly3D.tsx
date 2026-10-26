@@ -4,11 +4,12 @@
 // swing / lift / glass, drawers that slide, and one Gola channel per enabled position.
 // `explode` (0..1) pulls the parts apart and `showFasteners` shows the cams, dowels, screws, shelf pins, hinges and
 // runners (ghosted boards with outlines), both computed by math/fasteners.ts from the same geometry as the BOM.
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { Edges } from '@react-three/drei';
 import { CabinetObject, InjectedWoodMaterial, InjectedHardwareItem } from '../types/flatma';
 import { TextureEngine } from '../math/textureEngine';
-import { facadeMaterialSignature, materialKeyOf, parseMaterialKey } from '../math/materialLifecycle';
+import { facadeMaterialSignature, grainOf, materialKeyOf, parseMaterialKey } from '../math/materialLifecycle';
 import { zoneFrontChoicesOf } from '../math/zoneFronts';
 import { useDisposeMaterials } from './useDisposeMaterials';
 import { ApplianceGeo, AssemblyGeometry, FacadeGeo, applianceKey, assemblyGeometry, facadeKey } from '../math/assemblyGeometry';
@@ -34,6 +35,10 @@ interface CabinetAssembly3DProps {
   showFasteners?: boolean;
   /** Tells the parent which geometry is drawn (the dimension lines and the audit use exactly it). Pass a stable function. */
   onGeometry?: (info: DrawnGeometry) => void;
+  /** Fronts the user opened one by one (facadeKey -> open), overruling the master openProgress for those fronts only. */
+  frontOpen?: Record<string, boolean>;
+  /** Double-click on a front: open it if shut, shut it if open. */
+  onToggleFront?: (facadeKey: string) => void;
 }
 
 /** What the assembly draws, as the measuring tools need it. */
@@ -61,7 +66,7 @@ const FASTENER_STYLE: Record<FastenerKind, { color: string; metalness: number; r
 const GLASS_FRAME_M = 0.022;
 const m = (mm: number) => mm / 1000;
 
-export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woodPanels, hardwareItems, openProgress, explode = 0, showFasteners = false, onGeometry }: CabinetAssembly3DProps) {
+export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woodPanels, hardwareItems, openProgress, explode = 0, showFasteners = false, onGeometry, frontOpen, onToggleFront }: CabinetAssembly3DProps) {
   const carcaseMat = useMemo(() => woodPanels.find((x) => x.id === cabinet.carcaseMaterialId), [woodPanels, cabinet.carcaseMaterialId]);
   const frontMat = useMemo(() => woodPanels.find((x) => x.id === cabinet.frontMaterialId), [woodPanels, cabinet.frontMaterialId]);
   const doorHardware = useMemo(() => pickFrontHardware(cabinet, 'DOORS', hardwareItems), [cabinet, hardwareItems]);
@@ -109,16 +114,19 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   const ownSheetOf = (zoneIndex: number): string | undefined => zoneFronts[zoneIndex]?.materialId;
   const frontKeyOf = (f: { zoneIndex: number; kind: string; widthMm: number; heightMm: number }): string => {
     const own = ownSheetOf(f.zoneIndex);
-    return own ? `${materialKeyOf(f)}@@${own}` : materialKeyOf(f);
+    // The zone's own grain choice (direction and 180° flip) rides in the key; missing = the kind's grain, as before.
+    const zone = cabinet.zones?.[f.zoneIndex];
+    const key = materialKeyOf(f, zone?.grainDirection ?? grainOf(f.kind), !!zone?.grainFlip);
+    return own ? `${key}@@${own}` : key;
   };
   const facadeSig = [...new Set(geo.facades.map(frontKeyOf))].sort().join('|') || facadeMaterialSignature(geo.facades);
   const frontMaterials = useMemo(() => {
     const out: Record<string, ReturnType<typeof TextureEngine.compileProceduralMaterial>> = {};
     (facadeSig ? facadeSig.split('|') : []).forEach((key) => {
       const [sizeKey, ownId] = key.split('@@');
-      const { widthMm, heightMm, grain } = parseMaterialKey(sizeKey);
+      const { widthMm, heightMm, grain, flip } = parseMaterialKey(sizeKey);
       const sheet = ownId ? woodPanels.find((x) => x.id === ownId) ?? frontMat : frontMat;
-      out[key] = TextureEngine.compileProceduralMaterial(sheet, widthMm, heightMm, ghost, DEFAULT_PALETTE.front.color, grain, ownId ? undefined : cabinet.frontTextureOverride, DEFAULT_PALETTE.front);
+      out[key] = TextureEngine.compileProceduralMaterial(sheet, widthMm, heightMm, ghost, DEFAULT_PALETTE.front.color, grain, ownId ? undefined : cabinet.frontTextureOverride, DEFAULT_PALETTE.front, flip);
     });
     return out;
   }, [facadeSig, frontMat, woodPanels, ghost, overridePath, overrideFinish]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -128,9 +136,28 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
   useDisposeMaterials(ownedMaterials);
 
   const W = cabinet.width, D = cabinet.depth;
-  const swing = openProgress * (Math.PI / 2);
-  const liftAngle = openProgress * (Math.PI / 2);
-  const drawerTravel = openProgress * m(D) * 0.75;
+  // One front at a time: a front the user double-clicked has its own open/shut state and eases to it (~0.35 s); every
+  // other front follows the master slider exactly as before. The animated values live in a ref and only re-render
+  // this cabinet while something is actually moving.
+  const frontTargetOf = (key: string): number => (frontOpen && key in frontOpen ? (frontOpen[key] ? 1 : 0) : openProgress);
+  const animRef = useRef<Map<string, number>>(new Map());
+  const [, setAnimTick] = useState(0);
+  useFrame((_, delta) => {
+    let moved = false;
+    geo.facades.forEach((f) => {
+      const key = facadeKey(f);
+      const target = frontTargetOf(key);
+      const current = animRef.current.get(key) ?? target;
+      if (Math.abs(current - target) > 0.002) {
+        const next = current + Math.sign(target - current) * Math.min(Math.abs(target - current), delta / 0.35);
+        animRef.current.set(key, next);
+        moved = true;
+      }
+    });
+    if (moved) setAnimTick((n) => n + 1);
+  });
+  const progressOf = (f: FacadeGeo): number => animRef.current.get(facadeKey(f)) ?? frontTargetOf(facadeKey(f));
+  const toggleProps = (key: string) => (onToggleFront ? { onDoubleClick: (e: { stopPropagation: () => void }) => { e.stopPropagation(); onToggleFront(key); } } : {});
 
   const facadeBody = (f: FacadeGeo) => {
     const w = m(f.widthMm), h = m(f.heightMm), t = m(f.thicknessMm ?? fTh);
@@ -162,13 +189,18 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
     const key = facadeKey(f);
     const w = m(f.widthMm), h = m(f.heightMm);
     const cx = m(f.xMm) + w / 2, cy = m(f.yMm) + h / 2, z = m(f.zMm);
+    // This front's own opening: the global slider angle/travel, scaled by its animated progress.
+    const pr = progressOf(f);
+    const swing = pr * (Math.PI / 2);
+    const liftAngle = pr * (Math.PI / 2);
+    const drawerTravel = pr * m(D) * 0.75;
 
     if (f.motion === 'SWING') {
       const left = f.hinge === 'LEFT';
       const pivotX = left ? m(f.xMm) : m(f.xMm) + w;
       // The ROTATION belongs on the pivot group: it used to be on the inner group, so the door spun about its own centre.
       return (
-        <group key={key} position={[pivotX, cy, z]} rotation={[0, left ? -swing : swing, 0]}>
+        <group key={key} position={[pivotX, cy, z]} rotation={[0, left ? -swing : swing, 0]} {...toggleProps(key)}>
           <group position={[left ? w / 2 : -w / 2, 0, 0]}>{facadeBody(f)}</group>
         </group>
       );
@@ -176,7 +208,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
     if (f.motion === 'LIFT') {
       // Lifting flap: hinged on its top edge, swings up and out.
       return (
-        <group key={key} position={[cx, m(f.yMm) + h, z]} rotation={[-liftAngle, 0, 0]}>
+        <group key={key} position={[cx, m(f.yMm) + h, z]} rotation={[-liftAngle, 0, 0]} {...toggleProps(key)}>
           <group position={[0, -h / 2, 0]}>{facadeBody(f)}</group>
         </group>
       );
@@ -189,7 +221,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
       const levels = Math.max(1, f.frame.levels);
       const metal = <meshStandardMaterial color="#9CA3AF" metalness={0.8} roughness={0.35} />;
       return (
-        <group key={key} position={[cx, cy, z + drawerTravel]}>
+        <group key={key} position={[cx, cy, z + drawerTravel]} {...toggleProps(key)}>
           {facadeBody(f)}
           <group position={offset}>
             {[-1, 1].map((side) => (
@@ -215,7 +247,7 @@ export default function CabinetAssembly3D({ cabinet, showFronts, isXRayMode, woo
     if (f.motion === 'SLIDE') {
       // The real drawer box (the same five boards as the BOM: sides, inner front, back, bottom); it travels with the front.
       return (
-        <group key={key} position={[cx, cy, z + drawerTravel]}>
+        <group key={key} position={[cx, cy, z + drawerTravel]} {...toggleProps(key)}>
           {facadeBody(f)}
           {(f.box ?? []).map((b) => (
             <mesh key={b.key} position={[m(b.centerMm[0]) - cx, m(b.centerMm[1]) - cy, m(b.centerMm[2]) - z]} castShadow receiveShadow material={boardMaterial}>

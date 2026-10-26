@@ -4,12 +4,14 @@ import assert from 'node:assert/strict';
 import { ACCESSORY_CATALOG, ACCESSORY_CATEGORIES, CODE_MODEL_IDS, FINISHES, getAccessory, accessoriesOf, resolveFinish, searchAccessories } from '../../src/data/accessoryCatalog';
 import { ACCESSORY_MODEL_KEYS, modelPrims, primBounds } from '../../src/math/accessoryModels';
 import { LAYOUT } from '../../src/math/constants';
-import { footprintOf, nudgeAccessory, placeAccessory, reconcileAccessories, removeAccessory, sceneRefOf, setFinish } from '../../src/math/accessoryPlacement';
+import { cabinetsClashingPieces, placeAlongWall, type KitchenLayout } from '../../src/math/kitchenLayout';
+import { flipAccessory, footprintOf, nudgeAccessory, placeAccessory, reconcileAccessories, removeAccessory, resetAccessoryTransform, resizeAccessory, rotateAccessory, sceneRefOf, setFinish, type TransformResult } from '../../src/math/accessoryPlacement';
 import type { CabinetLite, NudgeResult, PlaceResult } from '../../src/math/accessoryPlacement';
 
 /** The union has a success and a failure shape; a test that places something needs the success one, with its message. */
 const okPlace = (r: PlaceResult) => { if ('error' in r) throw new Error(r.error); return r; };
 const okNudge = (r: NudgeResult) => { if ('error' in r) throw new Error(r.error); return r; };
+const okTransform = (r: TransformResult) => { if ('error' in r) throw new Error(r.error); return r.list; };
 
 const cab = (id: string, over: Partial<CabinetLite> = {}): CabinetLite => ({ id, name: id, category: 'BASE_UNIT', positionX: 0, positionZ: 0, width: 600, height: 720, depth: 560, frontThickness: 18, carcaseThickness: 18, ...over });
 const RUN = [cab('b1', { positionX: 0 }), cab('b2', { positionX: 600 }), cab('b3', { positionX: 1200 }), cab('w1', { category: 'WALL_UNIT', positionX: 0, height: 720, depth: 320 }), cab('w2', { category: 'WALL_UNIT', positionX: 600, depth: 320 })];
@@ -357,4 +359,141 @@ test('code models: the washer is in the catalog, uses a known code model and kee
   const [mw, mh, md] = [1.576, 1.995, 1.558];
   const ratio = mw / mh / (lg.sizeMm.w / lg.sizeMm.h), depth = md / mh / (lg.sizeMm.d / lg.sizeMm.h);
   assert.ok(Math.abs(ratio - 1) < 0.02 && Math.abs(depth - 1) < 0.02, 'the catalog size has the proportions of the model, so contain fits it fully');
+});
+
+test('coordination: with a room, a floor piece takes the first real gap on its wall and never leaves the wall', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  // The screenshot kitchen on the back wall: corner 0-679, two units, then a 610 mm gap, then the fridge column.
+  const wall = [
+    cab('corner', { positionX: 0, width: 679 }),
+    cab('b1', { positionX: 680, width: 800 }),
+    cab('b2', { positionX: 1480, width: 800 }),
+    cab('tall', { positionX: 2890, width: 750, height: 2100 }),
+  ];
+  const scene = sceneRefOf(wall, 600);
+  const r = okPlace(placeAccessory('washer', 'w1', [], wall, scene, undefined, undefined, { layout }));
+  assert.equal(r.placed.xMm, 2585, 'the washer stands in the 2280-2890 gap, centred — not past the wall end');
+  // A second washer has nowhere to go on this wall: a clear refusal, not an exile outside the room.
+  const again = placeAccessory('washer', 'w2', [r.placed], wall, scene, undefined, undefined, { layout });
+  assert.ok('error' in again && again.error.includes('لا توجد فجوة'), 'a full wall refuses in Arabic');
+  // Without a room the historic behaviour is untouched (the old tests above rely on it).
+  const legacy = okPlace(placeAccessory('washer', 'w3', [], wall, scene));
+  assert.ok(legacy.placed.xMm > 3650, 'legacy placement is unchanged when no layout is given');
+});
+
+test('coordination: a cabinet placed later treats the floor piece as occupied floor', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wall = [cab('b1', { positionX: 0, width: 800 }), cab('b2', { positionX: 800, width: 800 })];
+  const scene = sceneRefOf(wall, 600);
+  const w = okPlace(placeAccessory('washer', 'w1', [], wall, scene, undefined, undefined, { layout })).placed;
+  assert.equal(w.xMm, 1905, 'washer right after the run: 1600 + 300 + the 5 mm cabinet margin');
+  // A new 600 base cabinet must skip over the washer, exactly as if she were a cabinet.
+  const place = placeAlongWall(wall, layout, 'A', 'BASE_UNIT', 600, 0, [{ positionX: w.xMm - 300, width: 600 }]);
+  assert.ok(place.ok && place.positionX === 2205, `cabinet goes after the washer, got ${JSON.stringify(place)}`);
+  // And the clash detector names a cabinet that (in an older save) stands inside her.
+  const squatter = cab('sq', { positionX: 1700, width: 600 });
+  assert.deepEqual(cabinetsClashingPieces([...wall, squatter], [{ run: 'A', xMm: w.xMm, w: 600 }]), ['sq']);
+  assert.deepEqual(cabinetsClashingPieces(wall, [{ run: 'A', xMm: w.xMm, w: 600 }]), []);
+});
+
+test('coordination: nudge is fenced by the wall, and a trapped piece can walk out of a cabinet', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wall = [cab('b1', { positionX: 0, width: 800 }), cab('b2', { positionX: 800, width: 800 })];
+  const scene = sceneRefOf(wall, 600);
+  const w = okPlace(placeAccessory('washer', 'w1', [], wall, scene, undefined, undefined, { layout })).placed;
+  // 40 pushes of 50 mm to the right used to exile her to x=5950; now the wall end (3650) fences her at 3350.
+  let list = [w];
+  for (let i = 0; i < 40; i++) { const r = nudgeAccessory('w1', 50, list, wall, scene, layout); if (r.ok) list = r.list; }
+  assert.equal(list[0].xMm, 3350, 'centre stops at wall - w/2');
+  // Trapped: a cabinet built over her (the old bug). Every nudge used to refuse; now she walks out to the first free spot.
+  const trapped = [{ ...w, xMm: 1200 }]; // inside b2 (800-1600)
+  const out = okNudge(nudgeAccessory('w1', 50, trapped, wall, scene, layout));
+  assert.ok(out.list[0].xMm >= 1900, `she escaped to ${out.list[0].xMm}`);
+  // And from her proper place (flush, 5 mm from the cabinet) a step towards it is refused, while a step away works.
+  const back = nudgeAccessory('w1', -50, out.list, wall, scene, layout);
+  assert.ok('error' in back, 'flush against a cabinet, the step into it is refused');
+  const away = okNudge(nudgeAccessory('w1', 50, out.list, wall, scene, layout));
+  assert.equal(away.list[0].xMm, out.list[0].xMm + 50);
+});
+
+test('coordination: a floor piece may stand on a side wall, and only competes there', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wallB = [cab('bb', { positionX: 0, width: 900, run: 'B' as const })];
+  const scene = sceneRefOf(wallB, 600);
+  const r = okPlace(placeAccessory('washer', 'w1', [], wallB, scene, undefined, undefined, { layout, run: 'B' }));
+  assert.equal(r.placed.run, 'B');
+  assert.equal(r.placed.xMm, 1205, 'after the 900 mm unit on the 2750 mm side wall (900 + 5 margin + 300)');
+  // The same centre on wall A is a different floor: no clash across walls.
+  const onA = okPlace(placeAccessory('washer', 'w2', [r.placed], wallB, scene, undefined, undefined, { layout, run: 'A' }));
+  assert.equal(onA.placed.xMm, 300);
+});
+
+test('transform: a placed piece takes the user size — footprint, drawing size and collisions all follow', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wall = [cab('b1', { positionX: 0, width: 800 }), cab('b2', { positionX: 800, width: 800 })];
+  const scene = sceneRefOf(wall, 600);
+  const w = okPlace(placeAccessory('washer', 'w1', [], wall, scene, undefined, undefined, { layout })).placed;
+  const fp0 = footprintOf(w, [w], wall, scene);
+  assert.equal(fp0?.w, 600);
+  // Slimmer washer: 500 wide. The footprint (what the 3D layer draws and collides with) is 500 from now on.
+  const slim = okTransform(resizeAccessory('w1', { w: 500, h: 850, d: 600 }, [w], wall, scene, layout));
+  const fp1 = footprintOf(slim[0], slim, wall, scene);
+  assert.equal(fp1?.w, 500, 'footprint follows the user size');
+  assert.equal(slim[0].sizeMm?.w, 500);
+  // Too wide for the wall end she stands against: refused, and the refusal names the largest width that fits here.
+  const wide = resizeAccessory('w1', { w: 3000, h: 850, d: 600 }, [w], wall, scene, layout);
+  assert.ok('error' in wide && wide.error.includes('أقصى عرض ممكن هنا'), `refusal carries the max: ${'error' in wide ? wide.error : ''}`);
+  // Reset restores the catalog size.
+  const back = resetAccessoryTransform(slim, 'w1');
+  assert.equal(back[0].sizeMm, undefined);
+  assert.equal(footprintOf(back[0], back, wall, scene)?.w, 600);
+});
+
+test('transform: quarter turns swap the footprint, mirroring does not move it, and a turn that cannot stand is refused', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wall = [
+    cab('corner', { positionX: 0, width: 679 }),
+    cab('b1', { positionX: 680, width: 800 }),
+    cab('b2', { positionX: 1480, width: 800 }),
+    cab('tall', { positionX: 2890, width: 750, height: 2100 }),
+  ];
+  const scene = sceneRefOf(wall, 600);
+  // A fridge (600 wide x 650 deep) in the 610 mm gap: she fits one way only — turning her must be refused, not clipped.
+  const f = okPlace(placeAccessory('fridge-single', 'f1', [], wall, scene, undefined, undefined, { layout })).placed;
+  assert.equal(f.xMm, 2585);
+  const turned = rotateAccessory('f1', 1, [f], wall, scene, layout);
+  assert.ok('error' in turned && turned.error.includes('لا يتسع'), 'a 650 mm front in a 610 mm gap cannot turn');
+  // In open floor she turns, and the footprint really swaps.
+  const open = [cab('b1', { positionX: 0, width: 800 })];
+  const f2 = okPlace(placeAccessory('fridge-single', 'f2', [], open, scene, undefined, undefined, { layout })).placed;
+  const moved = okNudge(nudgeAccessory('f2', 200, [f2], open, scene, layout)).list; // room to turn: she was flush against the cabinet
+  const rot = okTransform(rotateAccessory('f2', 1, moved, open, scene, layout));
+  assert.equal(rot[0].rotY, 90);
+  const fp = footprintOf(rot[0], rot, open, scene);
+  assert.equal(fp?.w, 650); assert.equal(fp?.d, 600);
+  const back = okTransform(rotateAccessory('f2', -1, rot, open, scene, layout));
+  assert.equal(back[0].rotY, 0);
+  // Mirroring: same place, same footprint, just the other door side.
+  const mir = okTransform(flipAccessory(back, 'f2'));
+  assert.equal(mir[0].flip, true);
+  assert.equal(footprintOf(mir[0], mir, open, scene)?.w, 600);
+});
+
+test('transform: hosted pieces answer to their host — inside a cabinet and on a sink', () => {
+  const host = cab('host', { positionX: 0, width: 600, height: 720, depth: 560 });
+  const scene = sceneRefOf([host], 600);
+  const inside = ACCESSORY_CATALOG.find((a) => a.mount === 'CABINET_INSIDE');
+  assert.ok(inside, 'the catalog has interior pieces');
+  const placedIn = okPlace(placeAccessory(inside.id, 'in1', [], [host], scene, 'host')).placed;
+  const tooWide = resizeAccessory('in1', { w: 900, h: inside.sizeMm.h, d: inside.sizeMm.d }, [placedIn], [host], scene);
+  assert.ok('error' in tooWide && tooWide.error.includes('الفتحة الداخلية'), 'wider than the cabinet interior is refused');
+  const fitsIn = resizeAccessory('in1', { w: 400, h: inside.sizeMm.h, d: 300 }, [placedIn], [host], scene);
+  assert.ok('list' in fitsIn, 'a size inside the host is accepted');
+  // A tap on a sink cannot outgrow the sink.
+  const sink = okPlace(placeAccessory('sink-single', 's1', [], RUN, SCENE)).placed;
+  const tapItem = ACCESSORY_CATALOG.find((a) => a.rest === 'SINK' && a.restGroup === 'TAP');
+  assert.ok(tapItem, 'the catalog has taps');
+  const tap = okPlace(placeAccessory(tapItem.id, 't1', [sink], RUN, SCENE)).placed;
+  const bigTap = resizeAccessory('t1', { w: 900, h: tapItem.sizeMm.h, d: tapItem.sizeMm.d }, [sink, tap], RUN, SCENE);
+  assert.ok('error' in bigTap && bigTap.error.includes('أكبر من الحوض'), 'a tap wider than its sink is refused');
 });

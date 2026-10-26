@@ -8,19 +8,21 @@ export type Grain = 'vertical' | 'horizontal';
 /** Drawer and apron fronts run their grain across, everything else along. */
 export const grainOf = (kind: string): Grain => (kind === 'DRAWER' || kind === 'APRON' ? 'horizontal' : 'vertical');
 
-/** One front material per distinct facade size and grain, so the texture scale follows each front. */
-export const materialKeyOf = (f: { kind: string; widthMm: number; heightMm: number }): string => `${f.widthMm}x${f.heightMm}x${grainOf(f.kind)}`;
+/** One front material per distinct facade size and grain, so the texture scale follows each front. A zone may overrule the
+ * grain of its kind, and flip it 180° (the R suffix): the key carries both, so each combination gets its own material. */
+export const materialKeyOf = (f: { kind: string; widthMm: number; heightMm: number }, grain?: Grain, flip?: boolean): string =>
+  `${f.widthMm}x${f.heightMm}x${grain ?? grainOf(f.kind)}${flip ? 'R' : ''}`;
 
 /**
  * Every material key a cabinet's fronts need, as one string. It is the memo key for the front materials: it does NOT change when a
  * cabinet only moves or when a front keeps its size, so the materials (and their GPU textures) are not rebuilt for nothing.
  */
 export const facadeMaterialSignature = (facades: ReadonlyArray<{ kind: string; widthMm: number; heightMm: number }>): string =>
-  [...new Set(facades.map(materialKeyOf))].sort().join('|');
+  [...new Set(facades.map((f) => materialKeyOf(f)))].sort().join('|');
 
-export function parseMaterialKey(key: string): { widthMm: number; heightMm: number; grain: Grain } {
+export function parseMaterialKey(key: string): { widthMm: number; heightMm: number; grain: Grain; flip: boolean } {
   const [w, h, grain] = key.split('x');
-  return { widthMm: Number(w), heightMm: Number(h), grain: grain === 'horizontal' ? 'horizontal' : 'vertical' };
+  return { widthMm: Number(w), heightMm: Number(h), grain: grain?.startsWith('horizontal') ? 'horizontal' : 'vertical', flip: !!grain?.endsWith('R') };
 }
 
 /** The part of a three.js material the lifecycle touches. */

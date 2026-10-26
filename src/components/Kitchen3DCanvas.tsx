@@ -6,7 +6,9 @@ import * as THREE from 'three';
 import CabinetAssembly3D from './CabinetAssembly3D';
 import AccessoryLayer from './AccessoryLayer';
 import OnlineTextureBrowser from './OnlineTextureBrowser';
-import type { PlacedAccessory } from '../math/accessoryPlacement';
+import type { PlacedAccessory, TransformResult } from '../math/accessoryPlacement';
+import { getAccessory } from '../data/accessoryCatalog';
+import AccessoryTransformEditor from './AccessoryTransformEditor';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
 import { CabinetObject, AdvancedHardwareSettings, InjectedWoodMaterial, InjectedHardwareItem, RunId } from '../types/flatma';
 import { KitchenLayout, DEFAULT_LAYOUT, DEFAULT_ROOM_DEPTH_MM, alongToFrame, roomHeightOf, runFrame, runOf, runsOf, toFrame, wallBottomMmOf } from '../math/kitchenLayout';
@@ -36,6 +38,12 @@ interface Kitchen3DCanvasProps {
   /** An empty texturePath means "back to the stock material". */
   onApplyTextureOverride: (cabinetId: string, texturePath: string, finishType: string, applyToAll: boolean) => void;
   onDeleteCabinet: (cabinetId: string) => void;
+  /** Size & direction editing of a library piece clicked in the 3D view (optional: unwired hosts keep pieces unselectable). */
+  onResizeAccessory?: (id: string, size: { w: number; h: number; d: number }) => TransformResult;
+  onRotateAccessory?: (id: string, dir: 1 | -1) => TransformResult;
+  onFlipAccessory?: (id: string) => TransformResult;
+  onResetAccessoryTransform?: (id: string) => void;
+  onRemoveAccessory?: (id: string) => void;
 }
 
 /** The room behind the kitchen: the colour and the two grid tones derived from it (math/palette.ts). */
@@ -75,7 +83,12 @@ export default function Kitchen3DCanvas({
   hardwareItems,
   accessories = [],
   onApplyTextureOverride,
-  onDeleteCabinet
+  onDeleteCabinet,
+  onResizeAccessory,
+  onRotateAccessory,
+  onFlipAccessory,
+  onResetAccessoryTransform,
+  onRemoveAccessory
 }: Kitchen3DCanvasProps) {
 
   const [openProgress, setOpenProgress] = useState<number>(0);
@@ -87,6 +100,26 @@ export default function Kitchen3DCanvas({
   const [urlError, setUrlError] = useState<string>('');
   const [browserOpen, setBrowserOpen] = useState<boolean>(false);
   const [viewNonce, setViewNonce] = useState(0); // «show the whole kitchen»: bumped by the reset-view button
+  const [selectedAccessoryId, setSelectedAccessoryId] = useState<string | null>(null);
+  // Fronts opened one by one (double-click on a front): "cabinetId|facadeKey" -> open. A front with no entry follows
+  // the master kinematic slider, exactly as every front did before individual opening existed.
+  const [frontOpenMap, setFrontOpenMap] = useState<Record<string, boolean>>({});
+  const toggleFront = (cabinetId: string, facadeKey: string) => {
+    const k = `${cabinetId}|${facadeKey}`;
+    setFrontOpenMap((prev) => ({ ...prev, [k]: !(k in prev ? prev[k] : openProgress > 0.5) }));
+  };
+  const frontOpenByCabinet = useMemo(() => {
+    const out: Record<string, Record<string, boolean>> = {};
+    Object.entries(frontOpenMap).forEach(([k, v]) => {
+      const i = k.indexOf('|');
+      const cab = k.slice(0, i);
+      (out[cab] ??= {})[k.slice(i + 1)] = v;
+    });
+    return out;
+  }, [frontOpenMap]);
+  const selectedAccessory = useMemo(() => accessories.find((a) => a.id === selectedAccessoryId) ?? null, [accessories, selectedAccessoryId]);
+  const selectedAccessoryItem = selectedAccessory ? getAccessory(selectedAccessory.catalogId) : undefined;
+  const accessoryEditable = !!(onResizeAccessory && onRotateAccessory && onFlipAccessory && onResetAccessoryTransform);
 
   // Colour strip: arrows to scroll it (touch swipe and the mouse wheel also work). Arrows hide at either end.
   const stripRef = useRef<HTMLDivElement>(null);
@@ -205,6 +238,7 @@ export default function Kitchen3DCanvas({
   const accessoriesOf = useCallback((run: RunId): PlacedAccessory[] => {
     const runOfAccessory = (a: PlacedAccessory, depth = 0): RunId => {
       if (a.cabinetId) { const c = cabinets.find(x => x.id === a.cabinetId); return c ? runOf(c) : 'A'; }
+      if (a.run) return a.run; // a floor piece chose its wall (older saves have none: the back wall, as before)
       if (a.hostId && depth < 4) { const h = accessories.find(x => x.id === a.hostId); return h ? runOfAccessory(h, depth + 1) : 'A'; }
       return 'A';
     };
@@ -282,12 +316,13 @@ export default function Kitchen3DCanvas({
                           onClick={(e) => {
                             e.stopPropagation();
                             setSelectedCabinetId(cabinet.id); // Raycasting simulation trigger
+                            setSelectedAccessoryId(null);
                           }}
                         >
                           {isWallNode ? (
-                            <WallCabinetAssembly3D cabinet={cabinet} showFronts={showFronts} isXRayMode={isXRayMode} woodPanels={woodPanels} hardwareItems={hardwareItems} openProgress={openProgress} />
+                            <WallCabinetAssembly3D cabinet={cabinet} showFronts={showFronts} isXRayMode={isXRayMode} woodPanels={woodPanels} hardwareItems={hardwareItems} openProgress={openProgress} frontOpen={frontOpenByCabinet[cabinet.id]} onToggleFront={(fkey) => toggleFront(cabinet.id, fkey)} />
                           ) : (
-                            <CabinetAssembly3D cabinet={cabinet} showFronts={showFronts} isXRayMode={isXRayMode} woodPanels={woodPanels} hardwareItems={hardwareItems} openProgress={openProgress} />
+                            <CabinetAssembly3D cabinet={cabinet} showFronts={showFronts} isXRayMode={isXRayMode} woodPanels={woodPanels} hardwareItems={hardwareItems} openProgress={openProgress} frontOpen={frontOpenByCabinet[cabinet.id]} onToggleFront={(fkey) => toggleFront(cabinet.id, fkey)} />
                           )}
                         </group>
                       );
@@ -299,7 +334,7 @@ export default function Kitchen3DCanvas({
                     )}
 
                     {/* Accessories library: sockets, sinks, hobs, hoods, lighting, organisers */}
-                    <AccessoryLayer accessories={accessoriesOf(run)} cabinets={framed[run]} wallSplashHeightMm={hardware.wallSplashHeight} roomHeightMm={roomHeightMm} isXRayMode={isXRayMode} />
+                    <AccessoryLayer accessories={accessoriesOf(run)} cabinets={framed[run]} wallSplashHeightMm={hardware.wallSplashHeight} roomHeightMm={roomHeightMm} isXRayMode={isXRayMode} selectedId={selectedAccessoryId ?? undefined} onSelect={accessoryEditable ? (id) => { setSelectedAccessoryId(id); setSelectedCabinetId(null); } : undefined} />
                   </group>
                 );
               })}
@@ -464,6 +499,22 @@ export default function Kitchen3DCanvas({
             ›
           </button>
           </div>
+        </div>
+      )}
+
+      {/* 📐 The library piece clicked in the 3D view: same size & direction editor as the drawer, over the scene. */}
+      {selectedAccessory && selectedAccessoryItem && accessoryEditable && (
+        <div className="absolute bottom-4 left-4 right-4 z-40 bg-white/80 backdrop-blur-xl border border-white/40 p-3 rounded-2xl shadow-xl animate-fade-in" style={{ direction: 'rtl' }}>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <span className="text-[11px] font-bold text-slate-800 truncate">{selectedAccessoryItem.icon} {selectedAccessoryItem.nameAr} — المقاس والاتجاه</span>
+            <span className="flex items-center gap-2 flex-shrink-0">
+              {onRemoveAccessory && (
+                <button type="button" onClick={() => { onRemoveAccessory(selectedAccessory.id); setSelectedAccessoryId(null); }} className="px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 text-[10px] font-bold cursor-pointer">🗑 حذف القطعة</button>
+              )}
+              <button type="button" aria-label="إغلاق" onClick={() => setSelectedAccessoryId(null)} className="w-5 h-5 rounded-full bg-slate-200/50 hover:bg-slate-200 text-slate-500 flex items-center justify-center font-bold text-[9px] cursor-pointer">✕</button>
+            </span>
+          </div>
+          <AccessoryTransformEditor item={selectedAccessoryItem} placed={selectedAccessory} onResize={onResizeAccessory!} onRotate={onRotateAccessory!} onFlip={onFlipAccessory!} onReset={onResetAccessoryTransform!} tone="light" />
         </div>
       )}
 

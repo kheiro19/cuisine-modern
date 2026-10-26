@@ -35,8 +35,8 @@ test('materials: equal fronts share one material, and drawers run their grain ac
 });
 
 test('materials: a key survives the round trip, half millimetres included', () => {
-  assert.deepEqual(parseMaterialKey('599.5x718.5xhorizontal'), { widthMm: 599.5, heightMm: 718.5, grain: 'horizontal' });
-  assert.deepEqual(parseMaterialKey('300x200xvertical'), { widthMm: 300, heightMm: 200, grain: 'vertical' });
+  assert.deepEqual(parseMaterialKey('599.5x718.5xhorizontal'), { widthMm: 599.5, heightMm: 718.5, grain: 'horizontal', flip: false });
+  assert.deepEqual(parseMaterialKey('300x200xvertical'), { widthMm: 300, heightMm: 200, grain: 'vertical', flip: false });
   assert.equal(facadeMaterialSignature([]), '');
 });
 
@@ -63,4 +63,20 @@ test('materials: StrictMode runs setup, cleanup, setup on the same materials and
   assert.equal(canAttachTexture(m), true, 'the texture that arrives next still attaches');
   disposeOwned(m);              // the real unmount
   assert.equal(canAttachTexture(m), false);
+});
+
+test('grain: a zone may overrule the grain of its fronts and flip it 180°, and the choice survives the draft', () => {
+  // The key carries the choice; the parser reads it back, flip included. Old keys (no choice) parse as before.
+  assert.equal(materialKeyOf({ kind: 'DOOR', widthMm: 400, heightMm: 720 }), '400x720xvertical');
+  assert.equal(materialKeyOf({ kind: 'DRAWER', widthMm: 800, heightMm: 176 }), '800x176xhorizontal');
+  assert.equal(materialKeyOf({ kind: 'DOOR', widthMm: 400, heightMm: 720 }, 'horizontal', true), '400x720xhorizontalR');
+  assert.deepEqual(parseMaterialKey('400x720xhorizontalR'), { widthMm: 400, heightMm: 720, grain: 'horizontal', flip: true });
+  assert.deepEqual(parseMaterialKey('400x720xvertical'), { widthMm: 400, heightMm: 720, grain: 'vertical', flip: false });
+  // Through resolveDraft: chosen on a doors zone, kept; a zone without fronts (OPEN) drops it.
+  const base = M.config('deepDrawers');
+  const withGrain = P.resolveDraft({ ...base, zones: [{ kind: 'DOORS', count: 2, grainDirection: 'horizontal', grainFlip: true }] }, WOODS, [], []);
+  assert.equal(withGrain.zones[0].grainDirection, 'horizontal');
+  assert.equal(withGrain.zones[0].grainFlip, true);
+  const open = P.resolveDraft({ ...base, zones: [{ kind: 'OPEN', shelves: 2, grainDirection: 'horizontal' }] }, WOODS, [], []);
+  assert.equal(open.zones[0].grainDirection, undefined, 'no fronts, no grain choice');
 });

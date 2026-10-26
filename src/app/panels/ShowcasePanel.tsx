@@ -1,15 +1,15 @@
 // The 3D Executive Showcase wing: the whole kitchen as the customer sees it, with the view toggles, the worktop
 // controls and the accessories library. Presentational — App owns the cabinets, the layout and every action.
-import type { Dispatch, SetStateAction } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import Kitchen3DCanvas from '../../components/Kitchen3DCanvas';
 import AccessoryLibrary from '../../components/AccessoryLibrary';
 import CommitNumber from '../../components/CommitNumber';
-import type { CabinetObject, InjectedHardwareItem, InjectedWoodMaterial, AdvancedHardwareSettings } from '../../types/flatma';
+import type { CabinetObject, InjectedHardwareItem, InjectedWoodMaterial, AdvancedHardwareSettings, RunId } from '../../types/flatma';
 import type { KitchenLayout } from '../../math/kitchenLayout';
-import { DEFAULT_WALL_GAP_MM } from '../../math/kitchenLayout';
+import { DEFAULT_WALL_GAP_MM, runsOf } from '../../math/kitchenLayout';
 import { COUNTERTOP } from '../../math/constants';
 import type { CountertopSettings } from '../../math/countertop';
-import type { PlacedAccessory, NudgeResult, PlaceResult } from '../../math/accessoryPlacement';
+import type { PlacedAccessory, NudgeResult, PlaceResult, TransformResult } from '../../math/accessoryPlacement';
 import type { FinishKey } from '../../data/accessoryCatalog';
 import type { useTextureCatalog } from '../../data/textureCatalog';
 
@@ -37,20 +37,27 @@ export interface ShowcasePanelProps {
   accessories: PlacedAccessory[];
   onApplyTextureOverride: (cabinetId: string, texturePath: string, finishType: string, applyToAll: boolean) => void;
   onDeleteCabinet: (cabinetId: string) => void;
-  onAddAccessory: (catalogId: string, hostCabinetId?: string, finish?: FinishKey) => PlaceResult;
+  onAddAccessory: (catalogId: string, hostCabinetId?: string, finish?: FinishKey, run?: RunId) => PlaceResult;
   onNudgeAccessory: (id: string, dxMm: number) => NudgeResult;
   onRemoveAccessory: (id: string) => void;
   onFinishAccessory: (id: string, finish: FinishKey) => void;
   onClearAccessories: () => void;
+  onResizeAccessory: (id: string, size: { w: number; h: number; d: number }) => TransformResult;
+  onRotateAccessory: (id: string, dir: 1 | -1) => TransformResult;
+  onFlipAccessory: (id: string) => TransformResult;
+  onResetAccessoryTransform: (id: string) => void;
 }
 
 export default function ShowcasePanel(props: ShowcasePanelProps) {
   const { cabinets, hardwareSettings, layout, showFronts, setShowFronts, isXRayMode, setIsXRayMode, isWorkspaceMinimized, isShowroomMinimized, setIsWorkspaceMinimized, setIsShowroomMinimized, countertop, setCountertopSettings, countertopShort, countertopPath, countertopFinishOpen, setCountertopFinishOpen, localTextures, woodPanels, hardwareItems, accessories } = props;
-  const { onApplyTextureOverride, onDeleteCabinet, onAddAccessory, onNudgeAccessory, onRemoveAccessory, onFinishAccessory, onClearAccessories } = props;
+  const { onApplyTextureOverride, onDeleteCabinet, onAddAccessory, onNudgeAccessory, onRemoveAccessory, onFinishAccessory, onClearAccessories, onResizeAccessory, onRotateAccessory, onFlipAccessory, onResetAccessoryTransform } = props;
   // The canvas and the library keep the prop names they always had.
   const handleApplyTexture = onApplyTextureOverride;
   const addAccessory = onAddAccessory, nudgeAccessory = onNudgeAccessory, removeAccessory = onRemoveAccessory, changeAccessoryFinish = onFinishAccessory, clearAccessories = onClearAccessories;
   const woods = woodPanels;
+  // The library lives in a drawer over the canvas (toggle in the header): under the canvas it stretched the page by
+  // its whole height and pushed everything below it far down. Closed, it costs the layout nothing at all.
+  const [libraryOpen, setLibraryOpen] = useState(false);
   return (
     <>
         {/* 📺 الجناح الثالث: صالة عرض المطبخ ثلاثية الأبعاد الكبرى للزبون (Showcase Canvas) */}
@@ -82,6 +89,15 @@ export default function ShowcasePanel(props: ShowcasePanelProps) {
               </button>
 
               {/* سطح العمل: إظهار / إخفاء — يرسمه الزبون من عنده، فلا يدخل التسعير */}
+              <button
+                type="button"
+                aria-expanded={libraryOpen}
+                onClick={() => setLibraryOpen((o) => !o)}
+                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${libraryOpen ? 'bg-amber-500 text-slate-900' : 'bg-slate-800 text-slate-200 hover:text-white'}`}
+              >
+                🧰 مكتبة المطبخ {accessories.length > 0 ? `(${accessories.length})` : ''}
+              </button>
+
               <span className="w-px bg-slate-600" />
               <button
                 type="button"
@@ -184,10 +200,19 @@ export default function ShowcasePanel(props: ShowcasePanelProps) {
                 accessories={accessories}
                 onApplyTextureOverride={handleApplyTexture}
                 onDeleteCabinet={onDeleteCabinet}
+                onResizeAccessory={onResizeAccessory}
+                onRotateAccessory={onRotateAccessory}
+                onFlipAccessory={onFlipAccessory}
+                onResetAccessoryTransform={onResetAccessoryTransform}
+                onRemoveAccessory={removeAccessory}
               />
+              {/* درج المكتبة: يطفو داخل إطار المشهد فقط (هذا الوعاء relative) فلا يغطي الترويسة ولا يغيّر ارتفاع الصفحة. */}
+              {libraryOpen && (
+                <div className="absolute top-2 bottom-16 right-2 z-30 w-[440px] max-w-[94%] overflow-y-auto rounded-2xl shadow-2xl" data-testid="accessory-drawer">
+                  <AccessoryLibrary cabinets={cabinets} accessories={accessories} layout={layout} runs={runsOf(layout)} onAdd={addAccessory} onNudge={nudgeAccessory} onRemove={removeAccessory} onFinish={changeAccessoryFinish} onClear={clearAccessories} onResize={onResizeAccessory} onRotate={onRotateAccessory} onFlip={onFlipAccessory} onResetTransform={onResetAccessoryTransform} />
+                </div>
+              )}
             </div>
-
-            <AccessoryLibrary cabinets={cabinets} accessories={accessories} onAdd={addAccessory} onNudge={nudgeAccessory} onRemove={removeAccessory} onFinish={changeAccessoryFinish} onClear={clearAccessories} />
           </div>
         )}
 

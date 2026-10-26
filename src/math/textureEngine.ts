@@ -87,7 +87,8 @@ export class TextureEngine {
     urlPath: string,
     widthMm: number,
     heightMm: number,
-    rotateGrain: boolean
+    rotateGrain: boolean,
+    flipGrain: boolean = false
   ): void {
     this.loadBaseTexture(urlPath).then((base) => {
       if (!base) return; // file missing: keep the flat colour
@@ -97,9 +98,10 @@ export class TextureEngine {
       texture.wrapS = THREE.RepeatWrapping;
       texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.set(widthMm / 1000, heightMm / 1000);
-      if (rotateGrain) {
+      const rotation = (rotateGrain ? Math.PI / 2 : 0) + (flipGrain ? Math.PI : 0);
+      if (rotation !== 0) {
         texture.center.set(0.5, 0.5);
-        texture.rotation = Math.PI / 2; // precise π/2 radial shift
+        texture.rotation = rotation; // π/2 for across-grain, plus π when the zone flipped its veins
       } else {
         texture.rotation = 0;
       }
@@ -136,7 +138,9 @@ export class TextureEngine {
     grainDirection: 'vertical' | 'horizontal' = 'vertical',
     override?: { path: string; finishType?: string },
     /** Sheen used only when no sheet is picked (the palette knows its own finish). */
-    fallbackFinish?: { roughness: number; metalness: number }
+    fallbackFinish?: { roughness: number; metalness: number },
+    /** The sheet's veins run the other way (texture turned 180°). */
+    grainFlip: boolean = false
   ): THREE.MeshStandardMaterial {
 
     if (isXRayMode) {
@@ -197,7 +201,7 @@ export class TextureEngine {
     });
 
     if (texturePath) {
-      this.applyTextureAsync(compiledMaterial, texturePath, widthMm, heightMm, rotateGrain);
+      this.applyTextureAsync(compiledMaterial, texturePath, widthMm, heightMm, rotateGrain, grainFlip);
     }
 
     return compiledMaterial;

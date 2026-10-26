@@ -32,8 +32,10 @@ import {
 } from './math/cabinetPresets';
 import {
   DEFAULT_LAYOUT, DEFAULT_WALL_GAP_MM, DEPTH_LIMITS_MM, DEFAULT_ROOM_DEPTH_MM, DEFAULT_ROOM_HEIGHT_MM, HEIGHT_LIMITS_MM, KitchenLayout, RUN_LABELS, WALL_GAP_LIMITS_MM, WIDTH_LIMITS_MM,
-  autoArrange, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, placeAlongWall, runOf, runsOf, wallLengthOf, wallMountIssues,
+  autoArrange, cabinetsClashingPieces, clampOnWall, cornerClearanceMm, cornerWalls, fitStates, placeAlongWall, runOf, runsOf, wallLengthOf, wallMountIssues,
 } from './math/kitchenLayout';
+import type { FloorPieceSpan } from './math/kitchenLayout';
+import { getAccessory } from './data/accessoryCatalog';
 import { cornerDeckOf, cornerDimsOf, cornerFitsWalls, cornerGroupSpan, L_CORNER_LIMITS, lCornerCabinets, relayoutCornerGroup, withCornerExtension } from './math/lCorner';
 import type { CornerGroupDims, CornerRole } from './math/lCorner';
 import { CORNER, COUNTERTOP, LAYOUT } from './math/constants';
@@ -130,7 +132,7 @@ export default function App() {
     heightMm: clampInt(rawLayout.heightMm ?? DEFAULT_ROOM_HEIGHT_MM, HEIGHT_LIMITS_MM[0], HEIGHT_LIMITS_MM[1], DEFAULT_ROOM_HEIGHT_MM),
     wallGapMm: clampInt(rawLayout.wallGapMm ?? DEFAULT_WALL_GAP_MM, WALL_GAP_LIMITS_MM[0], WALL_GAP_LIMITS_MM[1], DEFAULT_WALL_GAP_MM),
   }), [rawLayout]);
-  const { accessories, add: addAccessory, nudge: nudgeAccessory, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories, replace: replaceAccessories } = useAccessories(cabinets, layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, layout.heightMm);
+  const { accessories, add: addAccessory, nudge: nudgeAccessory, resize: resizeAccessory, rotate: rotateAccessory, flip: flipAccessory, resetTransform: resetAccessoryTransform, remove: removeAccessory, changeFinish: changeAccessoryFinish, clear: clearAccessories, replace: replaceAccessories } = useAccessories(cabinets, layout.wallGapMm ?? DEFAULT_WALL_GAP_MM, layout.heightMm, layout);
 
   // ---- project files: new / open / save on the user's device (src/project) -----------------------------------
   // The saved state is exactly what reopening must reproduce: the cabinets, the stock AS ENTERED (the live shelf
@@ -189,7 +191,20 @@ export default function App() {
   const [armB, setArmB] = useState<number>(450);
   const [cornerWallRaw, setCornerWall] = useState<'B' | 'C'>('B');
   const cornerArm = (v: number) => clampInt(v, L_CORNER_LIMITS.ARM_MM[0], L_CORNER_LIMITS.ARM_MM[1], 450);
-  const fits = useMemo(() => fitStates(cabinets, layout, wallRef), [cabinets, layout, wallRef]);
+  // The library's floor pieces are citizens of the same floor: a base cabinet that shares their span is in a clash
+  // (the red frame), new cabinets are placed around them, and moves onto them are refused (below).
+  const floorSpans = useMemo<FloorPieceSpan[]>(() => accessories.flatMap((a) => {
+    const it = getAccessory(a.catalogId);
+    return it && it.mount === 'FLOOR' && !it.noCollide ? [{ run: a.run ?? 'A' as RunId, xMm: a.xMm, w: it.sizeMm.w }] : [];
+  }), [accessories]);
+  const floorBlockers = (run: RunId) => floorSpans.filter((s) => (s.run ?? 'A') === run).map((s) => ({ positionX: s.xMm - s.w / 2, width: s.w }));
+  const clashesWithPiece = (cab: Pick<CabinetObject, 'category' | 'width'>, positionX: number, run: RunId): boolean =>
+    cab.category === 'BASE_UNIT' && floorSpans.some((s) => (s.run ?? 'A') === run && positionX < s.xMm + s.w / 2 - 0.5 && s.xMm - s.w / 2 < positionX + cab.width - 0.5);
+  const fits = useMemo(() => {
+    const f = fitStates(cabinets, layout, wallRef);
+    cabinetsClashingPieces(cabinets, floorSpans).forEach((id) => { if (f[id] === 'FREE' || f[id] === 'TOUCHING') f[id] = 'OVERLAP'; });
+    return f;
+  }, [cabinets, layout, wallRef, floorSpans]);
   // Does the workshop really have the boards, the edge-band metres and the pieces this kitchen needs? (math/stockCheck.ts)
   const stockShortages = useMemo(() => checkStock(cabinets, woods, hardwareItems, edgeRolls), [cabinets, woods, hardwareItems, edgeRolls]);
 
@@ -397,6 +412,10 @@ export default function App() {
         };
       })() : null;
       if (cornerBox && 'refused' in cornerBox) { setLayoutNotice(cornerBox.refused); return; }
+      if (cornerBox && cornerBox.patches.some((pt) => { const c = cabinets.find((x) => x.id === pt.id); return !!c && clashesWithPiece({ category: c.category, width: pt.fields.width ?? c.width }, pt.fields.positionX ?? c.positionX, pt.fields.run ?? runOf(c)); })) {
+        setLayoutNotice('⛔ مقاسات الزاوية هذه تضع أحد صناديقها فوق قطعة أرضية من المكتبة. حرّك القطعة أو صغّر الزاوية. لم يُغيَّر شيء.');
+        return;
+      }
       if (cornerBox) {
         // One write, one undo step: the three boxes are one unit and must never be seen half-resized.
         patchCabinets(cornerBox.patches);
@@ -416,6 +435,11 @@ export default function App() {
       const nextGroup = groupIds.length
         ? cabinets.filter((c) => c.groupId === editing.groupId).map((c) => (c.id === editing.id ? { ...c, ...savedPatch } : c))
         : [];
+      const candidate = { ...editing, ...savedPatch };
+      if (clashesWithPiece(candidate, candidate.positionX, runOf(candidate))) {
+        setLayoutNotice('⛔ هذه المقاسات تضع الخزانة فوق قطعة أرضية من المكتبة (غسالة/ثلاجة قائمة...). حرّك القطعة أو الخزانة أولًا. لم يُغيَّر شيء.');
+        return;
+      }
       const deckNow = nextGroup.length ? cornerDeckOf(nextGroup) : null;
       const deckSame = nextGroup.every((c) => (c.cornerGroupDeckMm?.armAMm ?? null) === (deckNow?.armAMm ?? null) && (c.cornerGroupDeckMm?.armBMm ?? null) === (deckNow?.armBMm ?? null));
       updateCabinet(editing.id, deckNow && !deckSame ? { ...savedPatch, cornerGroupDeckMm: deckNow } : savedPatch);
@@ -426,7 +450,7 @@ export default function App() {
     }
     // A side wall starts after whatever stands in its corner on the back wall; a straight kitchen starts at 0 as it always did.
     const from = cornerClearanceMm(cabinets, layout, activeRun, resolved.category);
-    const place = placeAlongWall(cabinets, layout, activeRun, resolved.category, resolved.width, from);
+    const place = placeAlongWall(cabinets, layout, activeRun, resolved.category, resolved.width, from, floorBlockers(activeRun));
     if (!place.ok) {
       setLayoutNotice(place.reason === 'TOO_WIDE'
         ? `⛔ عرض هذه الخزانة (${resolved.width} مم) أكبر من المساحة المتاحة على ${RUN_LABELS[activeRun]} (${Math.round(place.freeMm)} مم).`
@@ -448,10 +472,16 @@ export default function App() {
   const handleAddLCorner = (wall: 'B' | 'C') => {
     if (!canInject || cornerTaken(wall)) return;
     const groups = new Set(cabinets.map((c) => c.groupId).filter(Boolean)).size;
-    addCabinets(lCornerCabinets(
+    const made = lCornerCabinets(
       { category: cornerCategory, wall, roomWidthMm: layout.widthMm, depthMm: cornerDepth, armAMm: cornerArm(armA), armBMm: cornerArm(armB) },
       { draft: resolved, woods, hardware: hardwareItems, edgeRolls, groupId: uid('lc'), newId: () => uid('cab'), name: `خزانة زاوية L ${cornerCategory === 'WALL_UNIT' ? 'علوية' : 'سفلية'} #${groups + 1}` },
-    ));
+    );
+    if (made.some((c) => clashesWithPiece(c, c.positionX, runOf(c)))) {
+      setLayoutNotice('⛔ الزاوية تقع فوق قطعة أرضية من المكتبة في هذا الركن. حرّك القطعة أولًا.');
+      return;
+    }
+    setLayoutNotice(null);
+    addCabinets(made);
   };
 
   // ---- moving the units: the arrows move 5 cm, the box takes any distance (from the left end on the back wall, from the corner on a side wall)
@@ -459,6 +489,8 @@ export default function App() {
     const cab = cabinets.find((c) => c.id === id);
     if (!cab) return;
     const x = clampOnWall(cab.positionX + deltaMm, cab.width, wallLengthOf(layout, runOf(cab)));
+    if (clashesWithPiece(cab, x, runOf(cab))) { setLayoutNotice('⛔ توجد قطعة أرضية من المكتبة في هذا المكان. حرّك القطعة أولًا.'); return; }
+    setLayoutNotice(null);
     moveCabinets([{ id, positionX: x }]);
   };
   /** Another wall: the unit goes to the first free place there (after the corner, if something stands in it). */
@@ -466,7 +498,7 @@ export default function App() {
     const cab = cabinets.find((c) => c.id === id);
     if (!cab || runOf(cab) === run) return;
     const others = cabinets.filter((c) => c.id !== id);
-    const place = placeAlongWall(others, layout, run, cab.category, cab.width, cornerClearanceMm(others, layout, run, cab.category));
+    const place = placeAlongWall(others, layout, run, cab.category, cab.width, cornerClearanceMm(others, layout, run, cab.category), floorBlockers(run));
     if (!place.ok) {
       setLayoutNotice(place.reason === 'TOO_WIDE'
         ? `⛔ عرض هذه الخزانة (${cab.width} مم) أكبر من المساحة المتاحة على ${RUN_LABELS[run]} (${Math.round(place.freeMm)} مم).`
@@ -480,7 +512,10 @@ export default function App() {
   const setCabinetPosition = (id: string, positionX: number) => {
     const cab = cabinets.find((c) => c.id === id);
     if (!cab) return;
-    moveCabinets([{ id, positionX: clampOnWall(positionX, cab.width, wallLengthOf(layout, runOf(cab))) }]);
+    const x = clampOnWall(positionX, cab.width, wallLengthOf(layout, runOf(cab)));
+    if (clashesWithPiece(cab, x, runOf(cab))) { setLayoutNotice('⛔ توجد قطعة أرضية من المكتبة في هذا المكان. حرّك القطعة أو الخزانة إلى فجوة حرة.'); return; }
+    setLayoutNotice(null);
+    moveCabinets([{ id, positionX: x }]);
   };
   /** Auto arrange packs the units from the start of each wall; if the row is longer than the wall, nothing moves. */
   const handleAutoArrange = () => {
@@ -490,6 +525,11 @@ export default function App() {
       .find(({ m, cab }) => cab && m.positionX + cab.width > wallLengthOf(layout, runOf(cab)) + 0.5);
     if (overflow?.cab) {
       setLayoutNotice(`⛔ الترتيب التلقائي يتطلب ${Math.round(overflow.m.positionX + overflow.cab.width)} مم على ${RUN_LABELS[runOf(overflow.cab)]}، والجدار ${Math.round(wallLengthOf(layout, runOf(overflow.cab)))} مم فقط. لم يُحرَّك شيء.`);
+      return;
+    }
+    const ontoPiece = moves.find((m) => { const cab = cabinets.find((c) => c.id === m.id); return !!cab && clashesWithPiece(cab, m.positionX, runOf(cab)); });
+    if (ontoPiece) {
+      setLayoutNotice('⛔ الترتيب التلقائي سيضع خزانة فوق قطعة أرضية من المكتبة. حرّك القطعة أولًا. لم يُحرَّك شيء.');
       return;
     }
     setLayoutNotice(null);
@@ -621,7 +661,7 @@ export default function App() {
           countertopPath={countertopPath} countertopFinishOpen={countertopFinishOpen} setCountertopFinishOpen={setCountertopFinishOpen}
           localTextures={localTextures} woodPanels={woods} hardwareItems={hardwareItems} accessories={accessories}
           onApplyTextureOverride={handleApplyTexture} onDeleteCabinet={handleDeleteFromCanvas}
-          onAddAccessory={addAccessory} onNudgeAccessory={nudgeAccessory} onRemoveAccessory={removeAccessory}
+          onAddAccessory={addAccessory} onNudgeAccessory={nudgeAccessory} onRemoveAccessory={removeAccessory} onResizeAccessory={resizeAccessory} onRotateAccessory={rotateAccessory} onFlipAccessory={flipAccessory} onResetAccessoryTransform={resetAccessoryTransform}
           onFinishAccessory={changeAccessoryFinish} onClearAccessories={clearAccessories}
         />
 

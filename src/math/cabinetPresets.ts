@@ -142,7 +142,7 @@ function normalizeZone(z: CabinetZone, category: CabinetCategory): CabinetZone {
  * What the zone chooses for its own fronts (front sheet, band roll, opening mode): kept only on a zone that has fronts, and the
  * opening mode only where it can work (Gola needs a doors / drawers zone in a category that takes it). Stock ids are checked in resolveDraft.
  */
-function normalizeZoneFronts(z: CabinetZone, n: CabinetZone, category: CabinetCategory): Pick<CabinetZone, 'frontMaterialId' | 'frontEdgeRollId' | 'openingMode'> | undefined {
+function normalizeZoneFronts(z: CabinetZone, n: CabinetZone, category: CabinetCategory): Pick<CabinetZone, 'frontMaterialId' | 'frontEdgeRollId' | 'openingMode' | 'grainDirection' | 'grainFlip'> | undefined {
   const hasFronts = n.kind === 'DOORS' || n.kind === 'DRAWERS' || n.kind === 'APRON' || (n.kind === 'APPLIANCE' && !!n.panelFront);
   if (!hasFronts) return undefined;
   const openingMode = resolveZoneOpeningMode(z.openingMode, category, n);
@@ -150,6 +150,8 @@ function normalizeZoneFronts(z: CabinetZone, n: CabinetZone, category: CabinetCa
     ...(z.frontMaterialId ? { frontMaterialId: z.frontMaterialId } : {}),
     ...(z.frontEdgeRollId ? { frontEdgeRollId: z.frontEdgeRollId } : {}),
     ...(openingMode ? { openingMode } : {}),
+    ...(z.grainDirection ? { grainDirection: z.grainDirection } : {}),
+    ...(z.grainFlip ? { grainFlip: true } : {}),
   };
   return Object.keys(out).length > 0 ? out : undefined;
 }

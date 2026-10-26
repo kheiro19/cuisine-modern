@@ -29,6 +29,8 @@ const zoneOfKind = (kind: ZoneKind, previous: CabinetZone): CabinetZone => {
     ...(previous.frontMaterialId ? { frontMaterialId: previous.frontMaterialId } : {}),
     ...(previous.frontEdgeRollId ? { frontEdgeRollId: previous.frontEdgeRollId } : {}),
     ...(previous.openingMode ? { openingMode: previous.openingMode } : {}),
+    ...(previous.grainDirection ? { grainDirection: previous.grainDirection } : {}),
+    ...(previous.grainFlip ? { grainFlip: true } : {}),
   };
   if (kind === 'DOORS') return { kind, count: previous.count ?? 2, shelves: 0, ...own };
   if (kind === 'DRAWERS') return { kind, count: previous.count ?? 2, ...own };
@@ -379,6 +381,28 @@ export default function ZonesEditor(props: ZonesEditorProps) {
                               <option value="NONE">بدون شريط</option>
                               {edgeRolls.map((r) => (<option key={r.id} value={r.id}>{r.brand} · {r.thickness}مم × {r.width}مم · {Math.round(bandPricePerMeterDA(r))} دج/م</option>))}
                             </select>
+                          </label>
+                          <label className="flex items-center gap-1 font-bold">
+                            عروق الخشب
+                            <select
+                              aria-label="اتجاه عروق واجهات القسم"
+                              value={z.grainDirection ?? ''}
+                              onChange={(e) => updateZone(i, { grainDirection: e.target.value ? (e.target.value as 'vertical' | 'horizontal') : undefined })}
+                              className="border bg-white rounded p-0.5 text-[10px] font-normal"
+                            >
+                              <option value="">تلقائي (باب ↕ · درج ↔)</option>
+                              <option value="vertical">عمودي ↕</option>
+                              <option value="horizontal">أفقي ↔</option>
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-1 font-bold" title="تدوير الخامة 180°: العروق تسري بالاتجاه المعاكس">
+                            <input
+                              type="checkbox"
+                              aria-label="عكس عروق واجهات القسم"
+                              checked={!!z.grainFlip}
+                              onChange={(e) => updateZone(i, { grainFlip: e.target.checked || undefined })}
+                            />
+                            عكس العروق 180°
                           </label>
                           <span className="text-slate-500">
                             الفعلي: السمك {effSheet ? `${effSheet.thickness} مم` : '—'} · الشريط {effRoll ? `${effRoll.thickness} مم` : 'بدون'}{canOpen ? ` · ${modeName(effMode)}` : ''}

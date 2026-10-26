@@ -116,6 +116,10 @@ export interface CabinetZone {
    */
   frontMaterialId?: string;
   frontEdgeRollId?: string;
+  /** Wood-grain direction of THIS zone's fronts (missing = by front kind: doors along, drawers across). A look choice: it never changes a price or a cut, only how the sheet's veins run in the 3D view. */
+  grainDirection?: 'vertical' | 'horizontal';
+  /** The grain runs the other way (the texture turned 180°): for sheets whose veins clearly flow one way. */
+  grainFlip?: boolean;
   openingMode?: OpeningMode;
   /** DOORS / APPLIANCE only: one vertical board splits the zone into two columns (see math/columns.ts). Missing = one column, the whole width. */
   split?: ZoneSplit;
