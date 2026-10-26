@@ -7,6 +7,10 @@ import CabinetAssembly3D from './CabinetAssembly3D';
 import AccessoryLayer from './AccessoryLayer';
 import OnlineTextureBrowser from './OnlineTextureBrowser';
 import type { PlacedAccessory, TransformResult } from '../math/accessoryPlacement';
+import { buildRenderScene } from '../math/renderScene';
+import { auditDesign, type AuditFinding } from '../math/designAudit';
+import { buildAiRenderPrompt } from '../math/renderPrompt';
+import { Environment, Lightformer } from '@react-three/drei';
 import { getAccessory } from '../data/accessoryCatalog';
 import AccessoryTransformEditor from './AccessoryTransformEditor';
 import WallCabinetAssembly3D from './WallCabinetAssembly3D';
@@ -45,6 +49,42 @@ interface Kitchen3DCanvasProps {
   onResetAccessoryTransform?: (id: string) => void;
   onRemoveAccessory?: (id: string) => void;
 }
+
+/** Registers the 4K still capture: renders the current view once at 3840x2160 and downloads it as a PNG. */
+function StillCapture({ register }: { register: (fn: () => string | null) => void }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    register(() => {
+      try {
+        const cam = camera as THREE.PerspectiveCamera;
+        const prev = new THREE.Vector2();
+        gl.getSize(prev);
+        const prevRatio = gl.getPixelRatio();
+        const prevAspect = cam.aspect;
+        gl.setPixelRatio(1);
+        gl.setSize(3840, 2160, false);
+        cam.aspect = 3840 / 2160;
+        cam.updateProjectionMatrix();
+        gl.render(scene, cam);
+        const url = gl.domElement.toDataURL('image/png');
+        gl.setPixelRatio(prevRatio);
+        gl.setSize(prev.x, prev.y, false);
+        cam.aspect = prevAspect;
+        cam.updateProjectionMatrix();
+        gl.render(scene, cam);
+        return url;
+      } catch { return null; }
+    });
+  }, [gl, scene, camera, register]);
+  return null;
+}
+
+const downloadDataUrl = (url: string, name: string) => {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+};
 
 /** The room behind the kitchen: the colour and the two grid tones derived from it (math/palette.ts). */
 const ROOM = { ...DEFAULT_PALETTE.background, grid: gridColoursOf(DEFAULT_PALETTE.background.color) };
@@ -101,6 +141,127 @@ export default function Kitchen3DCanvas({
   const [browserOpen, setBrowserOpen] = useState<boolean>(false);
   const [viewNonce, setViewNonce] = useState(0); // «show the whole kitchen»: bumped by the reset-view button
   const [selectedAccessoryId, setSelectedAccessoryId] = useState<string | null>(null);
+  // Pro rendering (environment light + soft shadows), the cinematic render dialog and the smart audit dialog.
+  const [proMode, setProMode] = useState(false);
+  const captureRef = useRef<() => string | null>(() => null);
+  const [panel, setPanel] = useState<'none' | 'render' | 'audit' | 'ai'>('none');
+  const [endpoint, setEndpoint] = useState(() => { try { return localStorage.getItem('cuisine:renderEndpoint') || 'http://localhost:8787'; } catch { return 'http://localhost:8787'; } });
+  const [renderQuality, setRenderQuality] = useState<'fast' | 'final'>('fast');
+  const [renderBusy, setRenderBusy] = useState(false);
+  const [renderImage, setRenderImage] = useState<string | null>(null);
+  const [renderNote, setRenderNote] = useState<string | null>(null);
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const audit = useMemo(() => (panel === 'audit' ? auditDesign({ cabinets, layout, accessories, counterTopMm: Math.max(0, ...cabinets.filter((c) => c.category === 'BASE_UNIT').map((c) => c.height)) + countertop.thicknessMm, splashMm: hardware.wallSplashHeight }) : []), [panel, cabinets, layout, accessories, countertop.thicknessMm, hardware.wallSplashHeight]);
+  // 📋 AI hand-off & enhancement: a 4K still + an exact prompt built from the design data (buildAiRenderPrompt).
+  // Enhancement calls the provider directly from the browser with the USER's own key (localStorage only) —
+  // Gemini (image models) or OpenAI (gpt-image). Claude has no image output, so it serves through the copilot.
+  const [aiImage, setAiImage] = useState<string | null>(null);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiProvider, setAiProvider] = useState<'gemini' | 'openai'>('gemini');
+  const [aiKeys, setAiKeys] = useState<Record<'gemini' | 'openai', string>>(() => {
+    try { return { gemini: localStorage.getItem('cuisine:aiKey:gemini') || '', openai: localStorage.getItem('cuisine:aiKey:openai') || '' }; }
+    catch { return { gemini: '', openai: '' }; }
+  });
+  const [aiModels, setAiModels] = useState<Record<'gemini' | 'openai', string>>({ gemini: 'gemini-2.5-flash-image', openai: 'gpt-image-1' });
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiResult, setAiResult] = useState<string | null>(null);
+  const [aiNote, setAiNote] = useState<string | null>(null);
+  const openAiPanel = () => {
+    const url = captureRef.current();
+    setAiImage(url);
+    setAiPrompt(buildAiRenderPrompt({ cabinets, layout, accessories, countertopThicknessMm: countertop.thicknessMm, woods: woodPanels }));
+    setAiResult(null);
+    setAiNote(url ? null : 'تعذّر التقاط اللقطة — فعّل «وضع التصيير الاحترافي» ثم أعد المحاولة.');
+    setPanel('ai');
+  };
+  const setAiKey = (v: string) => {
+    setAiKeys((k) => ({ ...k, [aiProvider]: v }));
+    try { localStorage.setItem(`cuisine:aiKey:${aiProvider}`, v); } catch { /* private mode */ }
+  };
+  const copyAiPrompt = async () => {
+    try { await navigator.clipboard.writeText(aiPrompt); setAiNote('نُسخ الوصف ✓ — ألصقه مع اللقطة في تطبيق الذكاء الاصطناعي الذي تفضّله (Gemini / ChatGPT / Claude).'); }
+    catch { setAiNote('تعذّر النسخ التلقائي — حدّد النص في الحقل وانسخه يدويًا.'); }
+  };
+  const enhanceWithAi = async () => {
+    if (!aiImage) { setAiNote('لا توجد لقطة بعد — أغلق الحوار وأعد فتحه.'); return; }
+    const key = aiKeys[aiProvider].trim();
+    if (!key) { setAiNote('أدخل مفتاح API أولًا (يُحفظ على جهازك فقط).'); return; }
+    setAiBusy(true); setAiResult(null); setAiNote(null);
+    try {
+      if (aiProvider === 'gemini') {
+        const b64 = aiImage.split(',')[1] ?? '';
+        const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(aiModels.gemini)}:generateContent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+          body: JSON.stringify({ contents: [{ parts: [{ text: aiPrompt }, { inlineData: { mimeType: 'image/png', data: b64 } }] }] }),
+        });
+        const data: any = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error?.message || `Gemini رد ${res.status}`);
+        const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+        const img = parts.find((x) => x?.inlineData?.data);
+        if (!img) throw new Error('رد Gemini بلا صورة (تأكد أن النموذج المختار يولّد صورًا).');
+        setAiResult(`data:${img.inlineData.mimeType || 'image/png'};base64,${img.inlineData.data}`);
+      } else {
+        const blob = await (await fetch(aiImage)).blob();
+        const form = new FormData();
+        form.append('image', blob, 'kitchen.png');
+        form.append('model', aiModels.openai);
+        form.append('prompt', aiPrompt);
+        form.append('size', '1536x1024');
+        const res = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: `Bearer ${key}` }, body: form });
+        const data: any = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data?.error?.message || `OpenAI رد ${res.status}`);
+        const b64: string | undefined = data?.data?.[0]?.b64_json;
+        if (!b64) throw new Error('رد OpenAI بلا صورة.');
+        setAiResult(`data:image/png;base64,${b64}`);
+      }
+      setAiNote('تم التحسين ✓ — تذكير: صورة تسويقية تقريبية، والمرجع الدقيق للتنفيذ هو تصميم التطبيق وتصيير Blender.');
+    } catch (e) {
+      setAiNote(`تعذّر التحسين: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setAiBusy(false); }
+  };
+  const callService = async (path: string, body: unknown): Promise<Record<string, unknown>> => {
+    const base = endpoint.replace(/\/+$/, '');
+    try { localStorage.setItem('cuisine:renderEndpoint', base); } catch { /* private mode */ }
+    const res = await fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) throw new Error(typeof data.error === 'string' ? data.error : `الخدمة ردت ${res.status}`);
+    return data;
+  };
+  const doCinematicRender = async () => {
+    setRenderBusy(true); setRenderNote(null); setRenderImage(null);
+    try {
+      const sceneData = buildRenderScene({ cabinets, layout, accessories, countertop, woods: woodPanels, splashMm: hardware.wallSplashHeight });
+      const data = await callService('/render', { scene: sceneData, quality: renderQuality });
+      const images = data.images as Record<string, string> | undefined;
+      const first = images && (images.hero ?? Object.values(images)[0]);
+      if (!first) throw new Error('وصل رد بلا صورة.');
+      setRenderImage(`data:image/png;base64,${first}`);
+      setRenderNote(renderQuality === 'final' ? 'تصيير نهائي 4K (Cycles) من هندسة تصميمك نفسها.' : 'معاينة سريعة (Cycles) من هندسة تصميمك نفسها.');
+    } catch (e) {
+      setRenderNote(`تعذر التصيير: ${e instanceof Error ? e.message : String(e)} — تأكد أن خدمة التصيير تعمل (render-service) وأن العنوان صحيح.`);
+    } finally { setRenderBusy(false); }
+  };
+  const askCopilot = async () => {
+    if (!question.trim()) return;
+    setAsking(true); setAnswer(null);
+    try {
+      const data = await callService('/copilot', {
+        question,
+        audit,
+        project: {
+          layout,
+          cabinets: cabinets.map((c) => ({ name: c.name, category: c.category, width: c.width, height: c.height, depth: c.depth, positionX: c.positionX, run: c.run ?? 'A', zones: c.zones })),
+          accessories: accessories.map((a) => ({ catalogId: a.catalogId, xMm: a.xMm, run: a.run ?? 'A', sizeMm: a.sizeMm, rotY: a.rotY })),
+        },
+      });
+      setAnswer(typeof data.answer === 'string' ? data.answer : 'رد فارغ.');
+    } catch (e) {
+      setAnswer(`تعذر الاتصال بالمساعد: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setAsking(false); }
+  };
   // Fronts opened one by one (double-click on a front): "cabinetId|facadeKey" -> open. A front with no entry follows
   // the master kinematic slider, exactly as every front did before individual opening existed.
   const [frontOpenMap, setFrontOpenMap] = useState<Record<string, boolean>>({});
@@ -283,10 +444,30 @@ export default function Kitchen3DCanvas({
         <input type="range" min="0" max="1" step="0.01" value={openProgress} onChange={(e) => setOpenProgress(parseFloat(e.target.value))} className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600" />
       </div>
 
+      {/* 🎬 Pro rendering, cinematic render and smart audit */}
+      <div className="absolute left-3 top-[104px] z-30 flex flex-col gap-1.5">
+        <button type="button" aria-pressed={proMode} onClick={() => setProMode((v) => !v)} title="إضاءة بيئية وظلال ناعمة ودقة أعلى" className={`px-2.5 py-1 rounded-lg border text-[10px] font-bold shadow-xs cursor-pointer ${proMode ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white/80 backdrop-blur text-slate-700 border-[#E5E5E5] hover:bg-white'}`}>✨ وضع التصيير الاحترافي {proMode ? '✓' : ''}</button>
+        <button type="button" onClick={() => { const u = captureRef.current(); if (u) downloadDataUrl(u, 'kitchen-4k.png'); }} title="لقطة PNG بدقة 3840×2160 من زاويتك الحالية" className="px-2.5 py-1 rounded-lg border bg-white/80 backdrop-blur text-slate-700 border-[#E5E5E5] text-[10px] font-bold shadow-xs hover:bg-white cursor-pointer">📸 لقطة سريعة 4K</button>
+        <button type="button" onClick={openAiPanel} title="لقطة 4K + وصف دقيق من بيانات تصميمك: انسخهما لأي تطبيق ذكاء اصطناعي، أو حسّن هنا بمفتاحك" className="px-2.5 py-1 rounded-lg border bg-white/80 backdrop-blur text-slate-700 border-[#E5E5E5] text-[10px] font-bold shadow-xs hover:bg-white cursor-pointer">📋 تجهيز / تحسين بالذكاء الاصطناعي</button>
+        <button type="button" onClick={() => setPanel('render')} title="Blender Cycles على خدمة التصيير — نفس هندسة التصميم بدقة سينمائية" className="px-2.5 py-1 rounded-lg border bg-white/80 backdrop-blur text-slate-700 border-[#E5E5E5] text-[10px] font-bold shadow-xs hover:bg-white cursor-pointer">🎬 تصيير سينمائي</button>
+        <button type="button" onClick={() => setPanel('audit')} title="فحص تقني حتمي للتصميم + مساعد ذكاء اصطناعي عبر الخدمة" className="px-2.5 py-1 rounded-lg border bg-white/80 backdrop-blur text-slate-700 border-[#E5E5E5] text-[10px] font-bold shadow-xs hover:bg-white cursor-pointer">🧠 تدقيق ذكي</button>
+      </div>
+
       {/* 🧊 Three.js Spatial Layer Viewport */}
       <div className="flex-1 w-full h-full relative">
-        <Canvas camera={{ position: camPos, fov: 40 }} shadows gl={{ antialias: true }} className="w-full h-full absolute inset-0">
+        <Canvas key={proMode ? 'pro' : 'std'} camera={{ position: camPos, fov: 40 }} shadows={proMode ? 'soft' : true} dpr={proMode ? [1, 2] : [1, 1.75]} gl={{ antialias: true, preserveDrawingBuffer: true }} className="w-full h-full absolute inset-0">
           <CameraFitter position={camPos} target={camTarget} nonce={viewNonce} />
+          <StillCapture register={(fn) => { captureRef.current = fn; }} />
+          {proMode && (
+            <Environment resolution={256}>
+              <group rotation={[-Math.PI / 3, 0, 0]}>
+                <Lightformer form="circle" intensity={5} position={[0, 5, -9]} scale={2} />
+                <Lightformer intensity={2} position={[-5, 1, -1]} scale={[3, 0.5, 1]} />
+                <Lightformer intensity={2} position={[5, 1, -1]} scale={[3, 0.5, 1]} />
+                <Lightformer color="#dbeafe" intensity={1.5} position={[0, 5, 5]} scale={[4, 1, 1]} />
+              </group>
+            </Environment>
+          )}
           {/* Cold slate room: without it the canvas is transparent and the scene floats on the white panel. */}
           <color attach="background" args={[ROOM.color]} />
           <ambientLight intensity={0.65} />
@@ -515,6 +696,99 @@ export default function Kitchen3DCanvas({
             </span>
           </div>
           <AccessoryTransformEditor item={selectedAccessoryItem} placed={selectedAccessory} onResize={onResizeAccessory!} onRotate={onRotateAccessory!} onFlip={onFlipAccessory!} onReset={onResetAccessoryTransform!} tone="light" />
+        </div>
+      )}
+
+      {/* 🎬 Cinematic render: the scene goes to the render service (Blender Cycles), the picture comes back. */}
+      {panel !== 'none' && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/45 p-4" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-[720px] w-full max-h-[86vh] overflow-y-auto p-4" style={{ direction: 'rtl' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[13px] font-black text-slate-800">{panel === 'render' ? '🎬 تصيير سينمائي (Blender Cycles)' : panel === 'audit' ? '🧠 التدقيق الذكي للتصميم' : '📋 التجهيز والتحسين بالذكاء الاصطناعي'}</span>
+              <button type="button" aria-label="إغلاق" onClick={() => setPanel('none')} className="w-6 h-6 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold text-[11px] cursor-pointer">✕</button>
+            </div>
+
+            {panel === 'render' && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] text-slate-600 leading-relaxed">تُرسل هندسة تصميمك الحالية (كل صندوق وواجهة وقطعة) إلى خدمة التصيير، فيعيد Blender بنائها وتصييرها بـCycles — نفس المقاسات والأماكن تمامًا، بجودة فوتوريالية. الخدمة تعمل حيث تشاء: جهازك، خادمك، أو GPU سحابي (مجلد <span dir="ltr" className="font-mono">render-service</span> في المشروع).</p>
+                <label className="flex items-center gap-2 text-[11px] font-bold text-slate-700">
+                  عنوان الخدمة
+                  <input type="text" dir="ltr" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} className="flex-1 border border-slate-300 rounded-md px-2 py-1 font-mono text-[11px]" />
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setRenderQuality('fast')} className={`px-3 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${renderQuality === 'fast' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white text-slate-700 border-slate-300'}`}>⚡ معاينة سريعة 720p</button>
+                  <button type="button" onClick={() => setRenderQuality('final')} className={`px-3 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${renderQuality === 'final' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white text-slate-700 border-slate-300'}`}>💎 نهائي 4K (٣ زوايا)</button>
+                  <button type="button" disabled={renderBusy} onClick={doCinematicRender} className="ms-auto px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[12px] font-black cursor-pointer">{renderBusy ? 'جارٍ التصيير…' : '🎬 صيّر الآن'}</button>
+                </div>
+                {renderNote && <p className="text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">{renderNote}</p>}
+                {renderImage && (
+                  <div className="flex flex-col gap-1.5">
+                    <img src={renderImage} alt="التصيير السينمائي لمطبخك" className="w-full rounded-xl border border-slate-200" />
+                    <a href={renderImage} download="kitchen-cinematic.png" className="self-start px-3 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-bold">⬇ تنزيل الصورة</a>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {panel === 'audit' && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] text-slate-600">فحص حتمي من أرقام تصميمك نفسها (لا يخترع شيئًا):</p>
+                <ul className="flex flex-col gap-1">
+                  {audit.map((f: AuditFinding, i: number) => (
+                    <li key={i} className={`text-[11px] font-bold rounded-lg px-2.5 py-1.5 border ${f.level === 'error' ? 'bg-rose-50 text-rose-800 border-rose-200' : f.level === 'warn' ? 'bg-amber-50 text-amber-900 border-amber-200' : 'bg-sky-50 text-sky-900 border-sky-200'}`}>{f.level === 'error' ? '⛔' : f.level === 'warn' ? '⚠️' : '💡'} {f.text}</li>
+                  ))}
+                </ul>
+                <div className="border-t border-slate-200 pt-2 flex flex-col gap-1.5">
+                  <span className="text-[11px] font-black text-slate-700">اسأل المساعد الذكي (عبر خدمة التصيير، يحتاج مفتاحًا على الخادم):</span>
+                  <div className="flex gap-1.5">
+                    <input type="text" value={question} onChange={(e) => setQuestion(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') askCopilot(); }} placeholder="مثال: هل ممر الحركة كافٍ؟ ما أضعف نقطة في التصميم؟" className="flex-1 border border-slate-300 rounded-md px-2 py-1.5 text-[11px]" />
+                    <button type="button" disabled={asking} onClick={askCopilot} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-[11px] font-black cursor-pointer">{asking ? 'يفكر…' : 'اسأل'}</button>
+                  </div>
+                  {answer && <p className="text-[11px] leading-relaxed text-slate-800 bg-indigo-50/60 border border-indigo-100 rounded-lg px-2.5 py-2 whitespace-pre-wrap">{answer}</p>}
+                </div>
+              </div>
+            )}
+
+            {panel === 'ai' && (
+              <div className="flex flex-col gap-2">
+                <p className="text-[11px] font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">⚠️ صورتان مختلفتان تمامًا: لقطة التطبيق وتصيير Blender دقيقان ويُعتمدان للتنفيذ؛ أما ناتج الذكاء الاصطناعي فتصوّر تسويقي تقريبي قد يغيّر تفاصيل — لا يُبنى عليه مقاس.</p>
+                {aiImage ? (
+                  <>
+                    <img src={aiImage} alt="لقطة المطبخ الحالية بدقة 4K" className="w-full rounded-xl border border-slate-200" />
+                    <div className="flex flex-wrap gap-1.5">
+                      <button type="button" onClick={() => downloadDataUrl(aiImage, 'kitchen-still-4k.png')} className="px-3 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-bold cursor-pointer">⬇ تنزيل اللقطة 4K</button>
+                      <button type="button" onClick={copyAiPrompt} className="px-3 py-1 rounded-lg bg-white border border-slate-300 text-slate-700 text-[11px] font-bold cursor-pointer">📋 نسخ الوصف</button>
+                      <span className="text-[10px] text-slate-500 self-center">الطريقة المجانية: نزّل اللقطة، انسخ الوصف، والصقهما في تطبيق Gemini أو ChatGPT أو Claude.</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-[11px] text-slate-600">لا لقطة بعد…</p>
+                )}
+                <label className="flex flex-col gap-1 text-[11px] font-bold text-slate-700">
+                  الوصف الدقيق (من بيانات تصميمك — قابل للتعديل قبل الإرسال)
+                  <textarea dir="ltr" rows={7} value={aiPrompt} onChange={(e) => setAiPrompt(e.target.value)} className="text-left font-mono text-[10px] leading-relaxed border border-slate-300 rounded-lg px-2 py-1.5 w-full" />
+                </label>
+                <div className="border-t border-slate-200 pt-2 flex flex-col gap-1.5">
+                  <span className="text-[11px] font-black text-slate-700">أو حسّن هنا مباشرة بمفتاحك (اختياري):</span>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button type="button" onClick={() => setAiProvider('gemini')} className={`px-3 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${aiProvider === 'gemini' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white text-slate-700 border-slate-300'}`}>Gemini (صور)</button>
+                    <button type="button" onClick={() => setAiProvider('openai')} className={`px-3 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${aiProvider === 'openai' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-white text-slate-700 border-slate-300'}`}>OpenAI (gpt-image)</button>
+                    <input type="text" dir="ltr" value={aiModels[aiProvider]} onChange={(e) => setAiModels((m) => ({ ...m, [aiProvider]: e.target.value }))} title="اسم النموذج" className="border border-slate-300 rounded-md px-2 py-1 font-mono text-[10px] w-44" />
+                  </div>
+                  <input type="password" dir="ltr" value={aiKeys[aiProvider]} onChange={(e) => setAiKey(e.target.value)} placeholder={aiProvider === 'gemini' ? 'AIza… (مفتاح Google AI Studio)' : 'sk-… (مفتاح OpenAI)'} className="border border-slate-300 rounded-md px-2 py-1.5 font-mono text-[11px] w-full" />
+                  <p className="text-[10px] text-slate-500">المفتاح يُحفظ في متصفح هذا الجهاز فقط (localStorage) ويُرسل لمزوّده مباشرة — لا يدخل الكود ولا يُشارك. لا تستخدمه على جهاز مشترك. (Claude لا يولّد صورًا؛ مكانه المساعد النصي في «التدقيق الذكي».)</p>
+                  <button type="button" disabled={aiBusy} onClick={enhanceWithAi} className="self-start px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-[12px] font-black cursor-pointer">{aiBusy ? 'جارٍ التحسين…' : '✨ حسّن بالذكاء الاصطناعي'}</button>
+                  {aiNote && <p className="text-[11px] font-bold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">{aiNote}</p>}
+                  {aiResult && (
+                    <div className="flex flex-col gap-1.5">
+                      <img src={aiResult} alt="المطبخ بعد تحسين الذكاء الاصطناعي (تصوّر تسويقي)" className="w-full rounded-xl border border-slate-200" />
+                      <button type="button" onClick={() => downloadDataUrl(aiResult, 'kitchen-ai-enhanced.png')} className="self-start px-3 py-1 rounded-lg bg-slate-900 text-white text-[11px] font-bold cursor-pointer">⬇ تنزيل الصورة المحسّنة</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

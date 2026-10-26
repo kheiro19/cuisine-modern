@@ -5,6 +5,12 @@ import { ACCESSORY_CATALOG, ACCESSORY_CATEGORIES, CODE_MODEL_IDS, FINISHES, getA
 import { ACCESSORY_MODEL_KEYS, modelPrims, primBounds } from '../../src/math/accessoryModels';
 import { LAYOUT } from '../../src/math/constants';
 import { cabinetsClashingPieces, placeAlongWall, type KitchenLayout } from '../../src/math/kitchenLayout';
+import { buildRenderScene } from '../../src/math/renderScene';
+import { buildAiRenderPrompt } from '../../src/math/renderPrompt';
+import * as M from '../fixtures/matrix';
+import * as P from '../../src/math/cabinetPresets';
+const WOODS_T = [{ id: 'w16', brand: 'B', type: 'MDF', thickness: 16, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 9, averagePriceDA: 9000 }, { id: 'w19', brand: 'B', type: 'MDF', thickness: 19, widthSheet: 2800, heightSheet: 2070, edgeThickness: 0, edgeWidth: 0, currentQty: 9, averagePriceDA: 11000 }];
+import { auditDesign } from '../../src/math/designAudit';
 import { flipAccessory, footprintOf, nudgeAccessory, placeAccessory, reconcileAccessories, removeAccessory, resetAccessoryTransform, resizeAccessory, rotateAccessory, sceneRefOf, setFinish, type TransformResult } from '../../src/math/accessoryPlacement';
 import type { CabinetLite, NudgeResult, PlaceResult } from '../../src/math/accessoryPlacement';
 
@@ -496,4 +502,53 @@ test('transform: hosted pieces answer to their host — inside a cabinet and on 
   const tap = okPlace(placeAccessory(tapItem.id, 't1', [sink], RUN, SCENE)).placed;
   const bigTap = resizeAccessory('t1', { w: 900, h: tapItem.sizeMm.h, d: tapItem.sizeMm.d }, [sink, tap], RUN, SCENE);
   assert.ok('error' in bigTap && bigTap.error.includes('أكبر من الحوض'), 'a tap wider than its sink is refused');
+});
+
+test('render scene: the external renderer gets the same kitchen — boxes, fronts, worktop, room and cameras', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const wall = [cab('b1', { positionX: 0, width: 800 }), cab('b2', { positionX: 800, width: 800 })];
+  const scene = sceneRefOf(wall, 600);
+  const w = okPlace(placeAccessory('washer', 'w1', [], wall, scene, undefined, undefined, { layout })).placed;
+  const full = wall.map((c, i) => {
+    const d = P.resolveDraft({ ...M.config('deepDrawers'), width: 800, zones: [{ kind: 'DOORS', count: 2 }] }, WOODS_T, [], []);
+    return { ...P.draftToNewCabinet(d, { id: c.id, name: c.id, positionX: i * 800 }), carcaseThickness: 16, frontThickness: 19, calculatedCostDA: 0 };
+  }) as never;
+  const rs = buildRenderScene({ cabinets: full, layout, accessories: [w], countertop: { visible: true, thicknessMm: 40, depthMm: 600 }, woods: [], splashMm: 600 });
+  assert.equal(rs.format, 'cuisine-render-scene');
+  assert.ok(rs.boxes.some((b) => b.role === 'front'), 'fronts are exported');
+  assert.ok(rs.boxes.some((b) => b.role === 'countertop'), 'the worktop slab is exported');
+  const accBox = rs.boxes.find((b) => b.id === 'acc-w1');
+  assert.ok(accBox, 'the washer is a box');
+  assert.deepEqual(accBox.sizeMm, [600, 850, 600]);
+  assert.ok(Math.abs(accBox.centerMm[0] - 1905) < 1, 'at her real centre');
+  assert.ok(rs.boxes.every((b) => b.sizeMm.every((v) => v > 0) && b.centerMm.every(Number.isFinite)), 'every box is finite and positive');
+  assert.equal(rs.cameras.length, 3);
+});
+
+test('audit: the fitter checks name clashes, wall escapes and wasted gaps — from the same numbers', () => {
+  const layout: KitchenLayout = { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 };
+  const mk = (id: string, positionX: number, width: number) => ({ id, name: id, category: 'BASE_UNIT', positionX, positionZ: 0, width, height: 900, depth: 560, frontThickness: 19, carcaseThickness: 16, zones: [{ kind: 'DOORS', count: 2 }] }) as never;
+  const findings = auditDesign({ cabinets: [mk('a', 0, 800), mk('b', 700, 800)], layout, accessories: [], counterTopMm: 940, splashMm: 600 });
+  assert.ok(findings.some((f) => f.level === 'error' && f.text.includes('تتداخل')), 'the overlap is named');
+  const gapped = auditDesign({ cabinets: [mk('a', 0, 800), mk('b', 2000, 800)], layout, accessories: [], counterTopMm: 940, splashMm: 600 });
+  assert.ok(gapped.some((f) => f.text.includes('فجوة 1200 مم')), 'the exploitable gap is measured');
+  assert.ok(gapped.some((f) => f.text.includes('تغطية')), 'coverage is reported');
+});
+
+// buildAiRenderPrompt (📋 تجهيز للذكاء الاصطناعي): exact design data into the copy-paste prompt.
+test('ai prompt: real cabinets, room and the preserve-geometry instruction', () => {
+  const stub = (id: string, category: string) => ({ id, name: id, category, positionX: 0, positionZ: 0, width: 800, height: 900, depth: 560, frontThickness: 19, carcaseThickness: 16, zones: [] }) as never;
+  const text = buildAiRenderPrompt({
+    cabinets: [stub('b1', 'BASE_UNIT'), stub('w1', 'WALL_UNIT')],
+    layout: { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 } as never,
+    accessories: [{ id: 'x', catalogId: 'lg-thinq-washer', xMm: 1 } as never],
+    countertopThicknessMm: 40,
+    woods: [{ brand: 'Egger', type: 'Wood MDF' }, { brand: 'Egger', type: 'Wood MDF' }],
+  });
+  assert.match(text, /Do not add, remove, move or resize/);
+  assert.match(text, /3650 x 2750 mm, height 2800 mm/);
+  assert.match(text, /Base cabinets \(1\): b1 800x900x560/);
+  assert.match(text, /Worktop thickness: 40 mm/);
+  assert.equal((text.match(/Egger — Wood MDF/g) ?? []).length, 1);
+  assert.match(text, /Wall cabinets \(1\)/);
 });
