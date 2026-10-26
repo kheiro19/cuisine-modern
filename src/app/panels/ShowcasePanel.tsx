@@ -57,19 +57,15 @@ export default function ShowcasePanel(props: ShowcasePanelProps) {
         {!isShowroomMinimized && (
           <div className={`${isWorkspaceMinimized ? 'xl:col-span-11' : 'xl:col-span-1'} bg-white border border-slate-200 rounded-2xl p-2 min-h-[580px] flex flex-col relative shadow-3xs transition-all duration-300 animate-fade-in`}>
             
-            {/* أزرار التحكم بالمينيميز ومحاور الاستعادة الذكية */}
-            {isWorkspaceMinimized ? (
-              <button type="button" onClick={() => setIsWorkspaceMinimized(false)} className="absolute top-4 right-4 z-40 bg-slate-900 text-white hover:bg-slate-800 rounded-lg px-3 py-1 font-sans text-xs font-bold transition-all cursor-pointer shadow-md">
-                🗖 استعادة لوحة التقطيع (Split View)
-              </button>
-            ) : (
-              <button type="button" onClick={() => { setIsShowroomMinimized(true); setIsWorkspaceMinimized(false); }} className="absolute top-3 right-3 z-40 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded px-2 py-0.5 font-mono text-[10px] font-bold transition-all cursor-pointer shadow-xs" title="تقليص صالة العرض وتركيز باحة العين على تفكيك الألواح">
-                🗕 Minimize 3D Showcase
-              </button>
-            )}
+            {/* ترويسة صالة العرض: العنوان وكل الأزرار في التدفق العادي فوق الـCanvas — لا شيء يطفو فوق المشهد فيغطّيه
+                أو يغطّي جاره عندما يضيق الجناح (كانت أربعة عناصر مطلقة التموضع تتزاحم في نفس الزاوية). */}
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <span className="text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded shadow-sm tracking-wider">
+                {isWorkspaceMinimized ? "🧊 3D LUXURY KITCHEN SHOWROOM (100% MAXIMUM VIEW)" : "🧊 3D EXECUTIVE SHOWCASE"}
+              </span>
 
-                        {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات) */}
-            <div className="absolute top-3 left-32 z-40 flex bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 space-x-2 shadow-md">
+              {/* أزرار الرؤية الجبرية المدمجة (X-Ray + حذف الواجهات) */}
+              <div className="flex flex-wrap items-center bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 gap-2 shadow-md">
               <button 
                 type="button" 
                 onClick={() => setShowFronts(p => !p)} 
@@ -99,9 +95,20 @@ export default function ShowcasePanel(props: ShowcasePanelProps) {
               </button>
             </div>
 
+              {isWorkspaceMinimized ? (
+                <button type="button" onClick={() => setIsWorkspaceMinimized(false)} className="ml-auto bg-slate-900 text-white hover:bg-slate-800 rounded-lg px-3 py-1 font-sans text-xs font-bold transition-all cursor-pointer shadow-md">
+                  🗖 استعادة لوحة التقطيع (Split View)
+                </button>
+              ) : (
+                <button type="button" onClick={() => { setIsShowroomMinimized(true); setIsWorkspaceMinimized(false); }} className="ml-auto bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded px-2 py-0.5 font-mono text-[10px] font-bold transition-all cursor-pointer shadow-xs" title="تقليص صالة العرض وتركيز باحة العين على تفكيك الألواح">
+                  🗕 Minimize 3D Showcase
+                </button>
+              )}
+            </div>
+
             {/* السمك والعرض: 20–40 مم و 580–650 مم. التغيير يتم عند Enter أو الخروج من الحقل. */}
             {countertop.visible && (
-              <div data-testid="countertop-settings" className="absolute top-[3.1rem] left-32 z-40 flex flex-wrap items-center gap-2 bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 shadow-md">
+              <div data-testid="countertop-settings" className="flex flex-wrap items-center gap-2 bg-slate-900/80 backdrop-blur-xs px-2 py-1 rounded-lg border border-slate-700 shadow-md mb-2">
                 <label className="flex items-center space-x-1 text-[9px] font-mono font-bold text-slate-300">
                   <span>سُمك سطح العمل</span>
                   <CommitNumber value={countertop.thicknessMm} min={COUNTERTOP.THICKNESS_MM[0]} max={COUNTERTOP.THICKNESS_MM[1]} ariaLabel="سُمك سطح العمل" title="السمك من 20 إلى 40 مم" onCommit={(v) => setCountertopSettings({ thicknessMm: v })} />
@@ -163,11 +170,7 @@ export default function ShowcasePanel(props: ShowcasePanelProps) {
               </div>
             )}
 
-            <span className="absolute top-3 left-3 z-30 text-[9px] font-mono font-bold bg-slate-900 text-white px-2 py-0.5 rounded shadow-sm tracking-wider">
-              {isWorkspaceMinimized ? "🧊 3D LUXURY KITCHEN SHOWROOM (100% MAXIMUM VIEW)" : "🧊 3D EXECUTIVE SHOWCASE"}
-            </span>
-
-            <div className={`w-full ${isWorkspaceMinimized ? 'h-[80vh]' : 'h-full'} rounded-xl overflow-hidden relative mt-6 flex flex-col flex-1`}>
+            <div className={`w-full ${isWorkspaceMinimized ? 'h-[80vh]' : 'h-full'} rounded-xl overflow-hidden relative flex flex-col flex-1`}>
               <Kitchen3DCanvas
                 cabinets={cabinets}
                 hardware={{ ...hardwareSettings, wallSplashHeight: layout.wallGapMm ?? DEFAULT_WALL_GAP_MM }}
