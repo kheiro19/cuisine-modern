@@ -171,7 +171,7 @@ export default function Kitchen3DCanvas({
   const openAiPanel = () => {
     const url = captureRef.current();
     setAiImage(url);
-    setAiPrompt(buildAiRenderPrompt({ cabinets, layout, accessories, countertopThicknessMm: countertop.thicknessMm, woods: woodPanels }));
+    setAiPrompt(buildAiRenderPrompt({ cabinets, layout, accessories, countertopThicknessMm: countertop.thicknessMm, countertopDepthMm: countertop.depthMm, countertopTexturePath: countertop.texturePath, splashMm: hardware.wallSplashHeight, woods: woodPanels }));
     setAiResult(null);
     setAiNote(url ? null : 'تعذّر التقاط اللقطة — فعّل «وضع التصيير الاحترافي» ثم أعد المحاولة.');
     setPanel('ai');

@@ -536,19 +536,23 @@ test('audit: the fitter checks name clashes, wall escapes and wasted gaps — fr
 });
 
 // buildAiRenderPrompt (📋 تجهيز للذكاء الاصطناعي): exact design data into the copy-paste prompt.
-test('ai prompt: real cabinets, room and the preserve-geometry instruction', () => {
-  const stub = (id: string, category: string) => ({ id, name: id, category, positionX: 0, positionZ: 0, width: 800, height: 900, depth: 560, frontThickness: 19, carcaseThickness: 16, zones: [] }) as never;
+test('ai prompt: a forensic spec — doors vs drawers, sizes, hinges, grain, positions', () => {
+  const d = P.resolveDraft({ ...M.config('deepDrawers'), width: 800, zones: [{ kind: 'DRAWERS', count: 3 }, { kind: 'DOORS', count: 2, shelves: 2 }] }, WOODS_T, [], []);
+  const cab = { ...P.draftToNewCabinet(d, { id: 'c1', name: 'وحدة الأدراج', positionX: 100 }), carcaseThickness: 16, frontThickness: 19, calculatedCostDA: 0 } as never;
   const text = buildAiRenderPrompt({
-    cabinets: [stub('b1', 'BASE_UNIT'), stub('w1', 'WALL_UNIT')],
+    cabinets: [cab],
     layout: { type: 'L', lSide: 'LEFT', widthMm: 3650, depthMm: 2750, heightMm: 2800 } as never,
-    accessories: [{ id: 'x', catalogId: 'lg-thinq-washer', xMm: 1 } as never],
+    accessories: [{ id: 'x', catalogId: 'lg-thinq-washer', xMm: 1905 } as never],
     countertopThicknessMm: 40,
-    woods: [{ brand: 'Egger', type: 'Wood MDF' }, { brand: 'Egger', type: 'Wood MDF' }],
+    woods: WOODS_T as never,
   });
-  assert.match(text, /Do not add, remove, move or resize/);
-  assert.match(text, /3650 x 2750 mm, height 2800 mm/);
-  assert.match(text, /Base cabinets \(1\): b1 800x900x560/);
-  assert.match(text, /Worktop thickness: 40 mm/);
-  assert.equal((text.match(/Egger — Wood MDF/g) ?? []).length, 1);
-  assert.match(text, /Wall cabinets \(1\)/);
+  assert.match(text, /Do not add, remove, move, resize or restyle/);
+  assert.match(text, /occupying 100-900 mm along wall A/);
+  assert.match(text, /3 x drawer front \d+x\d+ mm \(slides out\)/);
+  assert.match(text, /door \d+x\d+ mm \(hinged door, hinged on the left\)/);
+  assert.match(text, /door \d+x\d+ mm \(hinged door, hinged on the right\)/);
+  assert.match(text, /wood grain horizontal/);
+  assert.match(text, /inside: 2 adjustable shelves/);
+  assert.match(text, /WORKTOP: 40 mm thick/);
+  assert.match(text, /centred at 1905 mm along wall A/);
 });
